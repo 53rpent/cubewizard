@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Synergy Analysis - CubeWizard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            align-items: center;
+        }
+        
+        .breadcrumb {
+            background: white;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .breadcrumb a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        .description p {
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: #555;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            min-height: 600px;
+        }
+        
+        .data-container {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .positive {
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .negative {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+            font-size: 1.2rem;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 2rem;
+            border-radius: 8px;
+            border: 1px solid #f5c6cb;
+            margin: 2rem 0;
+        }
+        
+        .back-button {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-bottom: 2rem;
+            transition: background 0.2s ease;
+        }
+        
+        .back-button:hover {
+            background: #764ba2;
+        }
+        
+        .footer {
+            background: white;
+            border-top: 1px solid #eee;
+            padding: 2rem;
+            margin-top: 4rem;
+            text-align: center;
+            color: #666;
+        }
+        
+        .footer p {
+            margin-bottom: 0.5rem;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .footer .timestamp {
+            font-size: 0.875rem;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Card Synergy Analysis</h1>
+        <p>Detailed analysis for proxybacon</p>
+    </div>
+    
+    <div class="breadcrumb">
+        <a href="index.html">← Back to Dashboard</a>
+    </div>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Analysis Overview</h2>
+            <p>Card synergy analysis identifies pairs of cards that perform better together than they do individually. The "Synergy Bonus" shows how much the combined win rate exceeds the average of their individual performances. Positive synergy bonuses indicate natural card combinations that players should be encouraged to draft together, while understanding these relationships can help cube designers ensure their format supports coherent strategies and interesting draft decisions.</p>
+        </div>
+        
+        <div id="chart-section" class="chart-container" style="display: none;">
+            <div id="detailed-chart"></div>
+        </div>
+        
+        <div id="data-section" class="data-container" style="display: none;">
+            <div id="detailed-data"></div>
+        </div>
+        
+        <div id="loading" class="loading">
+            Loading detailed analysis...
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+    
+    <div class="footer">
+        <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p class="timestamp">Last updated: <span id="timestamp">October 15, 2025 at 01:33 PM</span></p>
+    </div>
+    
+    <script>
+        const cubeId = 'proxybacon';
+        const analysisType = 'synergies';
+        
+        // Embedded data from static generation
+        const embeddedData = {"cube_info": {"cube_id": "proxybacon", "created": "2025-10-15T10:28:01.300592", "last_updated": "2025-10-15 15:13:35", "total_decks": 8}, "card_performances": [{"name": "Parallax Wave", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Galvanic Discharge", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Amped Raptor", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Forth Eorlingas!", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Otharri, Suns' Glory", "appearances": 2, "win_rate": 1.0, "performance_delta": 0.333, "wins": 6, "losses": 0}, {"name": "Burst Lightning", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Voice of Victory", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Jinnie Fay, Jetmir's Second", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Opera Love Song", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Nova Hellkite", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Jacked Rabbit", "appearances": 2, "win_rate": 1.0, "performance_delta": 0.333, "wins": 6, "losses": 0}, {"name": "Palace Jailer", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Fury", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Descendant of Storms", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Hired Claw", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Monstrous Rage", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Path to Exile", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Witch Enchanter // Witch-Blessed Meadow", "appearances": 2, "win_rate": 1.0, "performance_delta": 0.333, "wins": 6, "losses": 0}, {"name": "All-Fates Stalker", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Stadium Headliner", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Dion, Bahamut's Dominant // Bahamut, Warden of Light", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Adeline, Resplendent Cathar", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Ancient Tomb", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Relic of Sauron", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Chromatic Star", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Time Walk", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Expressive Iteration", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Spell Pierce", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Jace, Vryn's Prodigy // Jace, Telepath Unbound", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Subtlety", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Fiery Islet", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Watery Grave", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Mockingbird", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Mana Leak", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Stormchaser's Talent", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Brazen Borrower // Petty Theft", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Plagon, Lord of the Beach", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Dack Fayden", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Valki, God of Lies // Tibalt, Cosmic Impostor", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Jace, the Mind Sculptor", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Broadside Bombardiers", "appearances": 2, "win_rate": 1.0, "performance_delta": 0.333, "wins": 6, "losses": 0}, {"name": "Duelist of the Mind", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Polluted Delta", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Xander's Lounge", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Gaea's Cradle", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Solitude", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Flame Slash", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Luminarch Aspirant", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Pre-War Formalwear", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Gau, Feral Youth", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Guide of Souls", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Lightning Bolt", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Scrubland", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Swords to Plowshares", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "The Wandering Emperor", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Arid Mesa", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Summon: Yojimbo", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Lingering Souls", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Eagles of the North", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Thrill-Kill Disciple", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Skyclave Apparition", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Mother of Runes", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Fear of Missing Out", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Kaldra Compleat", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Phyrexian Metamorph", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Wasteland", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Sunbaked Canyon", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Gwen Stacy // Ghost-Spider", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Sol Ring", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Ocelot Pride", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Sevinne's Reclamation", "appearances": 1, "win_rate": 1.0, "performance_delta": 0.333, "wins": 3, "losses": 0}, {"name": "Laelia, the Blade Reforged", "appearances": 2, "win_rate": 0.833, "performance_delta": 0.167, "wins": 5, "losses": 1}, {"name": "Baleful Strix", "appearances": 2, "win_rate": 0.833, "performance_delta": 0.167, "wins": 5, "losses": 1}, {"name": "Darkslick Shores", "appearances": 2, "win_rate": 0.833, "performance_delta": 0.167, "wins": 5, "losses": 1}, {"name": "Ancestral Recall", "appearances": 2, "win_rate": 0.833, "performance_delta": 0.167, "wins": 5, "losses": 1}, {"name": "Force of Will", "appearances": 2, "win_rate": 0.833, "performance_delta": 0.167, "wins": 5, "losses": 1}, {"name": "Mana Crypt", "appearances": 2, "win_rate": 0.667, "performance_delta": 0.0, "wins": 4, "losses": 2}, {"name": "Rotting Regisaur", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Chaos Defiler", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mana Drain", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Radical Idea", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Volcanic Island", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Ertai Resurrected", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Unable to Scream", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Occult Epiphany", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Corpse Dance", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Metamorphosis Fanatic", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Vampiric Tutor", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Concealing Curtains // Revealing Eye", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mana Confluence", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Necromancy", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Damnation", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Collective Brutality", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Remand", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Undercity Sewers", "appearances": 2, "win_rate": 0.667, "performance_delta": 0.0, "wins": 4, "losses": 2}, {"name": "Fyndhorn Elves", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mox Emerald", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Copperline Gorge", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Elvish Mystic", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Ursine Monstrosity", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Primeval Titan", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Unholy Heat", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Indoraptor, the Perfect Hybrid", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Noble Hierarch", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Inti, Seneschal of the Sun", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mawloc", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Overgrown Tomb", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Alpha Deathclaw", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Blood Crypt", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Bonecrusher Giant // Stomp", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Worldspine Wurm", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Fire Covenant", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Flametongue Kavu", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Wooded Foothills", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mana Vault", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Esika's Chariot", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mox Jet", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Orcish Bowmasters", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Sheoldred, the Apocalypse", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Grist, the Hunger Tide", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Fanatic of Rhonas", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Natural Order", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Fiery Confluence", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Orcish Lumberjack", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Tolarian Academy", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Counterspell", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Preordain", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mox Sapphire", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Force of Negation", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Mystical Tutor", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Snapcaster Mage", "appearances": 1, "win_rate": 0.667, "performance_delta": 0.0, "wins": 2, "losses": 1}, {"name": "Ponder", "appearances": 3, "win_rate": 0.556, "performance_delta": -0.111, "wins": 5, "losses": 3}, {"name": "Stoneforge Mystic", "appearances": 2, "win_rate": 0.5, "performance_delta": -0.167, "wins": 3, "losses": 2}, {"name": "Dark Ritual", "appearances": 2, "win_rate": 0.5, "performance_delta": -0.167, "wins": 3, "losses": 3}, {"name": "Brainstorm", "appearances": 2, "win_rate": 0.333, "performance_delta": -0.333, "wins": 2, "losses": 3}, {"name": "Creeping Tar Pit", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Displacer Kitten", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Mystic Forge", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Sensei's Divining Top", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Timetwister", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Thundertrap Trainer", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Mox Opal", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "The One Ring", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Ugin, Eye of the Storms", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Bolas's Citadel", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Mishra's Workshop", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Tinker", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Fatal Push", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Talisman of Hierarchy", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Yawgmoth's Will", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Grim Monolith", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Portal to Phyrexia", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Tendrils of Agony", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Currency Converter", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Talisman of Indulgence", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Coveted Jewel", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Gitaxian Probe", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Urborg, Tomb of Yawgmoth", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Imperial Seal", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Coalition Relic", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Mishra's Bauble", "appearances": 1, "win_rate": 0.333, "performance_delta": -0.333, "wins": 1, "losses": 2}, {"name": "Daze", "appearances": 1, "win_rate": 0.0, "performance_delta": -0.667, "wins": 0, "losses": 2}, {"name": "Mystic Confluence", "appearances": 1, "win_rate": 0.0, "performance_delta": -0.667, "wins": 0, "losses": 2}, {"name": "Time Warp", "appearances": 1, "win_rate": 0.0, "performance_delta": -0.667, "wins": 0, "losses": 2}, {"name": "Questing Beast", "appearances": 1, "win_rate": 0.0, "performance_delta": -0.667, "wins": 0, "losses": 2}], "synergies": [], "charts": {"performance_scatter": "{\"data\": [{\"hovertemplate\": \"<b>%{text}</b><br>Appearances: %{x}<br>Performance Delta: %{y:.1%}<br><extra></extra>\", \"marker\": {\"color\": [0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.16666666666666663, 0.16666666666666663, 0.16666666666666663, 0.16666666666666663, 0.16666666666666663, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.11111111111111105, -0.16666666666666663, -0.16666666666666663, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.6666666666666666, -0.6666666666666666, -0.6666666666666666, -0.6666666666666666], \"colorbar\": {\"title\": {\"text\": \"Performance Delta\"}}, \"colorscale\": [[0.0, \"rgb(165,0,38)\"], [0.1, \"rgb(215,48,39)\"], [0.2, \"rgb(244,109,67)\"], [0.3, \"rgb(253,174,97)\"], [0.4, \"rgb(254,224,144)\"], [0.5, \"rgb(255,255,191)\"], [0.6, \"rgb(224,243,248)\"], [0.7, \"rgb(171,217,233)\"], [0.8, \"rgb(116,173,209)\"], [0.9, \"rgb(69,117,180)\"], [1.0, \"rgb(49,54,149)\"]], \"showscale\": true, \"size\": 8}, \"mode\": \"markers\", \"text\": [\"Parallax Wave\", \"Galvanic Discharge\", \"Amped Raptor\", \"Forth Eorlingas!\", \"Otharri, Suns' Glory\", \"Burst Lightning\", \"Voice of Victory\", \"Jinnie Fay, Jetmir's Second\", \"Opera Love Song\", \"Nova Hellkite\", \"Jacked Rabbit\", \"Palace Jailer\", \"Fury\", \"Descendant of Storms\", \"Hired Claw\", \"Monstrous Rage\", \"Path to Exile\", \"Witch Enchanter // Witch-Blessed Meadow\", \"All-Fates Stalker\", \"Stadium Headliner\", \"Dion, Bahamut's Dominant // Bahamut, Warden of Light\", \"Adeline, Resplendent Cathar\", \"Ancient Tomb\", \"Relic of Sauron\", \"Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar\", \"Chromatic Star\", \"Time Walk\", \"Expressive Iteration\", \"Spell Pierce\", \"Jace, Vryn's Prodigy // Jace, Telepath Unbound\", \"Subtlety\", \"Fiery Islet\", \"Watery Grave\", \"Mockingbird\", \"Mana Leak\", \"Stormchaser's Talent\", \"Brazen Borrower // Petty Theft\", \"Plagon, Lord of the Beach\", \"Dack Fayden\", \"Valki, God of Lies // Tibalt, Cosmic Impostor\", \"Jace, the Mind Sculptor\", \"Broadside Bombardiers\", \"Duelist of the Mind\", \"Polluted Delta\", \"Xander's Lounge\", \"Gaea's Cradle\", \"Solitude\", \"Flame Slash\", \"Luminarch Aspirant\", \"Pre-War Formalwear\", \"Gau, Feral Youth\", \"Guide of Souls\", \"Lightning Bolt\", \"Scrubland\", \"Swords to Plowshares\", \"The Wandering Emperor\", \"Arid Mesa\", \"Summon: Yojimbo\", \"Lingering Souls\", \"Eagles of the North\", \"Thrill-Kill Disciple\", \"Skyclave Apparition\", \"Mother of Runes\", \"Fear of Missing Out\", \"Kaldra Compleat\", \"Phyrexian Metamorph\", \"Wasteland\", \"Sunbaked Canyon\", \"Gwen Stacy // Ghost-Spider\", \"Sol Ring\", \"Ocelot Pride\", \"Sevinne's Reclamation\", \"Laelia, the Blade Reforged\", \"Baleful Strix\", \"Darkslick Shores\", \"Ancestral Recall\", \"Force of Will\", \"Mana Crypt\", \"Rotting Regisaur\", \"Chaos Defiler\", \"Mana Drain\", \"Radical Idea\", \"Volcanic Island\", \"Ertai Resurrected\", \"Unable to Scream\", \"Occult Epiphany\", \"Corpse Dance\", \"Metamorphosis Fanatic\", \"Vampiric Tutor\", \"Concealing Curtains // Revealing Eye\", \"Mana Confluence\", \"Necromancy\", \"Damnation\", \"Collective Brutality\", \"Remand\", \"Undercity Sewers\", \"Fyndhorn Elves\", \"Mox Emerald\", \"Copperline Gorge\", \"Elvish Mystic\", \"Ursine Monstrosity\", \"Primeval Titan\", \"Unholy Heat\", \"Indoraptor, the Perfect Hybrid\", \"Noble Hierarch\", \"Inti, Seneschal of the Sun\", \"Mawloc\", \"Overgrown Tomb\", \"Alpha Deathclaw\", \"Blood Crypt\", \"Bonecrusher Giant // Stomp\", \"Worldspine Wurm\", \"Fire Covenant\", \"Flametongue Kavu\", \"Wooded Foothills\", \"Mana Vault\", \"Esika's Chariot\", \"Mox Jet\", \"Orcish Bowmasters\", \"Sheoldred, the Apocalypse\", \"Grist, the Hunger Tide\", \"Fanatic of Rhonas\", \"Natural Order\", \"Fiery Confluence\", \"Orcish Lumberjack\", \"Tolarian Academy\", \"Counterspell\", \"Preordain\", \"Mox Sapphire\", \"Force of Negation\", \"Mystical Tutor\", \"Snapcaster Mage\", \"Ponder\", \"Stoneforge Mystic\", \"Dark Ritual\", \"Brainstorm\", \"Creeping Tar Pit\", \"Displacer Kitten\", \"Mystic Forge\", \"Sensei's Divining Top\", \"Timetwister\", \"Thundertrap Trainer\", \"Mox Opal\", \"The One Ring\", \"Ugin, Eye of the Storms\", \"Bolas's Citadel\", \"Mishra's Workshop\", \"Tinker\", \"Fatal Push\", \"Talisman of Hierarchy\", \"Yawgmoth's Will\", \"Grim Monolith\", \"Portal to Phyrexia\", \"Tendrils of Agony\", \"Currency Converter\", \"Talisman of Indulgence\", \"Coveted Jewel\", \"Gitaxian Probe\", \"Urborg, Tomb of Yawgmoth\", \"Imperial Seal\", \"Coalition Relic\", \"Mishra's Bauble\", \"Daze\", \"Mystic Confluence\", \"Time Warp\", \"Questing Beast\"], \"x\": [1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], \"y\": [0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.33333333333333337, 0.16666666666666663, 0.16666666666666663, 0.16666666666666663, 0.16666666666666663, 0.16666666666666663, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.11111111111111105, -0.16666666666666663, -0.16666666666666663, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.3333333333333333, -0.6666666666666666, -0.6666666666666666, -0.6666666666666666, -0.6666666666666666], \"type\": \"scatter\"}], \"layout\": {\"template\": {\"data\": {\"histogram2dcontour\": [{\"type\": \"histogram2dcontour\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"choropleth\": [{\"type\": \"choropleth\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}], \"histogram2d\": [{\"type\": \"histogram2d\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"heatmap\": [{\"type\": \"heatmap\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"contourcarpet\": [{\"type\": \"contourcarpet\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}], \"contour\": [{\"type\": \"contour\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"surface\": [{\"type\": \"surface\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"mesh3d\": [{\"type\": \"mesh3d\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}], \"scatter\": [{\"fillpattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}, \"type\": \"scatter\"}], \"parcoords\": [{\"type\": \"parcoords\", \"line\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatterpolargl\": [{\"type\": \"scatterpolargl\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"bar\": [{\"error_x\": {\"color\": \"#2a3f5f\"}, \"error_y\": {\"color\": \"#2a3f5f\"}, \"marker\": {\"line\": {\"color\": \"#E5ECF6\", \"width\": 0.5}, \"pattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}}, \"type\": \"bar\"}], \"scattergeo\": [{\"type\": \"scattergeo\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatterpolar\": [{\"type\": \"scatterpolar\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"histogram\": [{\"marker\": {\"pattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}}, \"type\": \"histogram\"}], \"scattergl\": [{\"type\": \"scattergl\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatter3d\": [{\"type\": \"scatter3d\", \"line\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}, \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scattermap\": [{\"type\": \"scattermap\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scattermapbox\": [{\"type\": \"scattermapbox\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatterternary\": [{\"type\": \"scatterternary\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scattercarpet\": [{\"type\": \"scattercarpet\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"carpet\": [{\"aaxis\": {\"endlinecolor\": \"#2a3f5f\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"minorgridcolor\": \"white\", \"startlinecolor\": \"#2a3f5f\"}, \"baxis\": {\"endlinecolor\": \"#2a3f5f\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"minorgridcolor\": \"white\", \"startlinecolor\": \"#2a3f5f\"}, \"type\": \"carpet\"}], \"table\": [{\"cells\": {\"fill\": {\"color\": \"#EBF0F8\"}, \"line\": {\"color\": \"white\"}}, \"header\": {\"fill\": {\"color\": \"#C8D4E3\"}, \"line\": {\"color\": \"white\"}}, \"type\": \"table\"}], \"barpolar\": [{\"marker\": {\"line\": {\"color\": \"#E5ECF6\", \"width\": 0.5}, \"pattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}}, \"type\": \"barpolar\"}], \"pie\": [{\"automargin\": true, \"type\": \"pie\"}]}, \"layout\": {\"autotypenumbers\": \"strict\", \"colorway\": [\"#636efa\", \"#EF553B\", \"#00cc96\", \"#ab63fa\", \"#FFA15A\", \"#19d3f3\", \"#FF6692\", \"#B6E880\", \"#FF97FF\", \"#FECB52\"], \"font\": {\"color\": \"#2a3f5f\"}, \"hovermode\": \"closest\", \"hoverlabel\": {\"align\": \"left\"}, \"paper_bgcolor\": \"white\", \"plot_bgcolor\": \"#E5ECF6\", \"polar\": {\"bgcolor\": \"#E5ECF6\", \"angularaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}, \"radialaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}}, \"ternary\": {\"bgcolor\": \"#E5ECF6\", \"aaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}, \"baxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}, \"caxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}}, \"coloraxis\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}, \"colorscale\": {\"sequential\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]], \"sequentialminus\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]], \"diverging\": [[0, \"#8e0152\"], [0.1, \"#c51b7d\"], [0.2, \"#de77ae\"], [0.3, \"#f1b6da\"], [0.4, \"#fde0ef\"], [0.5, \"#f7f7f7\"], [0.6, \"#e6f5d0\"], [0.7, \"#b8e186\"], [0.8, \"#7fbc41\"], [0.9, \"#4d9221\"], [1, \"#276419\"]]}, \"xaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\", \"title\": {\"standoff\": 15}, \"zerolinecolor\": \"white\", \"automargin\": true, \"zerolinewidth\": 2}, \"yaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\", \"title\": {\"standoff\": 15}, \"zerolinecolor\": \"white\", \"automargin\": true, \"zerolinewidth\": 2}, \"scene\": {\"xaxis\": {\"backgroundcolor\": \"#E5ECF6\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"showbackground\": true, \"ticks\": \"\", \"zerolinecolor\": \"white\", \"gridwidth\": 2}, \"yaxis\": {\"backgroundcolor\": \"#E5ECF6\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"showbackground\": true, \"ticks\": \"\", \"zerolinecolor\": \"white\", \"gridwidth\": 2}, \"zaxis\": {\"backgroundcolor\": \"#E5ECF6\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"showbackground\": true, \"ticks\": \"\", \"zerolinecolor\": \"white\", \"gridwidth\": 2}}, \"shapedefaults\": {\"line\": {\"color\": \"#2a3f5f\"}}, \"annotationdefaults\": {\"arrowcolor\": \"#2a3f5f\", \"arrowhead\": 0, \"arrowwidth\": 1}, \"geo\": {\"bgcolor\": \"white\", \"landcolor\": \"#E5ECF6\", \"subunitcolor\": \"white\", \"showland\": true, \"showlakes\": true, \"lakecolor\": \"white\"}, \"title\": {\"x\": 0.05}, \"mapbox\": {\"style\": \"light\"}}}, \"title\": {\"text\": \"Card Performance vs Popularity\"}, \"xaxis\": {\"title\": {\"text\": \"Appearances in Decks\"}}, \"yaxis\": {\"title\": {\"text\": \"Performance Delta (%)\"}}, \"hovermode\": \"closest\"}}", "color_performance": "{\"data\": [{\"customdata\": [[0.75, 37.5], [0.6470588235294118, 75.0], [0.6666666666666666, 50.0], [0.8666666666666667, 62.5], [0.625, 37.5]], \"hovertemplate\": \"<b>%{x}</b><br>Performance Delta: %{y:+.1%}<br>Win Rate: %{customdata[0]:.1%}<br>Deck Usage: %{customdata[1]:.1f}%<br><extra></extra>\", \"marker\": {\"color\": [\"#FFFBD5\", \"#0E68AB\", \"#150B00\", \"#D3202A\", \"#00733E\"]}, \"text\": [\"+5.4%\", \"-4.9%\", \"-2.9%\", \"+17.1%\", \"-7.1%\"], \"textposition\": \"auto\", \"x\": [\"White\", \"Blue\", \"Black\", \"Red\", \"Green\"], \"y\": [0.05434782608695654, -0.04859335038363166, -0.02898550724637683, 0.17101449275362324, -0.07065217391304346], \"type\": \"bar\"}], \"layout\": {\"template\": {\"data\": {\"histogram2dcontour\": [{\"type\": \"histogram2dcontour\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"choropleth\": [{\"type\": \"choropleth\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}], \"histogram2d\": [{\"type\": \"histogram2d\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"heatmap\": [{\"type\": \"heatmap\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"contourcarpet\": [{\"type\": \"contourcarpet\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}], \"contour\": [{\"type\": \"contour\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"surface\": [{\"type\": \"surface\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}, \"colorscale\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]]}], \"mesh3d\": [{\"type\": \"mesh3d\", \"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}], \"scatter\": [{\"fillpattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}, \"type\": \"scatter\"}], \"parcoords\": [{\"type\": \"parcoords\", \"line\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatterpolargl\": [{\"type\": \"scatterpolargl\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"bar\": [{\"error_x\": {\"color\": \"#2a3f5f\"}, \"error_y\": {\"color\": \"#2a3f5f\"}, \"marker\": {\"line\": {\"color\": \"#E5ECF6\", \"width\": 0.5}, \"pattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}}, \"type\": \"bar\"}], \"scattergeo\": [{\"type\": \"scattergeo\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatterpolar\": [{\"type\": \"scatterpolar\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"histogram\": [{\"marker\": {\"pattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}}, \"type\": \"histogram\"}], \"scattergl\": [{\"type\": \"scattergl\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatter3d\": [{\"type\": \"scatter3d\", \"line\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}, \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scattermap\": [{\"type\": \"scattermap\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scattermapbox\": [{\"type\": \"scattermapbox\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scatterternary\": [{\"type\": \"scatterternary\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"scattercarpet\": [{\"type\": \"scattercarpet\", \"marker\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}}], \"carpet\": [{\"aaxis\": {\"endlinecolor\": \"#2a3f5f\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"minorgridcolor\": \"white\", \"startlinecolor\": \"#2a3f5f\"}, \"baxis\": {\"endlinecolor\": \"#2a3f5f\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"minorgridcolor\": \"white\", \"startlinecolor\": \"#2a3f5f\"}, \"type\": \"carpet\"}], \"table\": [{\"cells\": {\"fill\": {\"color\": \"#EBF0F8\"}, \"line\": {\"color\": \"white\"}}, \"header\": {\"fill\": {\"color\": \"#C8D4E3\"}, \"line\": {\"color\": \"white\"}}, \"type\": \"table\"}], \"barpolar\": [{\"marker\": {\"line\": {\"color\": \"#E5ECF6\", \"width\": 0.5}, \"pattern\": {\"fillmode\": \"overlay\", \"size\": 10, \"solidity\": 0.2}}, \"type\": \"barpolar\"}], \"pie\": [{\"automargin\": true, \"type\": \"pie\"}]}, \"layout\": {\"autotypenumbers\": \"strict\", \"colorway\": [\"#636efa\", \"#EF553B\", \"#00cc96\", \"#ab63fa\", \"#FFA15A\", \"#19d3f3\", \"#FF6692\", \"#B6E880\", \"#FF97FF\", \"#FECB52\"], \"font\": {\"color\": \"#2a3f5f\"}, \"hovermode\": \"closest\", \"hoverlabel\": {\"align\": \"left\"}, \"paper_bgcolor\": \"white\", \"plot_bgcolor\": \"#E5ECF6\", \"polar\": {\"bgcolor\": \"#E5ECF6\", \"angularaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}, \"radialaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}}, \"ternary\": {\"bgcolor\": \"#E5ECF6\", \"aaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}, \"baxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}, \"caxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\"}}, \"coloraxis\": {\"colorbar\": {\"outlinewidth\": 0, \"ticks\": \"\"}}, \"colorscale\": {\"sequential\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]], \"sequentialminus\": [[0.0, \"#0d0887\"], [0.1111111111111111, \"#46039f\"], [0.2222222222222222, \"#7201a8\"], [0.3333333333333333, \"#9c179e\"], [0.4444444444444444, \"#bd3786\"], [0.5555555555555556, \"#d8576b\"], [0.6666666666666666, \"#ed7953\"], [0.7777777777777778, \"#fb9f3a\"], [0.8888888888888888, \"#fdca26\"], [1.0, \"#f0f921\"]], \"diverging\": [[0, \"#8e0152\"], [0.1, \"#c51b7d\"], [0.2, \"#de77ae\"], [0.3, \"#f1b6da\"], [0.4, \"#fde0ef\"], [0.5, \"#f7f7f7\"], [0.6, \"#e6f5d0\"], [0.7, \"#b8e186\"], [0.8, \"#7fbc41\"], [0.9, \"#4d9221\"], [1, \"#276419\"]]}, \"xaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\", \"title\": {\"standoff\": 15}, \"zerolinecolor\": \"white\", \"automargin\": true, \"zerolinewidth\": 2}, \"yaxis\": {\"gridcolor\": \"white\", \"linecolor\": \"white\", \"ticks\": \"\", \"title\": {\"standoff\": 15}, \"zerolinecolor\": \"white\", \"automargin\": true, \"zerolinewidth\": 2}, \"scene\": {\"xaxis\": {\"backgroundcolor\": \"#E5ECF6\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"showbackground\": true, \"ticks\": \"\", \"zerolinecolor\": \"white\", \"gridwidth\": 2}, \"yaxis\": {\"backgroundcolor\": \"#E5ECF6\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"showbackground\": true, \"ticks\": \"\", \"zerolinecolor\": \"white\", \"gridwidth\": 2}, \"zaxis\": {\"backgroundcolor\": \"#E5ECF6\", \"gridcolor\": \"white\", \"linecolor\": \"white\", \"showbackground\": true, \"ticks\": \"\", \"zerolinecolor\": \"white\", \"gridwidth\": 2}}, \"shapedefaults\": {\"line\": {\"color\": \"#2a3f5f\"}}, \"annotationdefaults\": {\"arrowcolor\": \"#2a3f5f\", \"arrowhead\": 0, \"arrowwidth\": 1}, \"geo\": {\"bgcolor\": \"white\", \"landcolor\": \"#E5ECF6\", \"subunitcolor\": \"white\", \"showland\": true, \"showlakes\": true, \"lakecolor\": \"white\"}, \"title\": {\"x\": 0.05}, \"mapbox\": {\"style\": \"light\"}}}, \"yaxis\": {\"title\": {\"text\": \"Performance Delta\"}, \"tickformat\": \"+.1%\"}, \"title\": {\"text\": \"Color Performance Analysis\"}, \"xaxis\": {\"title\": {\"text\": \"Magic Colors\"}}, \"showlegend\": false, \"shapes\": [{\"line\": {\"color\": \"gray\", \"dash\": \"dash\"}, \"opacity\": 0.5, \"type\": \"line\", \"x0\": 0, \"x1\": 1, \"xref\": \"x domain\", \"y0\": 0, \"y1\": 0, \"yref\": \"y\"}]}}"}};
+        
+        // Load detailed analysis data
+        function loadDetailedAnalysis() {
+            try {
+                displayDetailedAnalysis(embeddedData);
+                loadDetailedChart();
+                hideLoading();
+            } catch (error) {
+                showError('Failed to load analysis data: ' + error.message);
+            }
+        }
+        
+        function displayDetailedAnalysis(data) {
+            if (analysisType === 'performance') {
+                displayPerformanceAnalysis(data.card_performances);
+            } else if (analysisType === 'synergies') {
+                displaySynergyAnalysis(data.synergies);
+            }
+            
+            document.getElementById('data-section').style.display = 'block';
+        }
+        
+        function displayPerformanceAnalysis(performances) {
+            const topPerformers = performances.filter(p => p.performance_delta > 0).slice(0, 25);
+            const underperformers = performances.filter(p => p.performance_delta < -0.05 && p.appearances >= 3);
+            
+            let html = '<h3>Top Performing Cards</h3>';
+            html += '<table class="table"><thead><tr><th>Card Name</th><th>Appearances</th><th>Win Rate</th><th>Performance Delta</th><th>Record</th></tr></thead><tbody>';
+            
+            topPerformers.forEach(card => {
+                const delta = card.performance_delta >= 0 ? `+${(card.performance_delta * 100).toFixed(1)}%` : `${(card.performance_delta * 100).toFixed(1)}%`;
+                html += `<tr>
+                    <td><strong>${card.name}</strong></td>
+                    <td>${card.appearances}</td>
+                    <td>${(card.win_rate * 100).toFixed(1)}%</td>
+                    <td class="${card.performance_delta >= 0 ? 'positive' : 'negative'}">${delta}</td>
+                    <td>${card.wins}-${card.losses}</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            
+            if (underperformers.length > 0) {
+                html += '<h3 style="margin-top: 2rem;">Underperforming Cards</h3>';
+                html += '<table class="table"><thead><tr><th>Card Name</th><th>Appearances</th><th>Win Rate</th><th>Performance Delta</th><th>Record</th></tr></thead><tbody>';
+                
+                underperformers.forEach(card => {
+                    const delta = `${(card.performance_delta * 100).toFixed(1)}%`;
+                    html += `<tr>
+                        <td><strong>${card.name}</strong></td>
+                        <td>${card.appearances}</td>
+                        <td>${(card.win_rate * 100).toFixed(1)}%</td>
+                        <td class="negative">${delta}</td>
+                        <td>${card.wins}-${card.losses}</td>
+                    </tr>`;
+                });
+                
+                html += '</tbody></table>';
+            }
+            
+            document.getElementById('detailed-data').innerHTML = html;
+        }
+        
+        function displaySynergyAnalysis(synergies) {
+            let html = '<h3>Card Synergies</h3>';
+            html += '<table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Together Win Rate</th><th>Synergy Bonus</th><th>Together Record</th></tr></thead><tbody>';
+            
+            synergies.forEach(synergy => {
+                const bonus = synergy.synergy_bonus >= 0 ? `+${(synergy.synergy_bonus * 100).toFixed(1)}%` : `${(synergy.synergy_bonus * 100).toFixed(1)}%`;
+                html += `<tr>
+                    <td><strong>${synergy.card1}</strong></td>
+                    <td><strong>${synergy.card2}</strong></td>
+                    <td>${(synergy.together_win_rate * 100).toFixed(1)}%</td>
+                    <td class="${synergy.synergy_bonus >= 0 ? 'positive' : 'negative'}">${bonus}</td>
+                    <td>${synergy.together_wins}-${synergy.together_losses}</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('detailed-data').innerHTML = html;
+        }
+        
+        function loadDetailedChart() {
+            const chartType = getChartType(analysisType);
+            if (!chartType) return;
+            
+            try {
+                // Use embedded chart data
+                const chartData = JSON.parse(embeddedData.charts[chartType]);
+                
+                // Make the chart larger for detailed view
+                chartData.layout.height = 500;
+                chartData.layout.margin = { l: 80, r: 80, t: 80, b: 80 };
+                
+                Plotly.newPlot('detailed-chart', chartData.data, chartData.layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+                
+                document.getElementById('chart-section').style.display = 'block';
+            } catch (error) {
+                console.error('Failed to load chart:', error);
+            }
+        }
+        
+        function getChartType(analysisType) {
+            const mapping = {
+                'performance': 'performance_scatter'
+            };
+            return mapping[analysisType];
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function showError(message) {
+            document.getElementById('error').innerHTML = message;
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function goBackToDashboard() {
+            // Go back to dashboard
+            window.location.href = 'index.html';
+        }
+        
+        // Load the analysis when page loads
+        document.addEventListener('DOMContentLoaded', loadDetailedAnalysis);
+    </script>
+</body>
+</html>

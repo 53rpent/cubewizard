@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CubeWizard Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .clickable-title {
+            cursor: pointer;
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        
+        .clickable-title:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .cube-selector {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .cube-selector select {
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            background: white;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card h3 {
+            margin-bottom: 1rem;
+            color: #667eea;
+            font-size: 1.25rem;
+        }
+        
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .positive {
+            color: #28a745;
+        }
+        
+        .negative {
+            color: #dc3545;
+        }
+        
+        .chart-container {
+            height: 400px;
+            margin-top: 1rem;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 4px;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .footer {
+            background: white;
+            border-top: 1px solid #eee;
+            padding: 2rem;
+            margin-top: 4rem;
+            text-align: center;
+            color: #666;
+        }
+        
+        .footer p {
+            margin-bottom: 0.5rem;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .footer .timestamp {
+            font-size: 0.875rem;
+            color: #999;
+        }
+        
+        .warning-banner {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            color: #856404;
+            display: none;
+        }
+        
+        .warning-banner h4 {
+            margin: 0 0 0.5rem 0;
+            color: #b08800;
+            font-size: 1.1rem;
+        }
+        
+        .warning-banner p {
+            margin: 0;
+            line-height: 1.4;
+        }
+        
+        .warning-icon {
+            font-size: 1.2rem;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CubeWizard Dashboard</h1>
+        <p>Comprehensive analytics for cube owners</p>
+    </div>
+    
+    <div class="container">
+        <div class="cube-selector">
+            <label for="cube-select"><strong>Select Cube:</strong></label>
+            <select id="cube-select" onchange="loadDashboard()">
+                <option value="">Choose a cube...</option>
+                {% for cube in cubes %}
+                <option value="{{ cube.cube_id }}" {% if selected_cube == cube.cube_id %}selected{% endif %}>{{ cube.cube_id }} ({{ cube.total_decks }} decks)</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div id="dashboard-content" style="display: none;">
+            <div id="warning-banner" class="warning-banner">
+                <h4><span class="warning-icon">⚠️</span>Small Dataset Warning</h4>
+                <p>This cube has fewer than 30 decks. Statistical insights may be less reliable. Consider collecting more deck data for more accurate analysis.</p>
+            </div>
+            
+            <div class="stats-overview" id="stats-overview">
+                <!-- Stats will be populated by JavaScript -->
+            </div>
+            
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('performance')">Performance vs Popularity</a></h3>
+                    <div id="performance-chart" class="chart-container"></div>
+                </div>
+                
+                <div class="card">
+                    <h3>Color Performance</h3>
+                    <div id="color-chart" class="chart-container"></div>
+                </div>
+                
+                <div class="card">
+                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('performance')">Top Performing Cards</a></h3>
+                    <div id="top-cards"></div>
+                </div>
+                
+                <div class="card">
+                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('performance')">Underperforming Cards</a></h3>
+                    <div id="bottom-cards"></div>
+                </div>
+                
+                <div class="card">
+                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('synergies')">Best Synergies</a></h3>
+                    <div id="synergies"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            Loading dashboard data...
+        </div>
+        
+        <div id="error" class="error" style="display: none;">
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p class="timestamp">Last updated: <span id="timestamp">{{ timestamp }}</span></p>
+    </div>
+    
+    <script>
+        let currentCubeId = '';
+        
+        function loadDashboard() {
+            const select = document.getElementById('cube-select');
+            const cubeId = select.value;
+            
+            if (!cubeId) {
+                document.getElementById('dashboard-content').style.display = 'none';
+                return;
+            }
+            
+            currentCubeId = cubeId;
+            showLoading();
+            
+            // Load dashboard data
+            fetch(`/api/dashboard/${cubeId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    populateDashboard(data);
+                    loadCharts();
+                    hideLoading();
+                })
+                .catch(error => {
+                    showError('Failed to load dashboard data: ' + error.message);
+                });
+        }
+        
+        function populateDashboard(data) {
+            // Update stats overview
+            const statsHtml = `
+                <div class="stat-item">
+                    <div class="stat-value">${data.cube_info.total_decks}</div>
+                    <div class="stat-label">Total Decks</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${data.card_performances.length}</div>
+                    <div class="stat-label">Unique Cards</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${data.synergies.length}</div>
+                    <div class="stat-label">Synergies Found</div>
+                </div>
+            `;
+            document.getElementById('stats-overview').innerHTML = statsHtml;
+            
+            // Top performing cards
+            const topCards = data.card_performances
+                .filter(c => c.performance_delta > 0)
+                .slice(0, 5);
+            
+            const topCardsHtml = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Card</th>
+                            <th>Apps</th>
+                            <th>Win Rate</th>
+                            <th>Δ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${topCards.map(card => `
+                            <tr>
+                                <td>${card.name}</td>
+                                <td>${card.appearances}</td>
+                                <td>${(card.win_rate * 100).toFixed(1)}%</td>
+                                <td class="positive">+${(card.performance_delta * 100).toFixed(1)}%</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('top-cards').innerHTML = topCardsHtml;
+            
+            // Underperforming cards
+            const bottomCards = data.card_performances
+                .filter(c => c.performance_delta < -0.05 && c.appearances >= 3)
+                .slice(-5);
+            
+            const bottomCardsHtml = bottomCards.length > 0 ? `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Card</th>
+                            <th>Apps</th>
+                            <th>Win Rate</th>
+                            <th>Δ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${bottomCards.map(card => `
+                            <tr>
+                                <td>${card.name}</td>
+                                <td>${card.appearances}</td>
+                                <td>${(card.win_rate * 100).toFixed(1)}%</td>
+                                <td class="negative">${(card.performance_delta * 100).toFixed(1)}%</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            ` : '<p>No significantly underperforming cards found.</p>';
+            document.getElementById('bottom-cards').innerHTML = bottomCardsHtml;
+            
+            // Synergies
+            const synergiesHtml = data.synergies.length > 0 ? `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Card 1</th>
+                            <th>Card 2</th>
+                            <th>Together</th>
+                            <th>Bonus</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.synergies.slice(0, 8).map(synergy => `
+                            <tr>
+                                <td>${synergy.card1}</td>
+                                <td>${synergy.card2}</td>
+                                <td>${(synergy.together_win_rate * 100).toFixed(1)}%</td>
+                                <td class="${synergy.synergy_bonus >= 0 ? 'positive' : 'negative'}">
+                                    ${synergy.synergy_bonus >= 0 ? '+' : ''}${(synergy.synergy_bonus * 100).toFixed(1)}%
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            ` : '<p>Not enough data for synergy analysis.</p>';
+            document.getElementById('synergies').innerHTML = synergiesHtml;
+            
+            document.getElementById('dashboard-content').style.display = 'block';
+        }
+        
+        function loadCharts() {
+            const charts = ['performance_scatter', 'color_performance'];
+            
+            charts.forEach(chartType => {
+                fetch(`/api/charts/${currentCubeId}/${chartType}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            console.error('Chart error:', data.error);
+                            return;
+                        }
+                        
+                        const chartData = JSON.parse(data.chart);
+                        const containerId = getChartContainerId(chartType);
+                        
+                        Plotly.newPlot(containerId, chartData.data, chartData.layout, {
+                            responsive: true,
+                            displayModeBar: false
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Failed to load chart:', chartType, error);
+                    });
+            });
+        }
+        
+        function getChartContainerId(chartType) {
+            const mapping = {
+                'performance_scatter': 'performance-chart',
+                'color_performance': 'color-chart'
+            };
+            return mapping[chartType];
+        }
+        
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('dashboard-content').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function showError(message) {
+            document.getElementById('error').innerHTML = message;
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard-content').style.display = 'none';
+        }
+        
+        function openDetailedAnalysis(analysisType) {
+            if (currentCubeId) {
+                window.location.href = `/analysis/${currentCubeId}/${analysisType}`;
+            }
+        }
+        
+        // Auto-load dashboard if cube is pre-selected
+        document.addEventListener('DOMContentLoaded', function() {
+            const select = document.getElementById('cube-select');
+            if (select.value) {
+                loadDashboard();
+            }
+        });
+    </script>
+</body>
+</html>
