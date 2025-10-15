@@ -56,7 +56,7 @@ masv_data/
 masv_imported/
 *.log
 
-# Static dashboard (generated content - uncomment to ignore)
+# Static dashboard
 static_dashboard/
 
 # Configuration files with sensitive data
