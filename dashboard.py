@@ -72,7 +72,8 @@ class CubeDashboard:
     
     def get_display_name(self) -> str:
         """Get the human-readable display name for this cube."""
-        return self.cube_mapper.get_cube_name(self.cube_id)
+        name = self.cube_mapper.get_cube_name(self.cube_id)
+        return name if name is not None else self.cube_id
         
     def _load_cube_data(self) -> Dict[str, Any]:
         """Load all cube data from database."""
@@ -95,7 +96,13 @@ class CubeDashboard:
     
     def generate_card_performance_analysis(self) -> List[CardPerformance]:
         """Analyze individual card performance."""
-        card_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'appearances': 0, 'deck_win_rates': []})
+        from typing import Dict, List, Any
+        card_stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+            'wins': 0, 
+            'losses': 0, 
+            'appearances': 0, 
+            'deck_win_rates': []
+        })
         
         # Collect data for each card
         for deck_id, deck_data in self.cube_data['deck_details'].items():
@@ -375,7 +382,7 @@ class CubeDashboard:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = Path(config.get_output_directory()) / "reports"
             output_dir.mkdir(exist_ok=True)
-            output_path = output_dir / f"dashboard_{self.cube_id}_{timestamp}.txt"
+            output_path = str(output_dir / f"dashboard_{self.cube_id}_{timestamp}.txt")
         
         report = self.generate_dashboard_report()
         

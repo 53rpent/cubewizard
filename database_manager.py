@@ -27,7 +27,7 @@ class DatabaseManager:
         """
         if db_path is None:
             output_dir = Path(config.get_output_directory())
-            db_path = output_dir / "cubewizard.db"
+            db_path = str(output_dir / "cubewizard.db")
         
         self.db_path = str(db_path)
         self._ensure_database_exists()

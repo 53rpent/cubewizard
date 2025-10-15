@@ -178,6 +178,7 @@ class ImageProcessor:
         Returns:
             Degrees of clockwise rotation needed (0, 90, 180, or 270).
         """
+        processed_image_path = image_path  # Initialize to avoid unbound variable errors
         try:
             # Step 1: Convert image to OpenAI-compatible format if needed
             processed_image_path = self._convert_to_compatible_format(image_path)
@@ -206,16 +207,18 @@ class ImageProcessor:
             - reasoning: Brief explanation of key indicators you used
             """
             
+            # Type ignore for OpenAI responses API parameter structure
             response = self.client.responses.parse(
                 model=config.get_vision_model(),
                 input=[
                     {
+                        "type": "message",
                         "role": "user", 
                         "content": [
                             {"type": "input_text", "text": orientation_prompt},
                             {"type": "input_image", "image_url": f"data:image/jpeg;base64,{base64_image}"}
                         ]
-                    }
+                    }  # type: ignore
                 ],
                 reasoning={"effort": "medium"},
                 text_format=OrientationResult,
@@ -224,21 +227,24 @@ class ImageProcessor:
             
             result = response.output_parsed
             
-
-            print(f"Orientation detection: {result.rotation_needed}° rotation needed ({result.confidence} confidence)")
-            if result.reasoning:
-                print(f"Reasoning: {result.reasoning}")
-            
-            # Clean up temporary converted file
-            if processed_image_path != image_path:
-                try:
-                    import os
-                    os.remove(processed_image_path)
-                    print(f"Cleaned up temporary file: {processed_image_path}")
-                except Exception as e:
-                    print(f"Warning: Could not clean up temporary file {processed_image_path}: {e}")
+            if result:
+                print(f"Orientation detection: {result.rotation_needed}° rotation needed ({result.confidence} confidence)")
+                if result.reasoning:
+                    print(f"Reasoning: {result.reasoning}")
                 
-            return result.rotation_needed
+                # Clean up temporary converted file
+                if processed_image_path != image_path:
+                    try:
+                        import os
+                        os.remove(processed_image_path)
+                        print(f"Cleaned up temporary file: {processed_image_path}")
+                    except Exception as e:
+                        print(f"Warning: Could not clean up temporary file {processed_image_path}: {e}")
+                    
+                return result.rotation_needed
+            else:
+                print("No orientation result returned from API")
+                return 0
                 
         except Exception as e:
             print(f"Error detecting orientation: {e}")
@@ -246,15 +252,13 @@ class ImageProcessor:
             
             # Clean up temporary converted file in case of error
             try:
-                if 'processed_image_path' in locals() and processed_image_path != image_path:
+                if processed_image_path and processed_image_path != image_path:
                     import os
                     os.remove(processed_image_path)
                     print(f"Cleaned up temporary file: {processed_image_path}")
             except Exception as cleanup_error:
                 print(f"Warning: Could not clean up temporary file: {cleanup_error}")
             
-            print(f"{response}")
-            raise SystemExit("Exiting due to an error.")
             return 0
     
     def rotate_and_save_image(self, image_path: str, rotation_degrees: int, output_path: Optional[str] = None) -> str:
@@ -494,18 +498,20 @@ class ImageProcessor:
             
             reasoning_effort = config.get_reasoning_effort()
             
-            response = self.client.responses.parse(
+            # Type ignore for OpenAI responses API parameter structure
+            response = self.client.responses.parse(  # pyright: ignore
                 model=model,
                 input=[
                     {
+                        "type": "message",
                         "role": "user",
                         "content": [
                             {"type": "input_text", "text": prompt},
                             {"type": "input_image", "image_url": f"data:image/jpeg;base64,{base64_image}"}
                         ]
-                    }
+                    } # type: ignore
                 ],
-                reasoning={"effort": reasoning_effort},
+                reasoning={"effort": reasoning_effort}, # type: ignore
                 text_format=CardExtractionResult,
                 max_output_tokens=max_tokens
             )

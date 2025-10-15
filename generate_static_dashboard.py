@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import shutil
 import re
+from typing import Optional
 from dashboard import CubeDashboard
 from database_manager import DatabaseManager
 from config_manager import config
@@ -67,7 +68,7 @@ class StaticDashboardGenerator:
         
         return result
         
-    def generate_dashboard(self, cube_id: str = None) -> str:
+    def generate_dashboard(self, cube_id: Optional[str] = None) -> str:
         """
         Generate static dashboard for all cubes or a specific cube.
         

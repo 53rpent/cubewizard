@@ -372,7 +372,7 @@ class CubeWizard:
         
         if not card_names:
             print("No card names were extracted from the image.")
-            return None
+            return ""
         
         print(f"Extracted {len(card_names)} card names")
         
@@ -513,7 +513,7 @@ class CubeWizard:
         """
         if not card_names:
             print("No card names provided.")
-            return None
+            return ""
         
         # Collect deck metadata
         deck_metadata = self.collect_deck_metadata()
