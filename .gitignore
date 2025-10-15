@@ -57,7 +57,7 @@ masv_imported/
 *.log
 
 # Static dashboard (generated content - uncomment to ignore)
-# static_dashboard/
+static_dashboard/
 
 # Configuration files with sensitive data
 config.ini
@@ -66,6 +66,3 @@ config.ini
 tmp/
 temp/
 *.tmp
-
-# Cube mapping CSV (may contain personal cube names)
-# cube_mapping.csv
