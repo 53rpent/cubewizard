@@ -51,6 +51,7 @@
             max-width: 1400px;
             margin: 2rem auto;
             padding: 0 1rem;
+            align-items: center;
         }
         
         .description {
@@ -75,10 +76,26 @@
         .chart-container {
             background: white;
             border-radius: 8px;
-            padding: 2rem;
+            padding: 0.5rem;
             margin-bottom: 2rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             min-height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #detailed-chart {
+            width: 100%;
+            flex: 1;
+            min-height: 580px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        /* Ensure Plotly chart is centered */
+        #detailed-chart .plotly-graph-div {
+            margin: 0 auto !important;
         }
         
         .data-container {
@@ -314,13 +331,39 @@
                 // Use embedded chart data
                 const chartData = JSON.parse(embeddedData.charts[chartType]);
                 
-                // Make the chart larger for detailed view
-                chartData.layout.height = 500;
-                chartData.layout.margin = { l: 80, r: 80, t: 80, b: 80 };
+                // Make the chart fill the container better and center it
+                const containerWidth = document.getElementById('detailed-chart').clientWidth;
+                chartData.layout.width = containerWidth;
+                chartData.layout.height = 560;
+                chartData.layout.margin = { l: 60, r: 60, t: 40, b: 60 };
+                chartData.layout.autosize = false;  // Disable autosize to use explicit width
+                
+                // Center the plot area
+                chartData.layout.xaxis = chartData.layout.xaxis || {};
+                chartData.layout.yaxis = chartData.layout.yaxis || {};
+                chartData.layout.xaxis.automargin = true;
+                chartData.layout.yaxis.automargin = true;
                 
                 Plotly.newPlot('detailed-chart', chartData.data, chartData.layout, {
-                    responsive: true,
-                    displayModeBar: true
+                    responsive: false,  // Disable responsive to prevent auto-resizing
+                    displayModeBar: true,
+                    useResizeHandler: false
+                }).then(function() {
+                    // Ensure chart is centered after rendering
+                    const plotDiv = document.getElementById('detailed-chart');
+                    const plotlyDiv = plotDiv.querySelector('.plotly-graph-div');
+                    if (plotlyDiv) {
+                        plotlyDiv.style.margin = '0 auto';
+                        plotlyDiv.style.display = 'block';
+                    }
+                    
+                    // Add resize handler to maintain proper width
+                    window.addEventListener('resize', function() {
+                        const newWidth = document.getElementById('detailed-chart').clientWidth;
+                        Plotly.relayout('detailed-chart', {
+                            width: newWidth
+                        });
+                    });
                 });
                 
                 document.getElementById('chart-section').style.display = 'block';
@@ -331,7 +374,9 @@
         
         function getChartType(analysisType) {
             const mapping = {
-                'performance': 'performance_scatter'
+                'performance': 'performance_scatter',
+                'color': 'detailed_color_performance',
+                'synergies': 'performance_scatter'
             };
             return mapping[analysisType];
         }

@@ -40,9 +40,11 @@ class StaticDashboardGenerator:
         """Process template content for static generation by replacing variables."""
         result = template_content
         
-        # Replace simple {{ variable }} patterns
+        # First, replace simple {{ variable }} patterns exactly
         for key, value in variables.items():
-            result = re.sub(rf'\{{\{{\s*{key}\s*\}}\}}', str(value), result)
+            pattern = f'{{{{{key}}}}}'
+            if pattern in result:
+                result = result.replace(pattern, str(value))
         
         # Handle nested object access like {{ analysis_info.title }}
         def replace_nested(match):
@@ -63,8 +65,9 @@ class StaticDashboardGenerator:
             except:
                 return ''
         
-        # Replace nested patterns
-        result = re.sub(r'\{{\s*([^}]+)\s*\}}', replace_nested, result)
+        # Replace nested patterns more carefully - only match template-like patterns
+        # Use a more restrictive regex that doesn't match JSON-like content
+        result = re.sub(r'\{{\s*([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\s*\}}', replace_nested, result)
         
         return result
         
@@ -126,9 +129,11 @@ class StaticDashboardGenerator:
         synergies = dashboard.generate_card_synergies()
         
         # Generate charts
+        color_analysis = dashboard.generate_color_performance_analysis()
         charts = {
             'performance_scatter': self._generate_performance_chart(card_performances),
-            'color_performance': self._generate_color_chart(dashboard.generate_color_performance_analysis())
+            'color_performance': self._generate_color_chart(color_analysis),  # Original bar chart for main dashboard
+            'detailed_color_performance': self._generate_detailed_color_chart(color_analysis, dashboard)  # New scatter plot for detailed page
         }
         
         return {
@@ -154,6 +159,17 @@ class StaticDashboardGenerator:
                     'together_losses': s.together_losses
                 }
                 for s in synergies[:20]  # Top 20 synergies
+            ],
+            'color_analysis': [
+                {
+                    'color': color_name,
+                    'win_rate': round(stats['win_rate'], 3),
+                    'total_games': stats['wins'] + stats['losses'],
+                    'wins': stats['wins'],
+                    'losses': stats['losses'],
+                    'avg_cards_per_deck': round(stats.get('deck_percentage', 0) * 100, 1)
+                }
+                for color_name, stats in dashboard.generate_color_performance_analysis().items()
             ],
             'charts': charts
         }
@@ -191,8 +207,348 @@ class StaticDashboardGenerator:
         
         return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
     
-    def _generate_color_chart(self, color_analysis):
-        """Generate color performance chart JSON."""
+    def _generate_detailed_color_analysis_data(self, dashboard):
+        """Generate detailed deck-by-deck color analysis for scatter plots."""
+        if not dashboard.cube_data['cube_info']:
+            return {}
+        
+        try:
+            # Define Magic colors mapping from symbols to names
+            color_symbol_to_name = {
+                'W': 'White',
+                'U': 'Blue', 
+                'B': 'Black',
+                'R': 'Red',
+                'G': 'Green'
+            }
+            
+            # Initialize data structure for each color
+            color_data = {color_name: {'percentages': [], 'win_rates': []} 
+                         for color_name in color_symbol_to_name.values()}
+            
+            # Process each deck
+            for deck_id, deck_details in dashboard.cube_data['deck_details'].items():
+                deck_info = deck_details['deck_info']
+                deck_cards = deck_details['cards']
+                
+                # Get wins/losses with fallback to 0 if missing
+                wins = deck_info.get('match_wins', 0)
+                losses = deck_info.get('match_losses', 0)
+                total_games = wins + losses
+                
+                if total_games == 0:
+                    continue
+                    
+                deck_win_rate = wins / total_games
+                total_cards_in_deck = len(deck_cards)
+                
+                if total_cards_in_deck == 0:
+                    continue
+                
+                # Count cards of each color in this deck
+                color_counts = {color_name: 0 for color_name in color_symbol_to_name.values()}
+                
+                for card in deck_cards:
+                    # Each card should have a 'colors' field with color symbols
+                    card_colors = card.get('colors', [])
+                    if isinstance(card_colors, list):
+                        for color_symbol in card_colors:
+                            if color_symbol in color_symbol_to_name:
+                                color_counts[color_symbol_to_name[color_symbol]] += 1
+                
+                # Calculate percentage for each color and add to data
+                for color_name, count in color_counts.items():
+                    color_percentage = (count / total_cards_in_deck) * 100
+                    color_data[color_name]['percentages'].append(color_percentage)
+                    color_data[color_name]['win_rates'].append(deck_win_rate)
+            
+            return color_data
+            
+        except Exception as e:
+            print(f"Error generating detailed color analysis: {e}")
+            return {}
+    
+    def _generate_color_chart(self, color_analysis, dashboard=None):
+        """Generate original color performance bar chart JSON for main dashboard."""
+        return self._generate_original_color_chart(color_analysis)
+    
+    def _generate_detailed_color_chart(self, color_analysis, dashboard):
+        """Generate color performance chart JSON with scatter plots and smooth trend lines for detailed analysis."""
+        detailed_data = self._generate_detailed_color_analysis_data(dashboard)
+        
+        if not detailed_data or not any(detailed_data.values()):
+            # Empty chart if no data
+            fig = go.Figure()
+            fig.update_layout(
+                title='Color Performance Analysis',
+                xaxis_title='Color Percentage in Deck (%)',
+                yaxis_title='Deck Win Rate (%)',
+                annotations=[dict(text="Insufficient data for color analysis", 
+                                showarrow=False, x=0.5, y=0.5, xref="paper", yref="paper")]
+            )
+            return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        
+        # Define Magic color scheme
+        color_map = {
+            'White': '#FFFBD5',
+            'Blue': '#0E68AB', 
+            'Black': '#150B00',
+            'Red': '#D3202A',
+            'Green': '#00733E'
+        }
+        
+        fig = go.Figure()
+        
+        # Create a scatter plot with trend line for each color
+        for color_name, data in detailed_data.items():
+            if not data['percentages'] or not data['win_rates']:
+                continue
+                
+            # Filter out zero percentages for better visualization
+            filtered_data = [(p, w) for p, w in zip(data['percentages'], data['win_rates']) if p > 0]
+            if not filtered_data:
+                continue
+                
+            percentages, win_rates = zip(*filtered_data)
+            
+            # Add scatter plot
+            fig.add_trace(go.Scatter(
+                x=list(percentages),
+                y=[wr * 100 for wr in win_rates],  # Convert to percentage
+                mode='markers',
+                name=f'{color_name}',
+                marker=dict(
+                    color=color_map.get(color_name, '#888888'),
+                    size=8,
+                    opacity=0.7
+                ),
+                hovertemplate=f'<b>{color_name}</b><br>' +
+                             'Color %: %{x:.1f}%<br>' +
+                             'Win Rate: %{y:.1f}%<br>' +
+                             '<extra></extra>'
+            ))
+            
+            # Add smooth trend line if we have enough points
+            if len(percentages) >= 3:
+                try:
+                    import math  # For Gaussian calculations
+                    
+                    # Sort the data points by x-value for smooth interpolation
+                    x_vals = list(percentages)
+                    y_vals = [wr * 100 for wr in win_rates]
+                    sorted_data = sorted(zip(x_vals, y_vals))
+                    x_sorted, y_sorted = zip(*sorted_data)
+                    
+                    # Generate smooth curve using weighted interpolation
+                    x_min, x_max = min(x_vals), max(x_vals)
+                    x_range = x_max - x_min
+                    
+                    if x_range > 0:
+                        # More points for smoother curve
+                        num_points = 200
+                        x_trend = [x_min + i * x_range / (num_points - 1) for i in range(num_points)]
+                        
+                        # Use Gaussian-weighted interpolation for multi-peaked bell curve effect
+                        y_trend = []
+                        sigma = x_range * 0.15  # Controls the "width" of influence for each point
+                        
+                        for x_point in x_trend:
+                            # Gaussian-weighted average for smooth, bell-curve-like interpolation
+                            weights = []
+                            values = []
+                            
+                            for xi, yi in zip(x_sorted, y_sorted):
+                                distance = abs(x_point - xi)
+                                if distance == 0:
+                                    # Exact match
+                                    y_trend.append(yi)
+                                    break
+                                else:
+                                    # Gaussian weight creates bell-curve influence
+                                    # Each data point creates a "bell" of influence
+                                    import math
+                                    weight = math.exp(-(distance ** 2) / (2 * sigma ** 2))
+                                    weights.append(weight)
+                                    values.append(yi)
+                            else:
+                                # Calculate Gaussian-weighted average
+                                if weights and sum(weights) > 0:
+                                    weighted_sum = sum(w * v for w, v in zip(weights, values))
+                                    weight_sum = sum(weights)
+                                    y_trend.append(weighted_sum / weight_sum)
+                                else:
+                                    y_mean = sum(y_vals) / len(y_vals)
+                                    y_trend.append(y_mean)
+                        
+                        # Apply additional smoothing pass for ultra-smooth bell curves
+                        # Moving average with Gaussian weights for final smoothing
+                        smoothed_y = []
+                        window_size = min(20, len(y_trend) // 10)  # Adaptive window size
+                        
+                        for i in range(len(y_trend)):
+                            # Gaussian-weighted moving average
+                            start = max(0, i - window_size)
+                            end = min(len(y_trend), i + window_size + 1)
+                            
+                            weights = []
+                            values = []
+                            for j in range(start, end):
+                                distance = abs(i - j)
+                                weight = math.exp(-(distance ** 2) / (2 * (window_size / 3) ** 2))
+                                weights.append(weight)
+                                values.append(y_trend[j])
+                            
+                            if sum(weights) > 0:
+                                smoothed_value = sum(w * v for w, v in zip(weights, values)) / sum(weights)
+                                smoothed_y.append(smoothed_value)
+                            else:
+                                smoothed_y.append(y_trend[i])
+                        
+                        y_trend = smoothed_y  # Use the ultra-smoothed version
+                        
+                        # Add ultra-smooth bell-curve-like trend line
+                        fig.add_trace(go.Scatter(
+                            x=x_trend,
+                            y=y_trend,
+                            mode='lines',
+                            name=f'{color_name} Trend',
+                            line=dict(
+                                color=color_map.get(color_name, '#888888'),
+                                width=4,
+                                shape='spline',  # Plotly's smooth spline rendering
+                                smoothing=1.3    # Maximum allowed smoothing for bell-curve effect
+                            ),
+                            showlegend=False,
+                            hovertemplate=f'<b>{color_name} Bell Curve</b><br>' +
+                                         'Gaussian-smoothed trend<br>' +
+                                         '<extra></extra>'
+                        ))
+                        
+                except Exception as e:
+                    # Skip trend line if calculation fails
+                    print(f"Warning: Could not generate smooth trend line for {color_name}: {e}")
+        
+        fig.update_layout(
+            title='Color Performance vs Deck Composition',
+            xaxis_title='Color Percentage in Deck (%)',
+            yaxis_title='Deck Win Rate (%)',
+            hovermode='closest',
+            showlegend=False
+        )
+        
+        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        
+        # Define Magic color scheme
+        color_map = {
+            'White': '#FFFBD5',
+            'Blue': '#0E68AB', 
+            'Black': '#150B00',
+            'Red': '#D3202A',
+            'Green': '#00733E'
+        }
+        
+        fig = go.Figure()
+        
+        # Create a scatter plot with trend line for each color
+        for color_name, data in detailed_data.items():
+            if not data['percentages'] or not data['win_rates']:
+                continue
+                
+            # Filter out zero percentages for better visualization
+            filtered_data = [(p, w) for p, w in zip(data['percentages'], data['win_rates']) if p > 0]
+            if not filtered_data:
+                continue
+                
+            percentages, win_rates = zip(*filtered_data)
+            
+            # Add scatter plot
+            fig.add_trace(go.Scatter(
+                x=list(percentages),
+                y=[wr * 100 for wr in win_rates],  # Convert to percentage
+                mode='markers',
+                name=f'{color_name}',
+                marker=dict(
+                    color=color_map.get(color_name, '#888888'),
+                    size=8,
+                    opacity=0.7
+                ),
+                hovertemplate=f'<b>{color_name}</b><br>' +
+                             'Color %: %{x:.1f}%<br>' +
+                             'Win Rate: %{y:.1f}%<br>' +
+                             '<extra></extra>'
+            ))
+            
+            # Add trend line if we have enough points
+            if len(percentages) >= 3:
+                try:
+                    # Simple linear regression without scipy
+                    n = len(percentages)
+                    x_vals = list(percentages)
+                    y_vals = [wr * 100 for wr in win_rates]
+                    
+                    # Calculate means
+                    x_mean = sum(x_vals) / n
+                    y_mean = sum(y_vals) / n
+                    
+                    # Calculate slope and intercept
+                    numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_vals, y_vals))
+                    denominator = sum((x - x_mean) ** 2 for x in x_vals)
+                    
+                    if denominator != 0:
+                        slope = numerator / denominator
+                        intercept = y_mean - slope * x_mean
+                        
+                        # Calculate R-squared
+                        y_pred = [slope * x + intercept for x in x_vals]
+                        ss_res = sum((y - y_p) ** 2 for y, y_p in zip(y_vals, y_pred))
+                        ss_tot = sum((y - y_mean) ** 2 for y in y_vals)
+                        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                        
+                        # Generate trend line points
+                        x_min, x_max = min(x_vals), max(x_vals)
+                        x_trend = [x_min + i * (x_max - x_min) / 99 for i in range(100)]
+                        y_trend = [slope * x + intercept for x in x_trend]
+                        
+                        # Add trend line
+                        fig.add_trace(go.Scatter(
+                            x=x_trend,
+                            y=y_trend,
+                            mode='lines',
+                            name=f'{color_name} Trend',
+                            line=dict(
+                                color=color_map.get(color_name, '#888888'),
+                                width=2,
+                                dash='dash'
+                            ),
+                            showlegend=False,
+                            hovertemplate=f'<b>{color_name} Trend</b><br>' +
+                                         'R² = %{customdata:.3f}<br>' +
+                                         '<extra></extra>',
+                            customdata=[r_squared] * len(x_trend)
+                        ))
+                        
+                except Exception as e:
+                    # Skip trend line if calculation fails
+                    print(f"Warning: Could not generate trend line for {color_name}: {e}")
+        
+        fig.update_layout(
+            title='Color Performance vs Deck Composition',
+            xaxis_title='Color Percentage in Deck (%)',
+            yaxis_title='Deck Win Rate (%)',
+            hovermode='closest',
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
+        )
+        
+        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    
+    def _generate_original_color_chart(self, color_analysis):
+        """Generate original color performance bar chart JSON (fallback)."""
         if not color_analysis:
             # Empty chart if no data
             fig = go.Figure()
@@ -257,13 +613,17 @@ class StaticDashboardGenerator:
             chart_id = f"{analysis_type}-detail-chart"
             chart_data = self._get_chart_data_for_analysis(analysis_type, cube_data)
             
-            # Prepare template variables
+            # Prepare template variables - use safe JSON encoding
+            # Create a safe copy of cube_data with ASCII-safe JSON strings
+            safe_cube_data = json.loads(json.dumps(cube_data, ensure_ascii=True))
+            cube_data_json = json.dumps(safe_cube_data, ensure_ascii=True, separators=(',', ':'))
+            
             template_vars = {
                 'analysis_info': analysis_info,
                 'analysis_type': analysis_type,
                 'cube_id': cube_id,
                 'cube_info': cube_data['cube_info'],
-                'cube_data': json.dumps(cube_data),  # Serialize as JSON for JavaScript
+                'cube_data': cube_data_json,  # Safe ASCII-only JSON
                 'content_html': content_html,
                 'chart_id': chart_id,
                 'chart_data': chart_data,
@@ -484,6 +844,8 @@ class StaticDashboardGenerator:
         """Generate HTML content for specific analysis type."""
         if analysis_type == 'performance':
             return self._generate_performance_content(cube_data)
+        elif analysis_type == 'color':
+            return self._generate_color_content(cube_data)
         elif analysis_type == 'synergies':
             return self._generate_synergies_content(cube_data)
         return "<p>Analysis content not available.</p>"
@@ -626,19 +988,75 @@ class StaticDashboardGenerator:
         
         return synergies_html
     
+    def _generate_color_content(self, cube_data: dict) -> str:
+        """Generate color performance analysis content."""
+        color_analysis = cube_data.get('color_analysis', [])
+        
+        if not color_analysis:
+            return "<p>Not enough data to analyze color performance.</p>"
+        
+        # Sort colors by win rate descending
+        sorted_colors = sorted(color_analysis, key=lambda x: x['win_rate'], reverse=True)
+        
+        color_html = '''
+        <h3>Color Performance Analysis</h3>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Color</th>
+                    <th>Win Rate</th>
+                    <th>Games Played</th>
+                    <th>Wins</th>
+                    <th>Losses</th>
+                    <th>Deck Percentage</th>
+                </tr>
+            </thead>
+            <tbody>'''
+        
+        for color in sorted_colors:
+            win_rate_class = ''
+            if color['win_rate'] > 0.55:
+                win_rate_class = 'positive'
+            elif color['win_rate'] < 0.45:
+                win_rate_class = 'negative'
+                
+            color_html += f'''
+                <tr>
+                    <td><strong>{color['color']}</strong></td>
+                    <td class="{win_rate_class}">{color['win_rate']:.1%}</td>
+                    <td>{color['total_games']}</td>
+                    <td>{color['wins']}</td>
+                    <td>{color['losses']}</td>
+                    <td>{color['avg_cards_per_deck']:.1f}%</td>
+                </tr>'''
+        
+        color_html += '''
+            </tbody>
+        </table>
+        <p><em>This analysis shows how each color performs across all decks. Colors with higher win rates 
+        tend to have stronger individual cards or better synergistic support within the cube.</em></p>'''
+        
+        return color_html
+    
     def _get_chart_data_for_analysis(self, analysis_type: str, cube_data: dict) -> str:
         """Get chart loading JavaScript for specific analysis type."""
         chart_mapping = {
             'performance': 'performance_scatter',
+            'color': 'detailed_color_performance',  # Use detailed scatter plot for color analysis page
             'synergies': 'performance_scatter'  # Use performance chart for synergies page
         }
         
         chart_key = chart_mapping.get(analysis_type, 'performance_scatter')
-        chart_data = cube_data['charts'][chart_key]
+        chart_data_raw = cube_data['charts'][chart_key]
         chart_id = f"{analysis_type}-detail-chart"
         
+        # Re-parse and re-encode as ASCII-safe JSON to avoid unicode issues
+        import json
+        chart_obj = json.loads(chart_data_raw)
+        chart_data_safe = json.dumps(chart_obj, ensure_ascii=True, separators=(',', ':'))
+        
         return f'''
-        const chartData = {chart_data};
+        const chartData = {chart_data_safe};
         Plotly.newPlot('{chart_id}', chartData.data, chartData.layout, {{
             responsive: true,
             displayModeBar: true
@@ -670,7 +1088,8 @@ class StaticDashboardGenerator:
     def _adapt_template_for_static(self, html_content: str, all_cube_data: dict) -> str:
         """Adapt the dashboard template to work as a static dashboard."""
         # Add embedded data and modify JavaScript for static operation
-        embedded_data = json.dumps(all_cube_data)
+        # Use ASCII-safe JSON to avoid escape issues
+        embedded_data = json.dumps(all_cube_data, ensure_ascii=True, separators=(',', ':'))
         
         # Add static-specific JavaScript before the closing </script> tag
         static_js = f'''
@@ -901,8 +1320,12 @@ class StaticDashboardGenerator:
             # Generate detailed analysis pages for each analysis type
             analysis_types = {
                 'performance': {
-                    'title': 'Card Performance Analysis',
+                    'title': 'Performance vs Popularity',
                     'description': 'This analysis shows how individual cards perform relative to the cube average. Cards with positive deltas consistently appear in winning decks more often than losing ones, while negative deltas indicate cards that may be underperforming or creating inconsistent games. The "Performance Delta" represents how much above or below the cube average each card performs, helping identify potential cuts or additions to improve cube balance.'
+                },
+                'color': {
+                    'title': 'Color Performance Analysis', 
+                    'description': 'Color performance analysis examines how each Magic color performs across all drafted decks in your cube. This helps identify color imbalances, overpowered or underpowered colors, and can guide decisions about which colors need more support or fewer powerful cards. A balanced cube should show relatively even performance across all colors.'
                 },
                 'synergies': {
                     'title': 'Card Synergy Analysis',
