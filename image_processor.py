@@ -196,10 +196,14 @@ class ImageProcessor:
             4. Power/toughness numbers in BOTTOM-RIGHT corner (for creatures)
             5. Set symbols in MIDDLE-RIGHT of cards
             6. Any visible text should be oriented normally (not sideways or upside down)
+            7. Do not rely on backgrounds such as skylines, focus only on card features
+            8. All indicators should be based on the cards themselves, not the surrounding environment. For example, it does not matter if card names are on the left side of the image, just where each card name is relative to the rest of its card.
             
             The image might be rotated 0°, 90°, 180°, or 270° from the correct orientation.
             
             Determine how many degrees clockwise the image needs to be rotated to make the cards properly oriented.
+
+            Then, imagine the image rotated that amount and confirm that the cards would be correctly oriented.
             
             Return:
             - rotation_needed: 0, 90, 180, or 270 (degrees clockwise needed)
@@ -290,7 +294,7 @@ class ImageProcessor:
                 if output_path is None:
                     # Create rotated filename
                     original_path = Path(image_path)
-                    output_path = str(original_path.parent / f"{original_path.stem}_rotated{original_path.suffix}")
+                    output_path = str(original_path.parent / f"{original_path.stem}_oriented{original_path.suffix}")
                 
                 # Save rotated image
                 save_kwargs = {}
@@ -298,10 +302,8 @@ class ImageProcessor:
                 if output_path_obj.suffix.lower() in ['.jpg', '.jpeg']:
                     quality = config.get_int("image_processing", "image_quality", 95)
                     save_kwargs['quality'] = quality
-                    save_kwargs['optimize'] = True
-                elif output_path_obj.suffix.lower() == '.png':
-                    save_kwargs['optimize'] = True
-                
+                save_kwargs['optimize'] = True
+
                 rotated_img.save(output_path, **save_kwargs)
                 print(f"Image rotated {rotation_degrees}° and saved to: {output_path}")
                 
@@ -474,19 +476,22 @@ class ImageProcessor:
         
         # Step 1: Detect correct orientation
         print("Step 1: Checking image orientation...")
-        rotation_needed = self.detect_image_orientation(image_path)
+        rotation_needed = 360
+        sample_image_path = image_path
+        sample_image_path = self.rotate_and_save_image(image_path, rotation_needed)
         
-        # Step 2: Rotate image if necessary and keep it for database storage
-        oriented_image_path = image_path
-        if rotation_needed != 0:
-            # Create oriented image path for database storage
+        while rotation_needed != 0:
             original_path = Path(image_path)
-            oriented_image_path = str(original_path.parent / f"{original_path.stem}_oriented{original_path.suffix}")
-            oriented_image_path = self.rotate_and_save_image(image_path, rotation_needed, oriented_image_path)
-        
+            sample_image_path = str(original_path.parent / f"{original_path.stem}_oriented{original_path.suffix}")
+            sample_image_path = self.rotate_and_save_image(sample_image_path, rotation_needed, sample_image_path)
+            rotation_needed = self.detect_image_orientation(sample_image_path)
+
+        # Step 2: Accept the correctly oriented image and keep it for database storage
+        oriented_image_path = sample_image_path
+
         # Step 3: Continue with normal extraction process
         card_names = self.extract_card_names(oriented_image_path, cubecobra_id, use_multi_pass)
-        
+
         return ExtractionResult(card_names, oriented_image_path)
 
     def _single_pass_extraction(self, base64_image: str, prompt: str, image_path: str) -> List[str]:
