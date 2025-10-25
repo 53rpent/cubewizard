@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import shutil
 import re
+import statistics
 from typing import Optional
 from dashboard import CubeDashboard
 from database_manager import DatabaseManager
@@ -136,8 +137,27 @@ class StaticDashboardGenerator:
             'detailed_color_performance': self._generate_detailed_color_chart(color_analysis, dashboard)  # New scatter plot for detailed page
         }
         
+        # Calculate average win rate across all decks in the cube
+        total_wins = 0
+        total_losses = 0
+        for deck_id, deck_details in dashboard.cube_data['deck_details'].items():
+            deck_info = deck_details['deck_info']
+            total_wins += deck_info.get('match_wins', 0)
+            total_losses += deck_info.get('match_losses', 0)
+        
+        total_games = total_wins + total_losses
+        # Use average of deck win rates instead of total wins/games for consistency with performance deltas
+        all_deck_win_rates = [deck['win_rate'] for deck in dashboard.cube_data['decks']]
+        avg_win_rate = statistics.mean(all_deck_win_rates) if all_deck_win_rates else 0
+        
+        # Add the calculated stats to cube_info
+        cube_info_extended = dashboard.cube_data['cube_info'].copy()
+        cube_info_extended['avg_win_rate'] = avg_win_rate
+        cube_info_extended['total_wins'] = total_wins
+        cube_info_extended['total_losses'] = total_losses
+        
         return {
-            'cube_info': dashboard.cube_data['cube_info'],
+            'cube_info': cube_info_extended,
             'card_performances': [
                 {
                     'name': cp.name,
@@ -1281,8 +1301,8 @@ class StaticDashboardGenerator:
                     <div class="stat-label">Unique Cards</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">{len(cube_data['synergies'])}</div>
-                    <div class="stat-label">Synergies Found</div>
+                    <div class="stat-value">{(cube_data['cube_info']['avg_win_rate'] * 100):.1f}%</div>
+                    <div class="stat-label">Average Win Rate</div>
                 </div>
             </div>
             
@@ -1321,15 +1341,15 @@ class StaticDashboardGenerator:
             analysis_types = {
                 'performance': {
                     'title': 'Performance vs Popularity',
-                    'description': 'This analysis shows how individual cards perform relative to the cube average. Cards with positive deltas consistently appear in winning decks more often than losing ones, while negative deltas indicate cards that may be underperforming or creating inconsistent games. The "Performance Delta" represents how much above or below the cube average each card performs, helping identify potential cuts or additions to improve cube balance.'
+                    'description': 'This analysis shows how individual cards perform relative to the cube average. Cards with positive deltas consistently appear in winning decks more often than losing ones, while negative deltas indicate cards that may be underperforming or that their archetype may be weaker. The "Performance Delta" represents how far above or below the cube average each card performs.'
                 },
                 'color': {
                     'title': 'Color Performance Analysis', 
-                    'description': 'Color performance analysis examines how each Magic color performs across all drafted decks in your cube. This helps identify color imbalances, overpowered or underpowered colors, and can guide decisions about which colors need more support or fewer powerful cards. A balanced cube should show relatively even performance across all colors.'
+                    'description': 'This analysis examines how decks of each color perform. A deck is defined as being a certain color if it contains at least one card with that color in it. If 5% of a deck\'s cards are blue, it is considered to be 5% blue. This means that multicolored cards are counted once towards each of their respective colors.'
                 },
                 'synergies': {
                     'title': 'Card Synergy Analysis',
-                    'description': 'Card synergy analysis identifies pairs of cards that perform better together than they do individually. The "Synergy Bonus" shows how much the combined win rate exceeds the average of their individual performances. Positive synergy bonuses indicate natural card combinations that players should be encouraged to draft together, while understanding these relationships can help cube designers ensure their format supports coherent strategies and interesting draft decisions.'
+                    'description': 'This analysis identifies pairs of cards that perform better together than they do individually. The "Synergy Bonus" shows how much the combined win rate exceeds the average of their individual performances. Positive synergy bonuses indicate natural card combinations that fit well together, while negative bonuses may suggest conflicting strategies'
                 }
             }
             

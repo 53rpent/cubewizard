@@ -132,7 +132,7 @@ class CubeDashboard:
             if total_games > 0:
                 win_rate = stats['wins'] / total_games
                 avg_deck_win_rate = statistics.mean(stats['deck_win_rates'])
-                performance_delta = avg_deck_win_rate - cube_avg_win_rate
+                performance_delta = win_rate - cube_avg_win_rate
                 
                 card_performances.append(CardPerformance(
                     name=card_name,

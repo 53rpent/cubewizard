@@ -322,6 +322,8 @@
         
         function populateDashboard(data) {
             // Update stats overview
+            const avgWinRate = (data.cube_info.avg_win_rate * 100).toFixed(1);
+            
             const statsHtml = `
                 <div class="stat-item">
                     <div class="stat-value">${data.cube_info.total_decks}</div>
@@ -332,8 +334,8 @@
                     <div class="stat-label">Unique Cards</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${data.synergies.length}</div>
-                    <div class="stat-label">Synergies Found</div>
+                    <div class="stat-value">${avgWinRate}%</div>
+                    <div class="stat-label">Average Win Rate</div>
                 </div>
             `;
             document.getElementById('stats-overview').innerHTML = statsHtml;
