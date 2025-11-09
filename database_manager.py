@@ -386,6 +386,98 @@ class DatabaseManager:
             print(f"Database error getting cards for deck {deck_id}: {e}")
             return []
     
+    def search_card_in_cube(self, cube_id: str, search_query: str) -> List[Dict[str, Any]]:
+        """
+        Search for cards containing the search query within a specific cube.
+        
+        Args:
+            cube_id: The cube identifier to search within.
+            search_query: The card name or partial name to search for.
+            
+        Returns:
+            List of dictionaries containing deck and card information for matching cards.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Search for cards in decks within this cube using case-insensitive LIKE
+                query = '''
+                    SELECT 
+                        dc.name as card_name,
+                        dc.mana_cost,
+                        dc.type_line,
+                        dc.rarity,
+                        dc.set_code,
+                        d.deck_id,
+                        d.pilot_name,
+                        d.match_wins,
+                        d.match_losses,
+                        d.match_draws,
+                        d.win_rate,
+                        d.processing_timestamp
+                    FROM deck_cards dc
+                    JOIN decks d ON dc.deck_id = d.deck_id
+                    WHERE d.cube_id = ? AND LOWER(dc.name) LIKE LOWER(?)
+                    ORDER BY dc.name, d.pilot_name
+                '''
+                
+                search_pattern = f'%{search_query}%'
+                cursor.execute(query, (cube_id, search_pattern))
+                
+                results = []
+                for row in cursor.fetchall():
+                    results.append(dict(row))
+                
+                return results
+                
+        except sqlite3.Error as e:
+            print(f"Database error searching for card '{search_query}' in cube {cube_id}: {e}")
+            return []
+    
+    def get_cube_decks_by_id(self, deck_ids: List[int]) -> List[Dict[str, Any]]:
+        """
+        Get deck information for specific deck IDs.
+        
+        Args:
+            deck_ids: List of deck identifiers.
+            
+        Returns:
+            List of deck dictionaries.
+        """
+        try:
+            if not deck_ids:
+                return []
+                
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Create placeholders for the IN clause
+                placeholders = ','.join(['?' for _ in deck_ids])
+                
+                cursor.execute(f'''
+                    SELECT 
+                        d.*,
+                        COUNT(dc.card_id) as total_cards
+                    FROM decks d
+                    LEFT JOIN deck_cards dc ON d.deck_id = dc.deck_id
+                    WHERE d.deck_id IN ({placeholders})
+                    GROUP BY d.deck_id
+                    ORDER BY d.processing_timestamp DESC
+                ''', deck_ids)
+                
+                decks = []
+                for row in cursor.fetchall():
+                    decks.append(dict(row))
+                
+                return decks
+                
+        except sqlite3.Error as e:
+            print(f"Database error getting decks by IDs {deck_ids}: {e}")
+            return []
+    
     def get_all_cubes(self) -> List[Dict[str, Any]]:
         """
         Get information about all cubes in the database.

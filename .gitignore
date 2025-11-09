@@ -56,9 +56,6 @@ masv_data/
 masv_imported/
 *.log
 
-# Static dashboard
-static_dashboard/
-
 # Configuration files with sensitive data
 config.ini
 

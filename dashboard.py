@@ -144,7 +144,7 @@ class CubeDashboard:
                     performance_delta=performance_delta
                 ))
         
-        return sorted(card_performances, key=lambda x: x.performance_delta, reverse=True)
+        return sorted(card_performances, key=lambda x: (x.performance_delta, x.appearances), reverse=True)
 
     def generate_card_synergies(self, min_appearances: int = 3) -> List[CardSynergy]:
         """Analyze card synergies and combinations."""

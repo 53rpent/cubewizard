@@ -92,19 +92,22 @@ class DatabaseBrowser:
                 print(f"  {i}. Deck #{deck['deck_id']} - {deck['pilot_name']}")
                 print(f"     Record: {record_str} ({win_rate:.1f}% WR) | Cards: {deck['total_cards']} | {deck['processing_timestamp']}")
             
-            print(f"\n  {len(decks) + 1}. Back to cube list")
+            print(f"\n  {len(decks) + 1}. Search for a card in this cube")
+            print(f"  {len(decks) + 2}. Back to cube list")
             
             try:
-                choice = input(f"\nSelect a deck (1-{len(decks) + 1}): ").strip()
+                choice = input(f"\nSelect an option (1-{len(decks) + 2}): ").strip()
                 
                 if choice == str(len(decks) + 1):
+                    self.search_card_in_cube(cube['cube_id'])
+                elif choice == str(len(decks) + 2):
                     return
-                
-                deck_index = int(choice) - 1
-                if 0 <= deck_index < len(decks):
-                    self.browse_deck(decks[deck_index])
                 else:
-                    print("Invalid selection. Please try again.")
+                    deck_index = int(choice) - 1
+                    if 0 <= deck_index < len(decks):
+                        self.browse_deck(decks[deck_index])
+                    else:
+                        print("Invalid selection. Please try again.")
                     
             except ValueError:
                 print("Invalid input. Please enter a number.")
@@ -259,38 +262,162 @@ class DatabaseBrowser:
         
         input("\nPress Enter to continue...")
     
-    def view_stored_image(self, deck):
-        """Show stored image information."""
-        stored_image_path = self.db_manager.get_deck_image_path(deck['deck_id'])
+    def search_card_in_cube(self, cube_id):
+        """Search for a card within a cube and show all decks containing it."""
+        cube_display_name = self.cube_mapper.get_cube_name(cube_id)
         
-        if stored_image_path:
-            print(f"\nStored Image Path: {stored_image_path}")
-            if os.path.exists(stored_image_path):
-                print("✓ File exists")
-                file_size = os.path.getsize(stored_image_path) / (1024 * 1024)  # MB
-                print(f"File Size: {file_size:.2f} MB")
+        while True:
+            print(f"\n=== Card Search in {cube_display_name} ===")
+            
+            # Get search query
+            try:
+                search_query = input("\nEnter card name to search for (or 'back' to return): ").strip()
                 
-                # Try to open image with default system viewer
-                try:
-                    choice = input("Open image with default viewer? (y/N): ").strip().lower()
-                    if choice == 'y':
-                        if os.name == 'nt':  # Windows
-                            os.startfile(stored_image_path)
-                        elif os.name == 'posix':  # macOS/Linux
-                            if sys.platform == 'darwin':
-                                os.system(f'open "{stored_image_path}"')
-                            else:
-                                os.system(f'xdg-open "{stored_image_path}"')
-                        print("Image opened in default viewer.")
-                except Exception as e:
-                    print(f"Could not open image: {e}")
-            else:
-                print("✗ File not found")
-        else:
-            print("\nNo stored image available for this deck.")
+                if search_query.lower() == 'back':
+                    return
+                
+                if not search_query:
+                    print("Please enter a card name to search for.")
+                    continue
+                
+                # Search for the card in this cube's decks
+                matching_decks = self.db_manager.search_card_in_cube(cube_id, search_query)
+                
+                if not matching_decks:
+                    print(f"\nNo decks found containing cards matching '{search_query}'")
+                    print("Try a different search term or partial name.")
+                    continue
+                
+                print(f"\nFound {len(matching_decks)} deck(s) containing cards matching '{search_query}':")
+                print("=" * 80)
+                
+                # Group results by exact card name
+                decks_by_card = {}
+                for deck in matching_decks:
+                    card_name = deck['card_name']
+                    if card_name not in decks_by_card:
+                        decks_by_card[card_name] = []
+                    decks_by_card[card_name].append(deck)
+                
+                # Display results
+                for card_name in sorted(decks_by_card.keys()):
+                    decks = decks_by_card[card_name]
+                    print(f"\n📋 {card_name} (appears in {len(decks)} deck(s)):")
+                    
+                    for deck in sorted(decks, key=lambda x: x['pilot_name']):
+                        wins = deck.get('match_wins', 0)
+                        losses = deck.get('match_losses', 0)
+                        draws = deck.get('match_draws', 0)
+                        
+                        record_str = f"{wins}-{losses}"
+                        if draws > 0:
+                            record_str += f"-{draws}"
+                        
+                        win_rate = deck.get('win_rate', 0) * 100
+                        
+                        print(f"  • Deck #{deck['deck_id']} - {deck['pilot_name']}")
+                        print(f"    Record: {record_str} ({win_rate:.1f}% WR) | {deck['processing_timestamp'][:10]}")
+                        
+                        # Show card details if available
+                        if deck.get('mana_cost'):
+                            details = f"Mana Cost: {deck['mana_cost']}"
+                            if deck.get('type_line'):
+                                details += f" | Type: {deck['type_line']}"
+                            if deck.get('rarity'):
+                                details += f" | Rarity: {deck['rarity']}"
+                            print(f"    {details}")
+                
+                print("\n" + "=" * 80)
+                
+                # Show summary statistics
+                total_decks_in_cube = len(self.db_manager.get_cube_decks(cube_id))
+                unique_cards = len(decks_by_card)
+                total_appearances = len(matching_decks)
+                
+                print(f"\nSearch Summary:")
+                print(f"  • {unique_cards} unique card(s) matching '{search_query}'")
+                print(f"  • {total_appearances} total appearance(s) across decks")
+                print(f"  • Found in {len(set(d['deck_id'] for d in matching_decks))} of {total_decks_in_cube} decks ({len(set(d['deck_id'] for d in matching_decks))/total_decks_in_cube*100:.1f}%)")
+                
+                # Option to view a specific deck
+                unique_deck_ids = sorted(set(d['deck_id'] for d in matching_decks))
+                if unique_deck_ids:
+                    print(f"\nOptions:")
+                    print("1. View deck details")
+                    print("2. New search")
+                    print("3. Back to cube menu")
+                    
+                    try:
+                        option = input("\nSelect an option (1-3): ").strip()
+                        
+                        if option == "1":
+                            self.select_deck_from_search_results(unique_deck_ids)
+                        elif option == "2":
+                            continue
+                        elif option == "3":
+                            return
+                        else:
+                            print("Invalid selection.")
+                            
+                    except ValueError:
+                        print("Invalid input. Please enter a number.")
+                
+            except KeyboardInterrupt:
+                return
+            except Exception as e:
+                print(f"Error during search: {e}")
+                continue
+    
+    def select_deck_from_search_results(self, deck_ids):
+        """Allow user to select and view a deck from search results."""
+        print(f"\nSelect a deck to view:")
         
-        input("\nPress Enter to continue...")
-
+        # Get deck details for each ID
+        decks = []
+        for deck_id in deck_ids:
+            deck_list = self.db_manager.get_cube_decks_by_id([deck_id])
+            if deck_list:
+                decks.append(deck_list[0])
+        
+        if not decks:
+            print("No deck details available.")
+            input("Press Enter to continue...")
+            return
+        
+        # Show deck list
+        for i, deck in enumerate(decks, 1):
+            wins = deck.get('match_wins', 0)
+            losses = deck.get('match_losses', 0)
+            draws = deck.get('match_draws', 0)
+            
+            record_str = f"{wins}-{losses}"
+            if draws > 0:
+                record_str += f"-{draws}"
+            
+            win_rate = deck.get('win_rate', 0) * 100
+            
+            print(f"  {i}. Deck #{deck['deck_id']} - {deck['pilot_name']}")
+            print(f"     Record: {record_str} ({win_rate:.1f}% WR) | Cards: {deck['total_cards']}")
+        
+        print(f"  {len(decks) + 1}. Back to search results")
+        
+        try:
+            choice = input(f"\nSelect a deck (1-{len(decks) + 1}): ").strip()
+            
+            if choice == str(len(decks) + 1):
+                return
+            
+            deck_index = int(choice) - 1
+            if 0 <= deck_index < len(decks):
+                self.browse_deck(decks[deck_index])
+            else:
+                print("Invalid selection.")
+                
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+        except KeyboardInterrupt:
+            return
+    
 def main():
     """Run the interactive database browser."""
     try:
