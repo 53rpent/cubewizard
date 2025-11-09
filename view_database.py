@@ -262,6 +262,38 @@ class DatabaseBrowser:
         
         input("\nPress Enter to continue...")
     
+    def view_stored_image(self, deck):
+        """Show stored image information."""
+        stored_image_path = self.db_manager.get_deck_image_path(deck['deck_id'])
+        
+        if stored_image_path:
+            print(f"\nStored Image Path: {stored_image_path}")
+            if os.path.exists(stored_image_path):
+                print("✓ File exists")
+                file_size = os.path.getsize(stored_image_path) / (1024 * 1024)  # MB
+                print(f"File Size: {file_size:.2f} MB")
+                
+                # Try to open image with default system viewer
+                try:
+                    choice = input("Open image with default viewer? (y/N): ").strip().lower()
+                    if choice == 'y':
+                        if os.name == 'nt':  # Windows
+                            os.startfile(stored_image_path)
+                        elif os.name == 'posix':  # macOS/Linux
+                            if sys.platform == 'darwin':
+                                os.system(f'open "{stored_image_path}"')
+                            else:
+                                os.system(f'xdg-open "{stored_image_path}"')
+                        print("Image opened in default viewer.")
+                except Exception as e:
+                    print(f"Could not open image: {e}")
+            else:
+                print("✗ File not found")
+        else:
+            print("\nNo stored image available for this deck.")
+        
+        input("\nPress Enter to continue...")
+    
     def search_card_in_cube(self, cube_id):
         """Search for a card within a cube and show all decks containing it."""
         cube_display_name = self.cube_mapper.get_cube_name(cube_id)
