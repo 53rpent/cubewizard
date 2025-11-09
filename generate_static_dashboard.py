@@ -22,7 +22,7 @@ from jinja2 import Environment, FileSystemLoader
 class StaticDashboardGenerator:
     """Generate static HTML dashboard files."""
     
-    def __init__(self, output_dir: str = "static_dashboard"):
+    def __init__(self, output_dir: str = "docs"):
         """Initialize the generator."""
         self.output_dir = Path(output_dir)
         self.db_manager = DatabaseManager()
@@ -1427,9 +1427,9 @@ def main():
         selected_cube = None
     
     # Get output directory
-    output_dir = input("\nOutput directory [static_dashboard]: ").strip()
+    output_dir = input("\nOutput directory [docs]: ").strip()
     if not output_dir:
-        output_dir = "static_dashboard"
+        output_dir = "docs"
     
     # Generate dashboard
     generator = StaticDashboardGenerator(output_dir)

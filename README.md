@@ -116,7 +116,7 @@ Browse stored deck images with metadata.
 ```bash
 python generate_static_dashboard.py
 ```
-Creates self-contained HTML dashboard in `static_dashboard/` folder.
+Creates self-contained HTML dashboard in `docs/` folder.
 
 #### Run Interactive Dashboard  
 ```bash
@@ -134,7 +134,7 @@ Bulk import tournament data from Google Forms CSV exports.
 
 ### Static Dashboard Deployment
 
-The `generate_static_dashboard.py` command creates a complete static website in the `static_dashboard/` folder that can be hosted anywhere:
+The `generate_static_dashboard.py` command creates a complete static website in the `docs/` folder that can be hosted anywhere:
 
 #### Publishing Options:
 
@@ -144,7 +144,7 @@ The `generate_static_dashboard.py` command creates a complete static website in 
 npm install -g surge
 
 # Deploy to surge
-cd static_dashboard
+cd docs
 surge
 ```
 
@@ -158,7 +158,7 @@ python main.py masv
 python generate_static_dashboard.py
 
 # 3. Deploy to hosting platform
-cd static_dashboard && surge
+cd docs && surge
 ```
 
 ### Analytics Features
@@ -198,7 +198,7 @@ CubeWizard/
 ├── output/                  # Database and processed images
 │   ├── cubewizard.db        # Primary SQLite database
 │   └── stored_images/       # Processed deck images (PNG format)
-├── static_dashboard/        # Generated static website
+├── docs/                    # Generated static website
 └── templates/               # Jinja2 templates for dashboard
     ├── dashboard.html       # Main dashboard template
     ├── detailed_analysis.html # Performance analysis template  
@@ -228,7 +228,7 @@ python reset_database.py
 ### Updating Live Website
 1. Process new data: `python main.py masv`
 2. Regenerate dashboard: `python generate_static_dashboard.py`
-3. Deploy: `cd static_dashboard && surge`
+3. Deploy: `cd docs && surge`
 
 ### Monitoring
 - Check `masv_data/` folder for unprocessed submissions
