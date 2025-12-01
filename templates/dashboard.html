@@ -151,6 +151,76 @@
             margin-top: 1rem;
         }
         
+        .card-search-section {
+            padding: 1rem 0;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e9ecef;
+            border-radius: 4px;
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+            transition: border-color 0.2s ease;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .search-button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .search-button:hover {
+            background: #5a6fd8;
+        }
+        
+        .card-result {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .card-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .card-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .search-error {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: #f8d7da;
+            color: #721c24;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
         .loading {
             text-align: center;
             padding: 2rem;
@@ -271,6 +341,15 @@
                     <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('synergies')">Best Synergies</a></h3>
                     <div id="synergies"></div>
                 </div>
+                
+                <div class="card">
+                    <h3>Card Search</h3>
+                    <div class="card-search-section">
+                        <input type="text" id="search-input" placeholder="Enter card name..." class="search-input">
+                        <button onclick="searchCard()" class="search-button">Search</button>
+                        <div id="card-search-results"></div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -372,7 +451,8 @@
             // Underperforming cards
             const bottomCards = data.card_performances
                 .filter(c => c.performance_delta < -0.05 && c.appearances >= 3)
-                .slice(-5);
+                .sort((a, b) => a.performance_delta - b.performance_delta)
+                .slice(0, 5);
             
             const bottomCardsHtml = bottomCards.length > 0 ? `
                 <table class="table">
@@ -490,6 +570,85 @@
             const select = document.getElementById('cube-select');
             if (select.value) {
                 loadDashboard();
+            }
+        });
+        
+        function searchCard() {
+            const searchInput = document.getElementById('search-input');
+            const resultsContainer = document.getElementById('card-search-results');
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            
+            if (!searchTerm) {
+                resultsContainer.innerHTML = '<div class="search-error">Please enter a card name to search</div>';
+                return;
+            }
+            
+            // Check if cube data is loaded
+            if (!currentCubeData || !currentCubeData.card_performances) {
+                resultsContainer.innerHTML = '<div class="search-error">Please select a cube first</div>';
+                return;
+            }
+            
+            // Find the card in card_performances data
+            const card = currentCubeData.card_performances.find(c => 
+                c.name.toLowerCase().includes(searchTerm) || 
+                c.name.toLowerCase() === searchTerm
+            );
+            
+            if (!card) {
+                resultsContainer.innerHTML = '<div class="search-error">Card not found. Try a different name or partial match.</div>';
+                return;
+            }
+            
+            // Calculate win rate and format stats
+            const winRate = (card.win_rate * 100).toFixed(1);
+            const totalGames = card.wins + card.losses;
+            
+            // Create formatted result display
+            const resultHTML = `
+                <div class="card-result">
+                    <div class="card-name">${card.name}</div>
+                    <div class="card-stats">
+                        <div class="stat-row">
+                            <span>Win Rate:</span>
+                            <strong>${winRate}%</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Total Games:</span>
+                            <strong>${totalGames}</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Wins:</span>
+                            <strong>${card.wins}</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Losses:</span>
+                            <strong>${card.losses}</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Performance Delta:</span>
+                            <strong>${card.performance_delta > 0 ? '+' : ''}${card.performance_delta.toFixed(1)}%</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Appearances:</span>
+                            <strong>${card.appearances}</strong>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            resultsContainer.innerHTML = resultHTML;
+        }
+        
+        // Allow searching on Enter key press
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) {
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        searchCard();
+                    }
+                });
             }
         });
     </script>

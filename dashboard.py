@@ -29,7 +29,6 @@ class CardPerformance:
     appearances: int
     wins: int
     losses: int
-    win_rate: float
     avg_deck_win_rate: float
     performance_delta: float  # How much above/below average this card performs
 
@@ -130,16 +129,14 @@ class CubeDashboard:
         for card_name, stats in card_stats.items():
             total_games = stats['wins'] + stats['losses']
             if total_games > 0:
-                win_rate = stats['wins'] / total_games
                 avg_deck_win_rate = statistics.mean(stats['deck_win_rates'])
-                performance_delta = win_rate - cube_avg_win_rate
+                performance_delta = avg_deck_win_rate - cube_avg_win_rate
                 
                 card_performances.append(CardPerformance(
                     name=card_name,
                     appearances=stats['appearances'],
                     wins=stats['wins'],
                     losses=stats['losses'],
-                    win_rate=win_rate,
                     avg_deck_win_rate=avg_deck_win_rate,
                     performance_delta=performance_delta
                 ))

@@ -875,8 +875,8 @@ class StaticDashboardGenerator:
         performances = cube_data['card_performances']
         
         # Top performers
-        top_performers = [c for c in performances if c['performance_delta'] > 0.05][:20]
-        underperformers = [c for c in performances if c['performance_delta'] < -0.05 and c['appearances'] >= 3][-20:]
+        top_performers = [c for c in performances if c['performance_delta'] > 0.05 and c['appearances'] >= 3][:20]
+        underperformers = sorted([c for c in performances if c['performance_delta'] < -0.05 and c['appearances'] >= 3], key=lambda x: x['performance_delta'])[:20]
         
         # Statistics
         total_cards = len(performances)
@@ -1115,6 +1115,7 @@ class StaticDashboardGenerator:
         static_js = f'''
         // Embedded cube data for static dashboard
         let allCubeData = {embedded_data};
+        let currentCubeData = null; // Store current cube data for search function
         
         // Override the original loadDashboard function for static operation
         function loadDashboard() {{
@@ -1133,6 +1134,7 @@ class StaticDashboardGenerator:
             }}
             
             currentCubeId = cubeId;
+            currentCubeData = data; // Store globally for search function
             
             // Show/hide warning banner for small datasets
             const warningBanner = document.getElementById('warning-banner');
@@ -1229,8 +1231,8 @@ class StaticDashboardGenerator:
                 </table>'''
         
         # Underperforming cards
-        bottom_cards = [c for c in cube_data['card_performances'] 
-                       if c['performance_delta'] < -0.05 and c['appearances'] >= 3][-10:]
+        bottom_cards = sorted([c for c in cube_data['card_performances'] 
+                       if c['performance_delta'] < -0.05 and c['appearances'] >= 3], key=lambda x: x['performance_delta'])[:10]
         bottom_cards_html = ""
         if bottom_cards:
             bottom_cards_html = '''
