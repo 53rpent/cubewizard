@@ -103,6 +103,10 @@ class CubeDashboard:
             'deck_win_rates': []
         })
         
+        # Calculate overall cube average win rate
+        all_deck_win_rates = [deck['win_rate'] for deck in self.cube_data['decks']]
+        cube_avg_win_rate = statistics.mean(all_deck_win_rates) if all_deck_win_rates else 0
+        
         # Collect data for each card
         for deck_id, deck_data in self.cube_data['deck_details'].items():
             deck_info = deck_data['deck_info']
@@ -119,17 +123,21 @@ class CubeDashboard:
                 card_stats[card_name]['losses'] += deck_losses
                 card_stats[card_name]['appearances'] += 1
                 card_stats[card_name]['deck_win_rates'].append(deck_win_rate)
-        
-        # Calculate overall cube average win rate
-        all_deck_win_rates = [deck['win_rate'] for deck in self.cube_data['decks']]
-        cube_avg_win_rate = statistics.mean(all_deck_win_rates) if all_deck_win_rates else 0
+
+        # Apply Bayesian smoothing AFTER collecting all data
+        smoothing_strength = config.get_int('model assumptions', 'bayesian_smoothing_strength', 5)
         
         # Convert to CardPerformance objects
         card_performances = []
         for card_name, stats in card_stats.items():
             total_games = stats['wins'] + stats['losses']
             if total_games > 0:
-                avg_deck_win_rate = statistics.mean(stats['deck_win_rates'])
+                # Apply Bayesian smoothing to the deck win rates
+                smoothed_deck_win_rates = stats['deck_win_rates'].copy()
+                for _ in range(smoothing_strength):
+                    smoothed_deck_win_rates.append(cube_avg_win_rate)
+                
+                avg_deck_win_rate = statistics.mean(smoothed_deck_win_rates)
                 performance_delta = avg_deck_win_rate - cube_avg_win_rate
                 
                 card_performances.append(CardPerformance(

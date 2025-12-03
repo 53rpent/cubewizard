@@ -627,7 +627,7 @@
                         </div>
                         <div class="stat-row">
                             <span>Performance Delta:</span>
-                            <strong>${card.performance_delta > 0 ? '+' : ''}${card.performance_delta.toFixed(1)}%</strong>
+                            <strong>${card.performance_delta > 0 ? '+' : ''}${(card.performance_delta * 100).toFixed(1)}%</strong>
                         </div>
                         <div class="stat-row">
                             <span>Appearances:</span>
