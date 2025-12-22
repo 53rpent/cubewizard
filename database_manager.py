@@ -843,6 +843,82 @@ class DatabaseManager:
             print(f"Error restoring from backup: {e}")
             return False
     
+    def rename_pilot(self, old_name: str, new_name: str, cube_id: Optional[str] = None) -> int:
+        """
+        Rename a pilot across all their decks.
+        
+        This is useful for consolidating names when a pilot has been entered with
+        slight variations (e.g., "John" vs "John Smith" vs "john").
+        
+        Args:
+            old_name: The current pilot name to be replaced
+            new_name: The new pilot name to use
+            cube_id: Optional cube_id to limit the rename to a specific cube.
+                    If None, renames across all cubes.
+        
+        Returns:
+            Number of decks updated
+        
+        Example:
+            # Rename "Nazar" to "Nazar Tash" in all cubes
+            count = db_manager.rename_pilot("Nazar", "Nazar Tash")
+            
+            # Rename only in a specific cube
+            count = db_manager.rename_pilot("John", "John Smith", cube_id="proxybacon")
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            if cube_id:
+                # Rename only in specific cube
+                cursor.execute('''
+                    UPDATE decks 
+                    SET pilot_name = ?
+                    WHERE pilot_name = ? AND cube_id = ?
+                ''', (new_name, old_name, cube_id))
+            else:
+                # Rename across all cubes
+                cursor.execute('''
+                    UPDATE decks 
+                    SET pilot_name = ?
+                    WHERE pilot_name = ?
+                ''', (new_name, old_name))
+            
+            updated_count = cursor.rowcount
+            conn.commit()
+            
+            return updated_count
+    
+    def get_all_pilot_names(self, cube_id: Optional[str] = None) -> List[str]:
+        """
+        Get a list of all unique pilot names in the database.
+        
+        Args:
+            cube_id: Optional cube_id to limit results to a specific cube.
+                    If None, returns pilots from all cubes.
+        
+        Returns:
+            Sorted list of unique pilot names
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            if cube_id:
+                cursor.execute('''
+                    SELECT DISTINCT pilot_name 
+                    FROM decks 
+                    WHERE cube_id = ?
+                    ORDER BY pilot_name
+                ''', (cube_id,))
+            else:
+                cursor.execute('''
+                    SELECT DISTINCT pilot_name 
+                    FROM decks 
+                    ORDER BY pilot_name
+                ''')
+            
+            return [row[0] for row in cursor.fetchall()]
+    
     def close(self):
         """Close database connections (SQLite handles this automatically, but included for completeness)."""
         # SQLite connections are automatically closed when using context managers

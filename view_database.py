@@ -92,15 +92,21 @@ class DatabaseBrowser:
                 print(f"  {i}. Deck #{deck['deck_id']} - {deck['pilot_name']}")
                 print(f"     Record: {record_str} ({win_rate:.1f}% WR) | Cards: {deck['total_cards']} | {deck['processing_timestamp']}")
             
-            print(f"\n  {len(decks) + 1}. Search for a card in this cube")
-            print(f"  {len(decks) + 2}. Back to cube list")
+            print(f"\n  {len(decks) + 1}. Browse by user")
+            print(f"  {len(decks) + 2}. Rename/merge pilot names")
+            print(f"  {len(decks) + 3}. Search for a card in this cube")
+            print(f"  {len(decks) + 4}. Back to cube list")
             
             try:
-                choice = input(f"\nSelect an option (1-{len(decks) + 2}): ").strip()
+                choice = input(f"\nSelect an option (1-{len(decks) + 4}): ").strip()
                 
                 if choice == str(len(decks) + 1):
-                    self.search_card_in_cube(cube['cube_id'])
+                    self.browse_users_in_cube(cube['cube_id'], cube_display_name)
                 elif choice == str(len(decks) + 2):
+                    self.rename_pilot_in_cube(cube['cube_id'], cube_display_name)
+                elif choice == str(len(decks) + 3):
+                    self.search_card_in_cube(cube['cube_id'])
+                elif choice == str(len(decks) + 4):
                     return
                 else:
                     deck_index = int(choice) - 1
@@ -293,6 +299,170 @@ class DatabaseBrowser:
             print("\nNo stored image available for this deck.")
         
         input("\nPress Enter to continue...")
+    
+    def browse_users_in_cube(self, cube_id, cube_display_name):
+        """Browse and analyze user performance within a specific cube."""
+        print(f"\n=== User Performance in {cube_display_name} ===\n")
+        
+        # Get all decks for this cube
+        decks = self.db_manager.get_cube_decks(cube_id)
+        
+        if not decks:
+            print("No decks found in this cube.")
+            input("Press Enter to continue...")
+            return
+        
+        # Aggregate user statistics
+        user_stats = {}
+        for deck in decks:
+            pilot_name = deck['pilot_name']
+            wins = deck.get('match_wins', 0)
+            losses = deck.get('match_losses', 0)
+            
+            if pilot_name not in user_stats:
+                user_stats[pilot_name] = {
+                    'total_wins': 0,
+                    'total_losses': 0,
+                    'deck_count': 0
+                }
+            
+            user_stats[pilot_name]['total_wins'] += wins
+            user_stats[pilot_name]['total_losses'] += losses
+            user_stats[pilot_name]['deck_count'] += 1
+        
+        # Calculate win rates and sort by win rate
+        user_performance = []
+        for pilot_name, stats in user_stats.items():
+            total_games = stats['total_wins'] + stats['total_losses']
+            win_rate = (stats['total_wins'] / total_games) if total_games > 0 else 0.0
+            
+            user_performance.append({
+                'pilot_name': pilot_name,
+                'total_wins': stats['total_wins'],
+                'total_losses': stats['total_losses'],
+                'total_games': total_games,
+                'win_rate': win_rate,
+                'deck_count': stats['deck_count']
+            })
+        
+        # Sort by win rate (descending), then by total games (descending)
+        user_performance.sort(key=lambda x: (x['win_rate'], x['total_games']), reverse=True)
+        
+        if not user_performance:
+            print("No user performance data found.")
+            input("Press Enter to continue...")
+            return
+        
+        # Display user performance table
+        print(f"{'Rank':<4} {'Player':<20} {'Record':<10} {'Win Rate':<10} {'Decks':<6} {'Total Games'}")
+        print("-" * 70)
+        
+        for rank, user in enumerate(user_performance, 1):
+            record = f"{user['total_wins']}-{user['total_losses']}"
+            win_rate_str = f"{user['win_rate']:.1%}"
+            
+            print(f"{rank:<4} {user['pilot_name']:<20} {record:<10} {win_rate_str:<10} {user['deck_count']:<6} {user['total_games']}")
+        
+        print(f"\nTotal players: {len(user_performance)}")
+        print(f"Total decks analyzed: {len(decks)}")
+        
+        # Calculate some additional stats
+        total_wins = sum(user['total_wins'] for user in user_performance)
+        total_losses = sum(user['total_losses'] for user in user_performance)
+        overall_win_rate = (total_wins / (total_wins + total_losses)) if (total_wins + total_losses) > 0 else 0
+        
+        print(f"Overall win rate: {overall_win_rate:.1%}")
+        print(f"Average games per player: {(total_wins + total_losses) / len(user_performance):.1f}")
+        
+        input("\nPress Enter to continue...")
+    
+    def rename_pilot_in_cube(self, cube_id, cube_display_name):
+        """Interactive pilot name rename/merge utility for a specific cube."""
+        print(f"\n=== Rename/Merge Pilot Names in {cube_display_name} ===\n")
+        
+        # Get all pilot names for this cube
+        pilot_names = self.db_manager.get_all_pilot_names(cube_id)
+        
+        if not pilot_names:
+            print("No pilots found in this cube.")
+            input("Press Enter to continue...")
+            return
+        
+        # Get deck counts for each pilot
+        decks = self.db_manager.get_cube_decks(cube_id)
+        pilot_deck_counts = {}
+        for deck in decks:
+            pilot_name = deck['pilot_name']
+            pilot_deck_counts[pilot_name] = pilot_deck_counts.get(pilot_name, 0) + 1
+        
+        print(f"Found {len(pilot_names)} unique pilot name(s):\n")
+        
+        for i, name in enumerate(pilot_names, 1):
+            deck_count = pilot_deck_counts.get(name, 0)
+            print(f"  {i:2}. {name:<30} ({deck_count} deck(s))")
+        
+        print("\n" + "="*70)
+        print("This will rename ALL instances of a pilot name to a new name.")
+        print("Useful for consolidating variations like 'John' and 'John Smith'.")
+        print("="*70 + "\n")
+        
+        try:
+            old_name = input("Enter the OLD pilot name to replace (or blank to cancel): ").strip()
+            
+            if not old_name:
+                print("Cancelled.")
+                input("Press Enter to continue...")
+                return
+            
+            if old_name not in pilot_names:
+                print(f"\nWarning: '{old_name}' not found in the current pilot list.")
+                confirm = input("Continue anyway? (y/N): ").strip().lower()
+                if confirm != 'y':
+                    print("Cancelled.")
+                    input("Press Enter to continue...")
+                    return
+            
+            new_name = input("Enter the NEW pilot name: ").strip()
+            
+            if not new_name:
+                print("No name entered. Cancelled.")
+                input("Press Enter to continue...")
+                return
+            
+            if old_name == new_name:
+                print("Old and new names are the same. Nothing to do.")
+                input("Press Enter to continue...")
+                return
+            
+            # Show confirmation
+            old_deck_count = pilot_deck_counts.get(old_name, 0)
+            print(f"\n{'='*70}")
+            print(f"About to rename in {cube_display_name}:")
+            print(f"  FROM: '{old_name}' ({old_deck_count} deck(s))")
+            print(f"  TO:   '{new_name}'")
+            print(f"{'='*70}\n")
+            
+            confirm = input("Proceed with rename? (yes/no): ").strip().lower()
+            
+            if confirm not in ['yes', 'y']:
+                print("Cancelled.")
+                input("Press Enter to continue...")
+                return
+            
+            # Perform the rename
+            count = self.db_manager.rename_pilot(old_name, new_name, cube_id)
+            
+            print(f"\n✓ Successfully renamed {count} deck(s) from '{old_name}' to '{new_name}'")
+            
+            # Show updated pilot list
+            updated_pilots = self.db_manager.get_all_pilot_names(cube_id)
+            print(f"Updated pilot count: {len(updated_pilots)} unique name(s)")
+            
+            input("\nPress Enter to continue...")
+            
+        except KeyboardInterrupt:
+            print("\n\nCancelled.")
+            input("Press Enter to continue...")
     
     def search_card_in_cube(self, cube_id):
         """Search for a card within a cube and show all decks containing it."""
