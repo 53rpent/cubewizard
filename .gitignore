@@ -52,12 +52,16 @@ Thumbs.db
 
 # Project specific - user data and generated content
 output/
-masv_data/
-masv_imported/
+submissions/
+imported/
 *.log
 
 # Configuration files with sensitive data
 config.ini
+
+# R2 download tracker
+.r2_downloaded.json
+scheduled_pull.log
 
 # Temporary files
 tmp/

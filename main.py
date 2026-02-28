@@ -11,7 +11,6 @@ import json
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
-import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -570,35 +569,35 @@ class CubeWizard:
         
         return f"Card list processed successfully - {len(card_names)} cards"
     
-    def process_masv_data(self, masv_data_dir: str = "masv_data", cube_id: Optional[str] = None) -> Dict[str, Any]:
+    def process_submissions(self, submissions_dir: str = "submissions", cube_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Process all new MASV submissions in the masv_data directory.
+        Process all new deck submissions in the submissions directory.
         Each CSV file should contain its own cube_id in the metadata.
         
         Args:
-            masv_data_dir: Directory containing MASV submission folders
+            submissions_dir: Directory containing submission folders
             cube_id: Legacy parameter, ignored - cube IDs are read from CSV files
             
         Returns:
             Dictionary with import statistics
         """
-        masv_path = Path(masv_data_dir)
-        if not masv_path.exists():
-            print(f"MASV data directory not found: {masv_data_dir}")
+        submissions_path = Path(submissions_dir)
+        if not submissions_path.exists():
+            print(f"Submissions directory not found: {submissions_dir}")
             return {"processed": 0, "failed": 0, "errors": []}
         
-        # Create masv_imported directory if it doesn't exist
-        imported_dir = Path("masv_imported")
+        # Create imported directory if it doesn't exist
+        imported_dir = Path("imported")
         imported_dir.mkdir(exist_ok=True)
         
-        # Get all subdirectories in masv_data
-        submission_folders = [f for f in masv_path.iterdir() if f.is_dir()]
+        # Get all subdirectories in submissions
+        submission_folders = [f for f in submissions_path.iterdir() if f.is_dir()]
         
         if not submission_folders:
-            print("No MASV submission folders found in masv_data directory.")
+            print("No submission folders found to process.")
             return {"processed": 0, "failed": 0, "errors": []}
         
-        print(f"Found {len(submission_folders)} MASV submission folders to process.")
+        print(f"Found {len(submission_folders)} submission(s) to process.")
         
         processed_count = 0
         failed_count = 0
@@ -606,7 +605,7 @@ class CubeWizard:
         
         for folder in submission_folders:
             try:
-                print(f"\nProcessing MASV submission: {folder.name}")
+                print(f"\nProcessing submission: {folder.name}")
                 
                 # Find CSV file in the folder
                 csv_files = list(folder.glob("*.csv"))
@@ -636,7 +635,7 @@ class CubeWizard:
                     continue
                 
                 # Parse metadata from CSV
-                metadata = self._parse_masv_csv(csv_file)
+                metadata = self._parse_submission_csv(csv_file)
                 if not metadata:
                     error_msg = f"Failed to parse CSV file in {folder.name}"
                     print(f"  ERROR: {error_msg}")
@@ -664,13 +663,13 @@ class CubeWizard:
                         print(f"  ERROR: Error processing {image_file.name}: {str(e)}")
                 
                 if success:
-                    # Move the folder to masv_imported with timestamp
+                    # Move the folder to imported/ with timestamp
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     new_folder_name = f"{folder.name}_{timestamp}"
                     destination = imported_dir / new_folder_name
                     
                     shutil.move(str(folder), str(destination))
-                    print(f"  Moved to: masv_imported/{new_folder_name}")
+                    print(f"  Moved to: imported/{new_folder_name}")
                     processed_count += 1
                 else:
                     error_msg = f"Failed to process any images in {folder.name}"
@@ -684,7 +683,7 @@ class CubeWizard:
                 failed_count += 1
         
         # Print summary
-        print(f"\n=== MASV Import Summary ===")
+        print(f"\n=== Import Summary ===")
         print(f"Processed: {processed_count} submissions")
         print(f"Failed: {failed_count} submissions")
         
@@ -699,9 +698,9 @@ class CubeWizard:
             "errors": errors
         }
     
-    def _parse_masv_csv(self, csv_file: Path) -> Optional[Dict[str, Any]]:
+    def _parse_submission_csv(self, csv_file: Path) -> Optional[Dict[str, Any]]:
         """
-        Parse metadata from a MASV CSV file.
+        Parse metadata from a submission CSV file.
         
         Args:
             csv_file: Path to the CSV file
@@ -723,8 +722,8 @@ class CubeWizard:
             # Use the first row of data
             row = rows[0]
             
-            # Try to extract standard MASV form fields
-            # These field names should match what's configured in the MASV form
+            # Try to extract standard form fields
+            # These field names should match what's configured in the submission form
             pilot_name = None
             wins = None
             losses = None
@@ -859,29 +858,29 @@ def main():
     if len(sys.argv) > 1:
         target_path = sys.argv[1]
         
-        # Check for help or MASV import command
+        # Check for help or import command
         if target_path.lower() in ['--help', '-h', 'help']:
             print("Usage:")
             print("  python main.py <image_file> [cube_id]")
-            print("  python main.py masv [masv_directory]")
+            print("  python main.py import [submissions_directory]")
             print("")
             print("Commands:")
-            print("  masv                  Process MASV submissions (cube IDs from CSV files)")
+            print("  import                Process deck submissions (cube IDs from CSV files)")
             print("")
             print("Examples:")
             print("  python main.py deck.jpg proxybacon")
-            print("  python main.py masv")
-            print("  python main.py masv custom_masv_folder")
+            print("  python main.py import")
+            print("  python main.py import custom_submissions_folder")
             return
         
-        if target_path.lower() in ['--masv', '-masv', 'masv']:
-            masv_dir = sys.argv[2] if len(sys.argv) > 2 else "masv_data"
+        if target_path.lower() in ['--import', '-import', 'import']:
+            submissions_dir = sys.argv[2] if len(sys.argv) > 2 else "submissions"
             
-            print(f"Processing MASV submissions from: {masv_dir}")
+            print(f"Processing deck submissions from: {submissions_dir}")
             print("Note: Cube IDs will be determined by individual CSV files")
                 
-            result = wizard.process_masv_data(masv_dir)
-            print(f"\nMASV import completed: {result['processed']} processed, {result['failed']} failed")
+            result = wizard.process_submissions(submissions_dir)
+            print(f"\nImport completed: {result['processed']} processed, {result['failed']} failed")
             
             if result['errors']:
                 print("\nErrors:")
@@ -900,14 +899,14 @@ def main():
                     print(f"\nProcessing completed: {enriched_path}")
             else:
                 print(f"Error: '{target_path}' is not a valid image file.")
-                print("Use 'python main.py masv' to process MASV submissions.")
+                print("Use 'python main.py import' to process deck submissions.")
         except Exception as e:
             print(f"Error: {str(e)}")
     else:
         # Interactive mode
         print("Choose an option:")
         print("1. Process a single image file")
-        print("2. Process MASV submissions")
+        print("2. Process deck submissions")
         print("3. Process a manual card list")
         
         choice = input("\nEnter your choice (1-3): ").strip()
@@ -926,13 +925,13 @@ def main():
                 print(f"Error: {str(e)}")
         
         elif choice == '2':
-            masv_dir = input("Enter MASV directory (default: 'masv_data'): ").strip()
-            if not masv_dir:
-                masv_dir = "masv_data"
+            submissions_dir = input("Enter submissions directory (default: 'submissions'): ").strip()
+            if not submissions_dir:
+                submissions_dir = "submissions"
             
             print("Note: Cube IDs will be determined by individual CSV files")
-            result = wizard.process_masv_data(masv_dir)
-            print(f"\nMASV import completed: {result['processed']} processed, {result['failed']} failed")
+            result = wizard.process_submissions(submissions_dir)
+            print(f"\nImport completed: {result['processed']} processed, {result['failed']} failed")
             
             if result['errors']:
                 print("\nErrors encountered:")

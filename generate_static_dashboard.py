@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Static Dashboard Generator for CubeWizard
-Generates static HTML files that can be hosted on Surge, Netlify, GitHub Pages, etc.
+Generates static HTML files that can be hosted on Cloudflare Workers, GitHub Pages, etc.
 """
 
 import json

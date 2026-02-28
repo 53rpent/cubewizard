@@ -2,8 +2,11 @@
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo    CubeWizard Deployment Branch Reset
+echo    CubeWizard Deploy to Live Site
 echo ============================================
+echo.
+echo Pushes your local data and dashboard to the
+echo publicly available site.
 echo.
 
 :: Check if we're in a git repository
@@ -21,14 +24,14 @@ for /f "tokens=*" %%i in ('git branch --show-current') do set current_branch=%%i
 echo Current branch: %current_branch%
 echo.
 
-:: Show available deployment branches
-echo Available deployment branches:
-echo   1. prod-site
-echo   2. stg-site
+:: Show available deployment targets
+echo Deployment targets:
+echo   1. prod-site  (live site)
+echo   2. stg-site   (staging / preview)
 echo   3. Cancel
 echo.
 
-set /p choice="Select deployment branch to reset (1-3): "
+set /p choice="Select deployment target (1-3): "
 
 if "%choice%"=="1" (
     set target_branch=prod-site
@@ -45,27 +48,27 @@ if "%choice%"=="1" (
 )
 
 echo.
-echo Selected branch: %target_branch%
+echo Selected target: %target_branch%
 echo.
 
 :: Confirm the operation
-echo WARNING: This will HARD RESET %target_branch% to match main branch.
-echo All changes in %target_branch% that are not in main will be LOST!
+echo This will deploy the current main branch to %target_branch%.
+echo The live site will be updated with your latest local data.
 echo.
-set /p confirm="Are you sure you want to continue? (y/N): "
+set /p confirm="Are you sure you want to deploy? (y/N): "
 
 if /i not "%confirm%"=="y" (
-    echo Operation cancelled.
+    echo Deployment cancelled.
     pause
     exit /b 0
 )
 
 echo.
-echo Starting deployment branch reset...
+echo Starting deployment...
 echo.
 
 :: Step 1: Ensure we have latest main
-echo [1/4] Fetching latest changes from origin...
+echo [1/4] Fetching latest from origin...
 git fetch origin
 if %errorlevel% neq 0 (
     echo ERROR: Failed to fetch from origin.
@@ -75,7 +78,7 @@ if %errorlevel% neq 0 (
 
 :: Step 2: Switch to main and update it
 echo.
-echo [2/4] Switching to main branch and updating...
+echo [2/4] Updating main branch...
 git checkout main
 if %errorlevel% neq 0 (
     echo ERROR: Failed to checkout main branch.
@@ -92,7 +95,7 @@ if %errorlevel% neq 0 (
 
 :: Step 3: Switch to target branch
 echo.
-echo [3/4] Switching to %target_branch% branch...
+echo [3/4] Preparing %target_branch% for deployment...
 git checkout %target_branch%
 if %errorlevel% neq 0 (
     echo WARNING: %target_branch% branch doesn't exist locally. Creating it...
@@ -106,29 +109,26 @@ if %errorlevel% neq 0 (
 
 :: Step 4: Hard reset to main
 echo.
-echo [4/4] Hard resetting %target_branch% to match main...
+echo [4/4] Syncing %target_branch% with main...
 git reset --hard main
 if %errorlevel% neq 0 (
-    echo ERROR: Failed to reset %target_branch% to main.
+    echo ERROR: Failed to sync %target_branch% with main.
     pause
     exit /b 1
 )
 
 :: Optional: Force push to origin (commented out for safety)
 echo.
-echo Reset complete! %target_branch% now matches main.
+echo Ready to deploy! %target_branch% has been synced with main locally.
 echo.
-echo To push the reset branch to origin, run:
-echo   git push origin %target_branch% --force-with-lease
-echo.
-echo WARNING: Force pushing will overwrite the remote %target_branch% branch!
+echo To publish to the live site, this needs to be pushed to origin.
 echo.
 
-set /p push_confirm="Do you want to force push to origin now? (y/N): "
+set /p push_confirm="Push to live site now? (y/N): "
 
 if /i "%push_confirm%"=="y" (
     echo.
-    echo Pushing %target_branch% to origin...
+    echo Publishing %target_branch% to live site...
     git push origin %target_branch% --force-with-lease
     if %errorlevel% neq 0 (
         echo ERROR: Failed to push to origin.
@@ -137,19 +137,19 @@ if /i "%push_confirm%"=="y" (
         exit /b 1
     )
     echo.
-    echo Successfully pushed %target_branch% to origin!
+    echo Successfully deployed to %target_branch%!
 ) else (
     echo.
-    echo Skipped pushing to origin.
-    echo Remember to push when you're ready: git push origin %target_branch% --force-with-lease
+    echo Deployment not pushed yet.
+    echo Run this when ready: git push origin %target_branch% --force-with-lease
 )
 
 echo.
 echo ============================================
-echo           Reset Complete!
+echo         Deployment Complete!
 echo ============================================
 echo.
-echo Branch %target_branch% has been reset to match main.
+echo %target_branch% is now up to date with main.
 
 :: Return to original branch if it was different
 if not "%current_branch%"=="%target_branch%" (
