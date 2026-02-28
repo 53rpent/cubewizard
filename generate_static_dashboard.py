@@ -1362,7 +1362,7 @@ class StaticDashboardGenerator:
         """Copy template files from templates directory to static dashboard output."""
         templates_dir = Path("templates")
         
-        # Process submit.html template to add timestamp
+        # Process submit.html template to add timestamp and cube options
         submit_path = templates_dir / "submit.html"
         if submit_path.exists():
             with open(submit_path, 'r', encoding='utf-8') as f:
@@ -1371,6 +1371,26 @@ class StaticDashboardGenerator:
             # Add timestamp to submit template
             timestamp = datetime.now().strftime("%B %d, %Y at %I:%M %p")
             submit_content = submit_content.replace('{{ timestamp }}', timestamp)
+            
+            # Build cube <option> tags from cube_mapping.csv
+            import csv
+            cube_options_html = ''
+            mapping_path = Path("cube_mapping.csv")
+            if mapping_path.exists():
+                with open(mapping_path, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        cid = row['cube_id'].strip()
+                        cname = row['cube_name'].strip()
+                        cube_options_html += f'<option value="{cid}">{cname}</option>\n              '
+            else:
+                # Fallback: use cube IDs from the database
+                cubes = self.db_manager.get_all_cubes()
+                for cube in cubes:
+                    cid = cube['cube_id']
+                    cube_options_html += f'<option value="{cid}">{cid}</option>\n              '
+            
+            submit_content = submit_content.replace('{{ cube_options }}', cube_options_html.rstrip())
             
             with open(self.output_dir / "submit.html", 'w', encoding='utf-8') as f:
                 f.write(submit_content)

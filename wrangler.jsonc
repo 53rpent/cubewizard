@@ -1,7 +1,14 @@
 {
   "name": "cubewizard-cloudflare-worker",
   "compatibility_date": "2024-09-19",
+  "main": "src/worker.js",
   "assets": {
     "directory": "./docs/"
-  }
+  },
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "decklist-uploads"
+    }
+  ]
 }
