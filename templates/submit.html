@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Submit Deck Images | CubeWizard</title>
+    <link rel="icon" type="image/png" href="CubeWizard.png">
     <style>
       * {
         margin: 0;
@@ -22,13 +23,21 @@
       .header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 2rem;
+        padding: 1.5rem;
         text-align: center;
       }
 
-      .header h1 {
-        font-size: 2.5rem;
-        margin-bottom: 0.5rem;
+      .header-logo {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 0.25rem;
+      }
+
+      .header-title {
+        font-size: 0.9rem;
+        font-weight: 400;
+        opacity: 0.9;
+        margin: 0 0 0.5rem 0;
       }
 
       .breadcrumb {
@@ -241,8 +250,8 @@
   </head>
   <body>
     <div class="header">
-      <h1>Submit Deck Images</h1>
-      <p>Upload your cube deck photos for analysis</p>
+      <img src="CubeWizard.png" alt="CubeWizard" class="header-logo">
+      <p class="header-title">CubeWizard Dashboard</p>
       <div class="breadcrumb">
         <a href="index.html">&larr; Back to Dashboard</a> &gt; Submit Deck Images
       </div>

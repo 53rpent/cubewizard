@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Performance vs Popularity - CubeWizard</title>
+    <link rel="icon" type="image/png" href="CubeWizard.png">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         * {
@@ -22,14 +23,21 @@
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 2rem;
+            padding: 1.5rem;
             text-align: center;
         }
         
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-            align-items: center;
+        .header-logo {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 0.25rem;
+        }
+        
+        .header-title {
+            font-size: 0.9rem;
+            font-weight: 400;
+            opacity: 0.9;
+            margin: 0;
         }
         
         .breadcrumb {
@@ -201,8 +209,8 @@
 </head>
 <body>
     <div class="header">
-        <h1>Performance vs Popularity</h1>
-        <p>Detailed analysis for proxybacon</p>
+        <img src="CubeWizard.png" alt="CubeWizard" class="header-logo">
+        <p class="header-title">CubeWizard Dashboard</p>
     </div>
     
     <div class="breadcrumb">
@@ -232,7 +240,7 @@
     
     <div class="footer">
         <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
-        <p class="timestamp">Last updated: <span id="timestamp">February 28, 2026 at 12:25 PM</span></p>
+        <p class="timestamp">Last updated: <span id="timestamp">February 28, 2026 at 01:38 PM</span></p>
     </div>
     
     <script>

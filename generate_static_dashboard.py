@@ -1188,15 +1188,6 @@ class StaticDashboardGenerator:
             static_js + '\n        // Auto-load dashboard if cube is pre-selected'
         )
         
-        # Add submit button after the select dropdown
-        submit_button_html = '''
-            <a href="submit.html" class="submit-button" style="display: inline-block; background: #28a745; color: white; padding: 0.75rem 1.5rem; text-decoration: none; border-radius: 4px; margin-top: 1rem; font-weight: 600; transition: background 0.2s ease;">Submit New Deck</a>'''
-        
-        html_content = html_content.replace(
-            '</select>\n        </div>',
-            '</select>' + submit_button_html + '\n        </div>'
-        )
-        
         return html_content
     
     def _generate_cube_section(self, cube_id: str, cube_data: dict) -> str:
@@ -1410,6 +1401,14 @@ class StaticDashboardGenerator:
                 print(f"Copied {template_file} to static dashboard")
             else:
                 print(f"WARNING: {template_file} not found in templates directory")
+        
+        # Copy logo/favicon image
+        logo_path = Path("CubeWizard.png")
+        if logo_path.exists():
+            shutil.copy2(logo_path, self.output_dir / "CubeWizard.png")
+            print("Copied CubeWizard.png to static dashboard")
+        else:
+            print("WARNING: CubeWizard.png not found in project root")
 
 def main():
     """Interactive static dashboard generation."""
