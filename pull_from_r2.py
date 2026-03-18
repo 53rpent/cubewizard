@@ -221,9 +221,9 @@ class R2Puller:
 
             result = self.download_submission(sub, self.submissions_dir)
             if result:
-                print(f"  ✓ Saved to {result}")
                 downloaded.add(prefix)
                 self._save_downloaded(downloaded)
+                print(f"  [OK] Saved to {result}")
                 success_count += 1
             else:
                 fail_count += 1
@@ -255,7 +255,7 @@ class R2Puller:
         print(f"\n{'Status':<12} {'Prefix'}")
         print("-" * 60)
         for sub in submissions:
-            status = "✓ pulled" if sub["prefix"] in downloaded else "  new"
+            status = "pulled" if sub["prefix"] in downloaded else "  new "
             print(f"{status:<12} {sub['prefix']}")
 
         total = len(submissions)
@@ -309,7 +309,7 @@ def main():
         if choice == "1":
             result = puller.pull_new()
             if result["downloaded"] > 0:
-                print(f"\n→ Run 'python main.py import' to process these decks.")
+                print(f"\nRun 'python main.py import' to process these decks.")
         elif choice == "2":
             puller.list_remote()
         elif choice == "3":

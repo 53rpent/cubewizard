@@ -352,7 +352,7 @@
                 <select id="cube-select" onchange="loadDashboard()">
                     <option value="">Choose a cube...</option>
                     {% for cube in cubes %}
-                    <option value="{{ cube.cube_id }}" {% if selected_cube == cube.cube_id %}selected{% endif %}>{{ cube.cube_id }} ({{ cube.total_decks }} decks)</option>
+                    <option value="{{ cube.cube_id }}" {% if selected_cube == cube.cube_id %}selected{% endif %}>{{ cube.cube_name }} ({{ cube.total_decks }} decks)</option>
                     {% endfor %}
                 </select>
             </div>

@@ -1089,9 +1089,28 @@ class StaticDashboardGenerator:
         env = Environment(loader=FileSystemLoader(template_dir))
         template = env.get_template('dashboard.html')
         
+        # Build cube_id -> cube_name lookup from cube_mapping.csv
+        import csv
+        name_lookup = {}
+        mapping_path = Path("cube_mapping.csv")
+        if mapping_path.exists():
+            with open(mapping_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    cid = row['cube_id'].strip()
+                    cname = row['cube_name'].strip()
+                    name_lookup[cid] = cname
+        
         # Prepare template data
         template_data = {
-            'cubes': [{'cube_id': cube['cube_id'], 'total_decks': cube['total_decks']} for cube in cubes],
+            'cubes': [
+                {
+                    'cube_id': cube['cube_id'],
+                    'cube_name': name_lookup.get(cube['cube_id'], cube['cube_id']),
+                    'total_decks': cube['total_decks'],
+                }
+                for cube in cubes
+            ],
             'selected_cube': None,  # For static version, no pre-selection
             'timestamp': datetime.now().strftime("%B %d, %Y at %I:%M %p")
         }
