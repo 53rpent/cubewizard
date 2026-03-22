@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detailed Analysis - CubeWizard</title>
+    <link rel="icon" type="image/png" href="CubeWizard.png">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .header-logo {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 0.25rem;
+        }
+        
+        .header-title {
+            font-size: 0.9rem;
+            font-weight: 400;
+            opacity: 0.9;
+            margin: 0;
+        }
+        
+        .breadcrumb {
+            background: white;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .breadcrumb a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            align-items: center;
+        }
+        
+        .description {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        .description p {
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: #555;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 8px;
+            padding: 0.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            min-height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #detailed-chart {
+            width: 100%;
+            flex: 1;
+            min-height: 580px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #detailed-chart .plotly-graph-div {
+            margin: 0 auto !important;
+        }
+        
+        .data-container {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .positive {
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .negative {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+            font-size: 1.2rem;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 2rem;
+            border-radius: 8px;
+            border: 1px solid #f5c6cb;
+            margin: 2rem 0;
+        }
+        
+        .footer {
+            background: white;
+            border-top: 1px solid #eee;
+            padding: 2rem;
+            margin-top: 4rem;
+            text-align: center;
+            color: #666;
+        }
+        
+        .footer p {
+            margin-bottom: 0.5rem;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="CubeWizard.png" alt="CubeWizard" class="header-logo">
+        <p class="header-title">CubeWizard Dashboard</p>
+    </div>
+    
+    <div class="breadcrumb">
+        <a href="index.html">&larr; Back to Dashboard</a>
+    </div>
+    
+    <div class="container">
+        <div class="description">
+            <h2 id="analysis-title">Analysis Overview</h2>
+            <p id="analysis-description"></p>
+        </div>
+        
+        <div id="chart-section" class="chart-container" style="display: none;">
+            <div id="detailed-chart"></div>
+        </div>
+        
+        <div id="data-section" class="data-container" style="display: none;">
+            <div id="detailed-data"></div>
+        </div>
+        
+        <div id="loading" class="loading">
+            Loading detailed analysis...
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+    
+    <div class="footer">
+        <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+    </div>
+    
+    <script>
+        // Read params from URL
+        var params = new URLSearchParams(window.location.search);
+        var cubeId = params.get('cube') || '';
+        var analysisType = params.get('type') || '';
+        
+        var ANALYSIS_INFO = {
+            performance: {
+                title: 'Performance vs Popularity',
+                description: 'This analysis shows how individual cards perform relative to the cube average. Cards with positive deltas consistently appear in winning decks more often than losing ones, while negative deltas indicate cards that may be underperforming or that their archetype may be weaker. The "Performance Delta" represents how far above or below the cube average each card performs.',
+                chartType: 'performance_scatter'
+            },
+            color: {
+                title: 'Color Performance Analysis',
+                description: 'This analysis examines how decks of each color perform. A deck is defined as being a certain color if it contains at least one card with that color in it. The color bar chart shows the overall win rate for decks containing each color.',
+                chartType: 'color_performance'
+            },
+            synergies: {
+                title: 'Card Synergy Analysis',
+                description: 'This analysis identifies pairs of cards that perform better together than they do individually. The "Synergy Bonus" shows how much the combined win rate exceeds the average of their individual performances. Positive synergy bonuses indicate natural card combinations that fit well together, while negative bonuses may suggest conflicting strategies.',
+                chartType: 'performance_scatter'
+            }
+        };
+        
+        function loadDetailedAnalysis() {
+            if (!cubeId || !analysisType) {
+                showError('Missing cube or analysis type parameter.');
+                return;
+            }
+            
+            var info = ANALYSIS_INFO[analysisType];
+            if (!info) {
+                showError('Unknown analysis type: ' + analysisType);
+                return;
+            }
+            
+            // Set title and description
+            document.getElementById('analysis-title').textContent = info.title;
+            document.getElementById('analysis-description').textContent = info.description;
+            document.title = info.title + ' - CubeWizard';
+            
+            // Fetch dashboard data from API
+            fetch('/api/dashboard/' + encodeURIComponent(cubeId))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    displayDetailedAnalysis(data);
+                    loadDetailedChart(info.chartType);
+                    hideLoading();
+                })
+                .catch(function(err) {
+                    showError('Failed to load analysis data: ' + err.message);
+                });
+        }
+        
+        function displayDetailedAnalysis(data) {
+            if (analysisType === 'performance') {
+                displayPerformanceAnalysis(data.card_performances);
+            } else if (analysisType === 'synergies') {
+                displaySynergyAnalysis(data.synergies);
+            } else if (analysisType === 'color') {
+                displayColorAnalysis(data.color_analysis);
+            }
+            document.getElementById('data-section').style.display = 'block';
+        }
+        
+        function displayPerformanceAnalysis(performances) {
+            var topPerformers = performances.filter(function(p) { return p.performance_delta > 0; }).slice(0, 25);
+            var underperformers = performances.filter(function(p) { return p.performance_delta < -0.05 && p.appearances >= 3; });
+            
+            var html = '<h3>Top Performing Cards</h3>';
+            html += '<table class="table"><thead><tr><th>Card Name</th><th>Appearances</th><th>Win Rate</th><th>Performance Delta</th><th>Record</th></tr></thead><tbody>';
+            for (var i = 0; i < topPerformers.length; i++) {
+                var card = topPerformers[i];
+                var delta = card.performance_delta >= 0 ? '+' + (card.performance_delta * 100).toFixed(1) + '%' : (card.performance_delta * 100).toFixed(1) + '%';
+                html += '<tr><td><strong>' + card.name + '</strong></td>' +
+                    '<td>' + card.appearances + '</td>' +
+                    '<td>' + (card.win_rate * 100).toFixed(1) + '%</td>' +
+                    '<td class="' + (card.performance_delta >= 0 ? 'positive' : 'negative') + '">' + delta + '</td>' +
+                    '<td>' + card.wins + '-' + card.losses + '</td></tr>';
+            }
+            html += '</tbody></table>';
+            
+            if (underperformers.length > 0) {
+                html += '<h3 style="margin-top: 2rem;">Underperforming Cards</h3>';
+                html += '<table class="table"><thead><tr><th>Card Name</th><th>Appearances</th><th>Win Rate</th><th>Performance Delta</th><th>Record</th></tr></thead><tbody>';
+                for (var u = 0; u < underperformers.length; u++) {
+                    var uc = underperformers[u];
+                    html += '<tr><td><strong>' + uc.name + '</strong></td>' +
+                        '<td>' + uc.appearances + '</td>' +
+                        '<td>' + (uc.win_rate * 100).toFixed(1) + '%</td>' +
+                        '<td class="negative">' + (uc.performance_delta * 100).toFixed(1) + '%</td>' +
+                        '<td>' + uc.wins + '-' + uc.losses + '</td></tr>';
+                }
+                html += '</tbody></table>';
+            }
+            
+            document.getElementById('detailed-data').innerHTML = html;
+        }
+        
+        function displaySynergyAnalysis(synergies) {
+            var html = '<h3>Card Synergies</h3>';
+            html += '<table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Together Win Rate</th><th>Synergy Bonus</th><th>Together Record</th></tr></thead><tbody>';
+            for (var i = 0; i < synergies.length; i++) {
+                var s = synergies[i];
+                var bonus = s.synergy_bonus >= 0 ? '+' + (s.synergy_bonus * 100).toFixed(1) + '%' : (s.synergy_bonus * 100).toFixed(1) + '%';
+                html += '<tr><td><strong>' + s.card1 + '</strong></td>' +
+                    '<td><strong>' + s.card2 + '</strong></td>' +
+                    '<td>' + (s.together_win_rate * 100).toFixed(1) + '%</td>' +
+                    '<td class="' + (s.synergy_bonus >= 0 ? 'positive' : 'negative') + '">' + bonus + '</td>' +
+                    '<td>' + s.together_wins + '-' + s.together_losses + '</td></tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('detailed-data').innerHTML = html;
+        }
+        
+        function displayColorAnalysis(colorAnalysis) {
+            var html = '<h3>Color Performance</h3>';
+            html += '<table class="table"><thead><tr><th>Color</th><th>Win Rate</th><th>Total Games</th><th>Record (W-L)</th><th>Deck Presence</th></tr></thead><tbody>';
+            for (var i = 0; i < colorAnalysis.length; i++) {
+                var c = colorAnalysis[i];
+                html += '<tr><td><strong>' + c.color + '</strong></td>' +
+                    '<td>' + (c.win_rate * 100).toFixed(1) + '%</td>' +
+                    '<td>' + c.total_games + '</td>' +
+                    '<td>' + c.wins + '-' + c.losses + '</td>' +
+                    '<td>' + c.avg_cards_per_deck + '%</td></tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('detailed-data').innerHTML = html;
+        }
+        
+        function loadDetailedChart(chartType) {
+            fetch('/api/charts/' + encodeURIComponent(cubeId) + '/' + chartType)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.error) {
+                        console.error('Chart error:', data.error);
+                        return;
+                    }
+                    
+                    var chartData = JSON.parse(data.chart);
+                    
+                    var containerWidth = document.getElementById('detailed-chart').clientWidth;
+                    chartData.layout.width = containerWidth;
+                    chartData.layout.height = 560;
+                    chartData.layout.margin = { l: 60, r: 60, t: 40, b: 60 };
+                    chartData.layout.autosize = false;
+                    
+                    chartData.layout.xaxis = chartData.layout.xaxis || {};
+                    chartData.layout.yaxis = chartData.layout.yaxis || {};
+                    chartData.layout.xaxis.automargin = true;
+                    chartData.layout.yaxis.automargin = true;
+                    
+                    Plotly.newPlot('detailed-chart', chartData.data, chartData.layout, {
+                        responsive: false,
+                        displayModeBar: true,
+                        useResizeHandler: false
+                    }).then(function() {
+                        var plotDiv = document.getElementById('detailed-chart');
+                        var plotlyDiv = plotDiv.querySelector('.plotly-graph-div');
+                        if (plotlyDiv) {
+                            plotlyDiv.style.margin = '0 auto';
+                            plotlyDiv.style.display = 'block';
+                        }
+                        
+                        window.addEventListener('resize', function() {
+                            var newWidth = document.getElementById('detailed-chart').clientWidth;
+                            Plotly.relayout('detailed-chart', { width: newWidth });
+                        });
+                    });
+                    
+                    document.getElementById('chart-section').style.display = 'block';
+                })
+                .catch(function(err) {
+                    console.error('Failed to load chart:', err);
+                });
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function showError(message) {
+            document.getElementById('error').innerHTML = message;
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        document.addEventListener('DOMContentLoaded', loadDetailedAnalysis);
+    </script>
+</body>
+</html>

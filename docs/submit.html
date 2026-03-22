@@ -267,9 +267,7 @@
           <div class="form-group">
             <label for="cube_id">Cube</label>
             <select id="cube_id" name="cube_id" required>
-              <option value="">Select a cube&hellip;</option>
-              <option value="proxybacon">The Bacon Vintage Cube</option>
-              <option value="enchantedCube">Enchanted to Meet You</option>
+              <option value="">Loading cubes&hellip;</option>
             </select>
           </div>
 
@@ -404,6 +402,26 @@
             submitBtn.textContent = "Upload Deck";
           });
       });
+
+      // Load cubes dynamically from API
+      fetch("/api/cubes")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var select = document.getElementById("cube_id");
+          select.innerHTML = '<option value="">Select a cube\u2026</option>';
+          var cubes = data.cubes || [];
+          for (var i = 0; i < cubes.length; i++) {
+            var opt = document.createElement("option");
+            opt.value = cubes[i].cube_id;
+            opt.textContent = cubes[i].cube_name;
+            select.appendChild(opt);
+          }
+        })
+        .catch(function (err) {
+          console.error("Failed to load cubes:", err);
+          var select = document.getElementById("cube_id");
+          select.innerHTML = '<option value="">Failed to load cubes</option>';
+        });
     </script>
   </body>
 </html>
