@@ -1,483 +1,243 @@
-/**/**
+/**
+ * CubeWizard Cloudflare Worker
+ *
+ * Handles deck image uploads (R2), serves analytics API endpoints (D1),
+ * and static assets for the dashboard SPA.
+ */
 
- * CubeWizard Cloudflare Worker * CubeWizard Cloudflare Worker
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
 
- * * 
+    // --- Analytics API endpoints (D1) ---
+    if (url.pathname === "/api/cubes" && request.method === "GET") {
+      return handleGetCubes(env);
+    }
 
- * Handles deck image uploads (R2), serves analytics API endpoints (D1), * Handles deck image uploads and stores them in R2.
+    const dashboardMatch = url.pathname.match(/^\/api\/dashboard\/([^/]+)$/);
+    if (dashboardMatch && request.method === "GET") {
+      return handleGetDashboard(dashboardMatch[1], env);
+    }
 
- * and static assets for the dashboard SPA. * Static assets (dashboard, submit form) are served by the ASSETS binding.
+    const chartsMatch = url.pathname.match(/^\/api\/charts\/([^/]+)\/([^/]+)$/);
+    if (chartsMatch && request.method === "GET") {
+      return handleGetChart(chartsMatch[1], chartsMatch[2], env);
+    }
 
- */ */
+    // --- Existing endpoints ---
+    if (url.pathname === "/api/upload" && request.method === "POST") {
+      return handleUpload(request, env);
+    }
 
+    if (url.pathname === "/api/validate-cube" && request.method === "GET") {
+      return handleValidateCube(url, env);
+    }
 
-
-export default {export default {
-
-  async fetch(request, env) {  async fetch(request, env) {
-
-    const url = new URL(request.url);    const url = new URL(request.url);
-
-
-
-    // --- Analytics API endpoints (D1) ---    // Handle upload API endpoint
-
-    if (url.pathname === "/api/cubes" && request.method === "GET") {    if (url.pathname === "/api/upload" && request.method === "POST") {
-
-      return handleGetCubes(env);      return handleUpload(request, env);
-
-    }    }
-
-
-
-    const dashboardMatch = url.pathname.match(/^\/api\/dashboard\/([^/]+)$/);    // Validate a CubeCobra cube ID (proxy to avoid CORS)
-
-    if (dashboardMatch && request.method === "GET") {    if (url.pathname === "/api/validate-cube" && request.method === "GET") {
-
-      return handleGetDashboard(dashboardMatch[1], env);      return handleValidateCube(url, env);
-
-    }    }
-
-
-
-    const chartsMatch = url.pathname.match(/^\/api\/charts\/([^/]+)\/([^/]+)$/);    // Submit a new cube request
-
-    if (chartsMatch && request.method === "GET") {    if (url.pathname === "/api/add-cube" && request.method === "POST") {
-
-      return handleGetChart(chartsMatch[1], chartsMatch[2], env);      return handleAddCube(request, env);
-
-    }    }
-
-
-
-    // --- Existing endpoints ---    // Everything else is served by the static assets binding
-
-    if (url.pathname === "/api/upload" && request.method === "POST") {    return env.ASSETS.fetch(request);
-
-      return handleUpload(request, env);  },
-
-    }};
-
-
-
-    if (url.pathname === "/api/validate-cube" && request.method === "GET") {/**
-
-      return handleValidateCube(url, env); * Handle a deck image upload.
-
-    } * Expects a multipart form with fields: cube_id, pilot_name, wins, losses, draws, image
-
- * Stores the image and a metadata.json sidecar in R2.
-
-    if (url.pathname === "/api/add-cube" && request.method === "POST") { */
-
-      return handleAddCube(request, env);async function handleUpload(request, env) {
-
-    }  try {
-
-    const formData = await request.formData();
+    if (url.pathname === "/api/add-cube" && request.method === "POST") {
+      return handleAddCube(request, env);
+    }
 
     return env.ASSETS.fetch(request);
+  },
+};
 
-  },    // --- Validate required fields ---
-
-};    const cubeId = formData.get("cube_id")?.trim();
-
-    const pilotName = formData.get("pilot_name")?.trim();
-
-// ============================================================    const winsRaw = formData.get("wins");
-
-//  Analytics API handlers    const lossesRaw = formData.get("losses");
-
-// ============================================================    const drawsRaw = formData.get("draws") || "0";
-
-    const imageFile = formData.get("image");
+// ============================================================
+//  Analytics API handlers
+// ============================================================
 
 const BAYESIAN_SMOOTHING_STRENGTH = 5;
+const SYNERGY_MIN_APPEARANCES = 3;
 
-const SYNERGY_MIN_APPEARANCES = 3;    const errors = [];
-
-    if (!cubeId) errors.push("cube_id is required");
-
-async function handleGetCubes(env) {    if (!pilotName) errors.push("pilot_name is required");
-
-  const { results } = await env.cubewizard_db.prepare(    if (winsRaw === null || winsRaw === "") errors.push("wins is required");
-
-    "SELECT c.cube_id, c.total_decks, c.created, c.last_updated," +    if (lossesRaw === null || lossesRaw === "") errors.push("losses is required");
-
-    " COALESCE(m.cube_name, c.cube_id) AS cube_name," +    if (!imageFile || !(imageFile instanceof File) || imageFile.size === 0) {
-
-    " COALESCE(m.description, '') AS description" +      errors.push("image file is required");
-
-    " FROM cubes c" +    }
-
+async function handleGetCubes(env) {
+  const { results } = await env.cubewizard_db.prepare(
+    "SELECT c.cube_id, c.total_decks, c.created, c.last_updated," +
+    " COALESCE(m.cube_name, c.cube_id) AS cube_name," +
+    " COALESCE(m.description, '') AS description" +
+    " FROM cubes c" +
     " LEFT JOIN cube_mapping m ON c.cube_id = m.cube_id" +
-
-    " ORDER BY c.total_decks DESC"    if (errors.length > 0) {
-
-  ).all();      return jsonResponse({ success: false, errors }, 400);
-
-    }
+    " ORDER BY c.total_decks DESC"
+  ).all();
 
   return jsonResponse({ cubes: results });
+}
 
-}    const wins = parseInt(winsRaw, 10);
-
-    const losses = parseInt(lossesRaw, 10);
-
-async function handleGetDashboard(cubeId, env) {    const draws = parseInt(drawsRaw, 10);
-
+async function handleGetDashboard(cubeId, env) {
   const cubeRow = await env.cubewizard_db.prepare(
-
-    "SELECT * FROM cubes WHERE cube_id = ?"    if (isNaN(wins) || wins < 0) errors.push("wins must be a non-negative integer");
-
-  ).bind(cubeId).first();    if (isNaN(losses) || losses < 0) errors.push("losses must be a non-negative integer");
-
-    if (isNaN(draws) || draws < 0) errors.push("draws must be a non-negative integer");
+    "SELECT * FROM cubes WHERE cube_id = ?"
+  ).bind(cubeId).first();
 
   if (!cubeRow) {
-
-    return jsonResponse({ error: "Cube not found" }, 404);    if (errors.length > 0) {
-
-  }      return jsonResponse({ success: false, errors }, 400);
-
-    }
-
-  const { results: decks } = await env.cubewizard_db.prepare(
-
-    "SELECT * FROM decks WHERE cube_id = ?"    // --- Validate image type and size ---
-
-  ).bind(cubeId).all();    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
-
-    if (!allowedTypes.includes(imageFile.type)) {
-
-  if (decks.length === 0) {      return jsonResponse(
-
-    return jsonResponse({ error: "No decks found for this cube" }, 404);        { success: false, errors: [`Invalid image type: ${imageFile.type}. Allowed: JPEG, PNG, WebP, HEIC`] },
-
-  }        400
-
-      );
-
-  const { results: allCards } = await env.cubewizard_db.prepare(    }
-
-    "SELECT dc.* FROM deck_cards dc" +
-
-    " JOIN decks d ON dc.deck_id = d.deck_id" +    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-
-    " WHERE d.cube_id = ?"    if (imageFile.size > MAX_SIZE) {
-
-  ).bind(cubeId).all();      return jsonResponse(
-
-        { success: false, errors: ["Image file must be under 10 MB"] },
-
-  var cardsByDeck = {};        400
-
-  for (var ci = 0; ci < allCards.length; ci++) {      );
-
-    var card = allCards[ci];    }
-
-    if (!cardsByDeck[card.deck_id]) cardsByDeck[card.deck_id] = [];
-
-    cardsByDeck[card.deck_id].push(card);    // --- Build R2 key ---
-
-  }    // Format: cubeId/YYYY-MM-DDTHH-MM-SS_pilotName/
-
-    const now = new Date();
-
-  var cardPerformances = computeCardPerformance(decks, cardsByDeck);    const timestamp = now.toISOString().replace(/[:.]/g, "-");
-
-  var synergies = computeSynergies(decks, cardsByDeck);    const safePilot = pilotName.replace(/[^a-zA-Z0-9_\- ]/g, "");
-
-  var colorAnalysis = computeColorPerformance(decks, cardsByDeck);    const prefix = `${cubeId}/${timestamp}_${safePilot}`;
-
-
-
-  var allDeckWinRates = [];    // Determine file extension from content type
-
-  var totalWins = 0;    const extMap = {
-
-  var totalLosses = 0;      "image/jpeg": "jpg",
-
-  for (var di = 0; di < decks.length; di++) {      "image/png": "png",
-
-    allDeckWinRates.push(decks[di].win_rate);      "image/webp": "webp",
-
-    totalWins += decks[di].match_wins;      "image/heic": "heic",
-
-    totalLosses += decks[di].match_losses;      "image/heif": "heif",
-
-  }    };
-
-  var avgWinRate = mean(allDeckWinRates);    const ext = extMap[imageFile.type] || "jpg";
-
-
-
-  return jsonResponse({    // --- Write image to R2 ---
-
-    cube_info: {    const imageKey = `${prefix}/image.${ext}`;
-
-      cube_id: cubeRow.cube_id,    await env.BUCKET.put(imageKey, imageFile.stream(), {
-
-      total_decks: cubeRow.total_decks,      httpMetadata: { contentType: imageFile.type },
-
-      created: cubeRow.created,      customMetadata: { pilotName, cubeId },
-
-      last_updated: cubeRow.last_updated,    });
-
-      avg_win_rate: avgWinRate,
-
-      total_wins: totalWins,    // --- Write metadata sidecar to R2 ---
-
-      total_losses: totalLosses,    const winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
-
-    },    const metadata = {
-
-    card_performances: cardPerformances,      cube_id: cubeId,
-
-    synergies: synergies,      pilot_name: pilotName,
-
-    color_analysis: colorAnalysis,      match_wins: wins,
-
-  });      match_losses: losses,
-
-}      match_draws: draws,
-
-      win_rate: winRate,
-
-async function handleGetChart(cubeId, chartType, env) {      record_logged: now.toISOString(),
-
-  var { results: decks } = await env.cubewizard_db.prepare(      image_key: imageKey,
-
-    "SELECT * FROM decks WHERE cube_id = ?"      original_filename: imageFile.name,
-
-  ).bind(cubeId).all();    };
-
-
-
-  if (decks.length === 0) {    const metadataKey = `${prefix}/metadata.json`;
-
-    return jsonResponse({ error: "No decks found" }, 404);    await env.BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
-
-  }      httpMetadata: { contentType: "application/json" },
-
-    });
-
-  var { results: allCards } = await env.cubewizard_db.prepare(
-
-    "SELECT dc.* FROM deck_cards dc" +    return jsonResponse({
-
-    " JOIN decks d ON dc.deck_id = d.deck_id" +      success: true,
-
-    " WHERE d.cube_id = ?"      message: "Deck uploaded successfully!",
-
-  ).bind(cubeId).all();      key: prefix,
-
-    });
-
-  var cardsByDeck = {};  } catch (err) {
-
-  for (var ci = 0; ci < allCards.length; ci++) {    console.error("Upload error:", err);
-
-    var card = allCards[ci];    return jsonResponse(
-
-    if (!cardsByDeck[card.deck_id]) cardsByDeck[card.deck_id] = [];      { success: false, errors: ["Internal server error. Please try again."] },
-
-    cardsByDeck[card.deck_id].push(card);      500
-
-  }    );
-
+    return jsonResponse({ error: "Cube not found" }, 404);
   }
 
-  var chart;}
+  const { results: decks } = await env.cubewizard_db.prepare(
+    "SELECT * FROM decks WHERE cube_id = ?"
+  ).bind(cubeId).all();
 
+  if (decks.length === 0) {
+    return jsonResponse({ error: "No decks found for this cube" }, 404);
+  }
+
+  const { results: allCards } = await env.cubewizard_db.prepare(
+    "SELECT dc.* FROM deck_cards dc" +
+    " JOIN decks d ON dc.deck_id = d.deck_id" +
+    " WHERE d.cube_id = ?"
+  ).bind(cubeId).all();
+
+  var cardsByDeck = {};
+  for (var ci = 0; ci < allCards.length; ci++) {
+    var card = allCards[ci];
+    if (!cardsByDeck[card.deck_id]) cardsByDeck[card.deck_id] = [];
+    cardsByDeck[card.deck_id].push(card);
+  }
+
+  var cardPerformances = computeCardPerformance(decks, cardsByDeck);
+  var synergies = computeSynergies(decks, cardsByDeck);
+  var colorAnalysis = computeColorPerformance(decks, cardsByDeck);
+
+  var allDeckWinRates = [];
+  var totalWins = 0;
+  var totalLosses = 0;
+  for (var di = 0; di < decks.length; di++) {
+    allDeckWinRates.push(decks[di].win_rate);
+    totalWins += decks[di].match_wins;
+    totalLosses += decks[di].match_losses;
+  }
+  var avgWinRate = mean(allDeckWinRates);
+
+  return jsonResponse({
+    cube_info: {
+      cube_id: cubeRow.cube_id,
+      total_decks: cubeRow.total_decks,
+      created: cubeRow.created,
+      last_updated: cubeRow.last_updated,
+      avg_win_rate: avgWinRate,
+      total_wins: totalWins,
+      total_losses: totalLosses,
+    },
+    card_performances: cardPerformances,
+    synergies: synergies,
+    color_analysis: colorAnalysis,
+  });
+}
+
+async function handleGetChart(cubeId, chartType, env) {
+  var { results: decks } = await env.cubewizard_db.prepare(
+    "SELECT * FROM decks WHERE cube_id = ?"
+  ).bind(cubeId).all();
+
+  if (decks.length === 0) {
+    return jsonResponse({ error: "No decks found" }, 404);
+  }
+
+  var { results: allCards } = await env.cubewizard_db.prepare(
+    "SELECT dc.* FROM deck_cards dc" +
+    " JOIN decks d ON dc.deck_id = d.deck_id" +
+    " WHERE d.cube_id = ?"
+  ).bind(cubeId).all();
+
+  var cardsByDeck = {};
+  for (var ci = 0; ci < allCards.length; ci++) {
+    var card = allCards[ci];
+    if (!cardsByDeck[card.deck_id]) cardsByDeck[card.deck_id] = [];
+    cardsByDeck[card.deck_id].push(card);
+  }
+
+  var chart;
   if (chartType === "performance_scatter") {
-
-    var perfs = computeCardPerformance(decks, cardsByDeck);/**
-
-    chart = buildPerformanceScatterChart(perfs); * Validate a CubeCobra cube ID by proxying the request (avoids CORS issues).
-
-  } else if (chartType === "color_performance") { * GET /api/validate-cube?cube_id=proxybacon
-
-    var colorStats = computeColorPerformance(decks, cardsByDeck); */
-
-    chart = buildColorBarChart(colorStats);async function handleValidateCube(url, env) {
-
-  } else {  const cubeId = url.searchParams.get("cube_id")?.trim();
-
-    return jsonResponse({ error: "Unknown chart type" }, 400);  if (!cubeId) {
-
-  }    return jsonResponse({ valid: false, error: "cube_id parameter is required" }, 400);
-
+    var perfs = computeCardPerformance(decks, cardsByDeck);
+    chart = buildPerformanceScatterChart(perfs);
+  } else if (chartType === "color_performance") {
+    var colorStats = computeColorPerformance(decks, cardsByDeck);
+    chart = buildColorBarChart(colorStats);
+  } else {
+    return jsonResponse({ error: "Unknown chart type" }, 400);
   }
 
   return jsonResponse({ chart: JSON.stringify(chart) });
+}
 
-}  try {
+// ============================================================
+//  Analytics computation - mirrors dashboard.py exactly
+// ============================================================
 
-    const apiUrl = `https://cubecobra.com/cube/api/cubeJSON/${encodeURIComponent(cubeId)}`;
-
-// ============================================================    const resp = await fetch(apiUrl, {
-
-//  Analytics computation - mirrors dashboard.py exactly      headers: { "User-Agent": "CubeWizard/1.0" },
-
-// ============================================================    });
-
-
-
-function computeCardPerformance(decks, cardsByDeck) {    if (!resp.ok) {
-
-  var allDeckWinRates = [];      return jsonResponse({ valid: false, error: "Cube not found on CubeCobra." });
-
-  for (var i = 0; i < decks.length; i++) {    }
-
+function computeCardPerformance(decks, cardsByDeck) {
+  var allDeckWinRates = [];
+  for (var i = 0; i < decks.length; i++) {
     allDeckWinRates.push(decks[i].win_rate);
-
-  }    const data = await resp.json();
-
+  }
   var cubeAvgWinRate = mean(allDeckWinRates);
 
-    // Extract cube name and card count
+  var cardStats = {};
 
-  var cardStats = {};    const name = data.name || cubeId;
-
-    let cardCount = 0;
-
-  for (var di = 0; di < decks.length; di++) {    if (data.cards && Array.isArray(data.cards.mainboard)) {
-
-    var deck = decks[di];      cardCount = data.cards.mainboard.length;
-
-    var cards = cardsByDeck[deck.deck_id] || [];    }
-
+  for (var di = 0; di < decks.length; di++) {
+    var deck = decks[di];
+    var cards = cardsByDeck[deck.deck_id] || [];
     for (var ci = 0; ci < cards.length; ci++) {
-
-      var name = cards[ci].name;    return jsonResponse({ valid: true, name, card_count: cardCount });
-
-      if (!cardStats[name]) {  } catch (err) {
-
-        cardStats[name] = { wins: 0, losses: 0, appearances: 0, deck_win_rates: [] };    console.error("CubeCobra validation error:", err);
-
-      }    return jsonResponse({ valid: false, error: "Failed to reach CubeCobra. Try again later." }, 502);
-
-      cardStats[name].wins += deck.match_wins;  }
-
-      cardStats[name].losses += deck.match_losses;}
-
+      var name = cards[ci].name;
+      if (!cardStats[name]) {
+        cardStats[name] = { wins: 0, losses: 0, appearances: 0, deck_win_rates: [] };
+      }
+      cardStats[name].wins += deck.match_wins;
+      cardStats[name].losses += deck.match_losses;
       cardStats[name].appearances += 1;
+      cardStats[name].deck_win_rates.push(deck.win_rate);
+    }
+  }
 
-      cardStats[name].deck_win_rates.push(deck.win_rate);/**
-
-    } * Handle a new-cube submission.
-
-  } * Stores the request as a JSON file in R2 under _cube_requests/ for later processing.
-
- */
-
-  var performances = [];async function handleAddCube(request, env) {
-
-  var names = Object.keys(cardStats);  try {
-
-  for (var ni = 0; ni < names.length; ni++) {    const body = await request.json();
-
+  var performances = [];
+  var names = Object.keys(cardStats);
+  for (var ni = 0; ni < names.length; ni++) {
     var cardName = names[ni];
-
-    var stats = cardStats[cardName];    const cubeId = body.cube_id?.trim();
-
-    var totalGames = stats.wins + stats.losses;    const cubeName = body.cube_name?.trim();
-
-    if (totalGames > 0) {    const description = body.description?.trim() || "";
-
+    var stats = cardStats[cardName];
+    var totalGames = stats.wins + stats.losses;
+    if (totalGames > 0) {
       var smoothed = stats.deck_win_rates.slice();
+      for (var si = 0; si < BAYESIAN_SMOOTHING_STRENGTH; si++) {
+        smoothed.push(cubeAvgWinRate);
+      }
 
-      for (var si = 0; si < BAYESIAN_SMOOTHING_STRENGTH; si++) {    const errors = [];
+      var avgDeckWinRate = mean(smoothed);
+      var performanceDelta = avgDeckWinRate - cubeAvgWinRate;
 
-        smoothed.push(cubeAvgWinRate);    if (!cubeId) errors.push("cube_id is required");
-
-      }    if (!cubeName) errors.push("cube_name is required");
-
-    if (errors.length > 0) {
-
-      var avgDeckWinRate = mean(smoothed);      return jsonResponse({ success: false, errors }, 400);
-
-      var performanceDelta = avgDeckWinRate - cubeAvgWinRate;    }
-
-
-
-      performances.push({    // Store request in R2 so the scheduled pull can pick it up
-
-        name: cardName,    const now = new Date();
-
-        appearances: stats.appearances,    const timestamp = now.toISOString().replace(/[:.]/g, "-");
-
-        wins: stats.wins,    const key = `_cube_requests/${timestamp}_${cubeId}.json`;
-
+      performances.push({
+        name: cardName,
+        appearances: stats.appearances,
+        wins: stats.wins,
         losses: stats.losses,
-
-        win_rate: round3(avgDeckWinRate),    const payload = {
-
-        performance_delta: round3(performanceDelta),      cube_id: cubeId,
-
-      });      cube_name: cubeName,
-
-    }      description,
-
-  }      requested_at: now.toISOString(),
-
-    };
+        win_rate: round3(avgDeckWinRate),
+        performance_delta: round3(performanceDelta),
+      });
+    }
+  }
 
   performances.sort(function(a, b) {
-
-    if (b.performance_delta !== a.performance_delta) {    await env.BUCKET.put(key, JSON.stringify(payload, null, 2), {
-
-      return b.performance_delta - a.performance_delta;      httpMetadata: { contentType: "application/json" },
-
-    }    });
-
+    if (b.performance_delta !== a.performance_delta) {
+      return b.performance_delta - a.performance_delta;
+    }
     return b.appearances - a.appearances;
+  });
 
-  });    return jsonResponse({
+  return performances;
+}
 
-      success: true,
+function computeSynergies(decks, cardsByDeck) {
+  var cardPairs = {};
+  var individual = {};
 
-  return performances;      message: "Cube registered! It will appear in the dropdown once the next data sync runs.",
-
-}    });
-
-  } catch (err) {
-
-function computeSynergies(decks, cardsByDeck) {    console.error("Add cube error:", err);
-
-  var cardPairs = {};    return jsonResponse(
-
-  var individual = {};      { success: false, errors: ["Internal server error. Please try again."] },
-
-      500
-
-  for (var di = 0; di < decks.length; di++) {    );
-
-    var deck = decks[di];  }
-
-    var cards = cardsByDeck[deck.deck_id] || [];}
-
+  for (var di = 0; di < decks.length; di++) {
+    var deck = decks[di];
+    var cards = cardsByDeck[deck.deck_id] || [];
     var cardNames = [];
+    for (var ci = 0; ci < cards.length; ci++) {
+      cardNames.push(cards[ci].name);
+    }
+    var wins = deck.match_wins;
+    var losses = deck.match_losses;
 
-    for (var ci = 0; ci < cards.length; ci++) {function jsonResponse(body, status = 200) {
-
-      cardNames.push(cards[ci].name);  return new Response(JSON.stringify(body), {
-
-    }    status,
-
-    var wins = deck.match_wins;    headers: {
-
-    var losses = deck.match_losses;      "Content-Type": "application/json",
-
-      "Access-Control-Allow-Origin": "*",
-
-    for (var ii = 0; ii < cardNames.length; ii++) {    },
-
-      var name = cardNames[ii];  });
-
-      if (!individual[name]) {}
-
+    for (var ii = 0; ii < cardNames.length; ii++) {
+      var name = cardNames[ii];
+      if (!individual[name]) {
         individual[name] = { wins: 0, losses: 0, appearances: 0 };
       }
       individual[name].wins += wins;
