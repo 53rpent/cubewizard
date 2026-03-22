@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add a Cube | CubeWizard</title>
+    <link rel="icon" type="image/png" href="CubeWizard.png">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #f5f5f5;
+        color: #333;
+        line-height: 1.6;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+      }
+
+      .header-logo {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 0.25rem;
+      }
+
+      .header-title {
+        font-size: 0.9rem;
+        font-weight: 400;
+        opacity: 0.9;
+        margin: 0 0 0.5rem 0;
+      }
+
+      .breadcrumb {
+        opacity: 0.8;
+        margin-top: 0.5rem;
+      }
+
+      .breadcrumb a {
+        color: white;
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+
+      .back-button {
+        display: inline-block;
+        background: #667eea;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        text-decoration: none;
+        border-radius: 4px;
+        margin-bottom: 2rem;
+        transition: background 0.2s ease;
+      }
+
+      .back-button:hover {
+        background: #5a6fd8;
+      }
+
+      .add-cube-card {
+        background: white;
+        border-radius: 8px;
+        padding: 2rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .add-cube-card h2 {
+        color: #667eea;
+        margin-bottom: 0.5rem;
+      }
+
+      .add-cube-card .subtitle {
+        color: #666;
+        font-size: 0.9rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .form-group {
+        margin-bottom: 1.25rem;
+      }
+
+      .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.4rem;
+      }
+
+      .form-group .hint {
+        display: block;
+        font-size: 0.8rem;
+        color: #888;
+        margin-bottom: 0.4rem;
+      }
+
+      .form-group input[type="text"],
+      .form-group textarea {
+        width: 100%;
+        padding: 0.6rem 0.75rem;
+        border: 2px solid #e9ecef;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-family: inherit;
+        transition: border-color 0.2s ease;
+      }
+
+      .form-group input:focus,
+      .form-group textarea:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      .form-group textarea {
+        resize: vertical;
+        min-height: 60px;
+      }
+
+      .input-row {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .input-row input {
+        flex: 1;
+      }
+
+      .validate-btn {
+        padding: 0.6rem 1.25rem;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.2s ease;
+      }
+
+      .validate-btn:hover:not(:disabled) {
+        background: #5a6fd8;
+      }
+
+      .validate-btn:disabled {
+        background: #a8b5f0;
+        cursor: not-allowed;
+      }
+
+      .validation-result {
+        margin-top: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        display: none;
+      }
+
+      .validation-result.valid {
+        display: block;
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .validation-result.invalid {
+        display: block;
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .validation-result .cube-detail {
+        margin-top: 0.25rem;
+        font-size: 0.85rem;
+        opacity: 0.85;
+      }
+
+      .submit-btn {
+        width: 100%;
+        padding: 0.85rem;
+        background: #28a745;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        margin-top: 0.5rem;
+      }
+
+      .submit-btn:hover:not(:disabled) {
+        background: #218838;
+      }
+
+      .submit-btn:disabled {
+        background: #94d3a2;
+        cursor: not-allowed;
+      }
+
+      .status-message {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 4px;
+        display: none;
+        text-align: center;
+        font-weight: 600;
+      }
+
+      .status-message.success {
+        display: block;
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .status-message.error {
+        display: block;
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .footer {
+        background: white;
+        border-top: 1px solid #eee;
+        padding: 2rem;
+        margin-top: 4rem;
+        text-align: center;
+        color: #666;
+      }
+
+      .footer p {
+        margin-bottom: 0.5rem;
+      }
+
+      .footer a {
+        color: #667eea;
+        text-decoration: none;
+      }
+
+      .footer a:hover {
+        text-decoration: underline;
+      }
+
+      .footer .timestamp {
+        font-size: 0.875rem;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <img src="CubeWizard.png" alt="CubeWizard" class="header-logo">
+      <p class="header-title">CubeWizard Dashboard</p>
+      <div class="breadcrumb">
+        <a href="index.html">&larr; Back to Dashboard</a> &gt; Add a Cube
+      </div>
+    </div>
+
+    <div class="container">
+      <a href="index.html" class="back-button">&larr; Back to Dashboard</a>
+
+      <div class="add-cube-card">
+        <h2>Add a Cube</h2>
+        <p class="subtitle">Register a new CubeCobra cube so players can submit decks for it.</p>
+
+        <form id="add-cube-form">
+          <!-- Step 1: CubeCobra ID -->
+          <div class="form-group">
+            <label for="cube_id">CubeCobra ID</label>
+            <span class="hint">The short ID from your CubeCobra URL, e.g. <strong>proxybacon</strong></span>
+            <div class="input-row">
+              <input type="text" id="cube_id" name="cube_id" placeholder="e.g. proxybacon" required />
+              <button type="button" class="validate-btn" id="validate-btn" onclick="validateCube()">Validate</button>
+            </div>
+            <div class="validation-result" id="validation-result"></div>
+          </div>
+
+          <!-- Step 2: Cube name (pre-populated after validation) -->
+          <div class="form-group">
+            <label for="cube_name">Cube Name</label>
+            <span class="hint">A friendly display name. Pre-filled from CubeCobra &mdash; feel free to change it.</span>
+            <input type="text" id="cube_name" name="cube_name" placeholder="Validate a CubeCobra ID first..." disabled required />
+          </div>
+
+          <!-- Step 3: Description (optional) -->
+          <div class="form-group">
+            <label for="description">Description <span style="font-weight:normal;color:#888;">(optional)</span></label>
+            <textarea id="description" name="description" placeholder="e.g. Vintage powered cube" disabled></textarea>
+          </div>
+
+          <button type="submit" class="submit-btn" id="submit-btn" disabled>Add Cube</button>
+        </form>
+
+        <div class="status-message" id="status-message"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Questions? Suggestions? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+      <p class="timestamp">Last updated: <span id="timestamp">{{ timestamp }}</span></p>
+    </div>
+
+    <script>
+      var validated = false;
+      var validatedId = "";
+
+      var cubeIdInput = document.getElementById("cube_id");
+      var cubeNameInput = document.getElementById("cube_name");
+      var descInput = document.getElementById("description");
+      var validateBtn = document.getElementById("validate-btn");
+      var submitBtn = document.getElementById("submit-btn");
+      var validationEl = document.getElementById("validation-result");
+      var statusEl = document.getElementById("status-message");
+
+      // Reset validation state when the ID changes
+      cubeIdInput.addEventListener("input", function () {
+        if (validated && cubeIdInput.value.trim() !== validatedId) {
+          validated = false;
+          validatedId = "";
+          cubeNameInput.value = "";
+          cubeNameInput.disabled = true;
+          descInput.value = "";
+          descInput.disabled = true;
+          submitBtn.disabled = true;
+          validationEl.className = "validation-result";
+          validationEl.style.display = "none";
+          statusEl.className = "status-message";
+          statusEl.style.display = "none";
+        }
+      });
+
+      // Also validate on Enter key in the ID field
+      cubeIdInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          validateCube();
+        }
+      });
+
+      function validateCube() {
+        var cubeId = cubeIdInput.value.trim();
+        if (!cubeId) {
+          validationEl.className = "validation-result invalid";
+          validationEl.textContent = "Please enter a CubeCobra ID.";
+          return;
+        }
+
+        validateBtn.disabled = true;
+        validateBtn.textContent = "Checking\u2026";
+        validationEl.className = "validation-result";
+        validationEl.style.display = "none";
+
+        // Use our worker proxy to avoid CORS issues with CubeCobra
+        fetch("/api/validate-cube?cube_id=" + encodeURIComponent(cubeId))
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.valid) {
+              validated = true;
+              validatedId = cubeId;
+
+              validationEl.className = "validation-result valid";
+              validationEl.innerHTML =
+                "Cube found: <strong>" + escapeHtml(data.name) + "</strong>" +
+                '<div class="cube-detail">' + data.card_count + " cards</div>";
+
+              cubeNameInput.disabled = false;
+              cubeNameInput.value = data.name;
+              descInput.disabled = false;
+              submitBtn.disabled = false;
+            } else {
+              validated = false;
+              validationEl.className = "validation-result invalid";
+              validationEl.textContent = data.error || "Cube not found on CubeCobra.";
+            }
+          })
+          .catch(function (err) {
+            validationEl.className = "validation-result invalid";
+            validationEl.textContent = "Could not reach CubeCobra. Try again later.";
+          })
+          .finally(function () {
+            validateBtn.disabled = false;
+            validateBtn.textContent = "Validate";
+          });
+      }
+
+      // --- Form submission ---
+      var form = document.getElementById("add-cube-form");
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!validated) return;
+
+        statusEl.className = "status-message";
+        statusEl.style.display = "none";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Submitting\u2026";
+
+        var payload = {
+          cube_id: cubeIdInput.value.trim(),
+          cube_name: cubeNameInput.value.trim(),
+          description: descInput.value.trim()
+        };
+
+        fetch("/api/add-cube", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.success) {
+              statusEl.className = "status-message success";
+              statusEl.textContent = data.message;
+              statusEl.style.display = "block";
+              form.reset();
+              validated = false;
+              validatedId = "";
+              cubeNameInput.disabled = true;
+              descInput.disabled = true;
+              validationEl.className = "validation-result";
+              validationEl.style.display = "none";
+            } else {
+              var msg = data.errors ? data.errors.join(", ") : "Submission failed";
+              throw new Error(msg);
+            }
+          })
+          .catch(function (err) {
+            statusEl.className = "status-message error";
+            statusEl.textContent = err.message;
+            statusEl.style.display = "block";
+          })
+          .finally(function () {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Add Cube";
+          });
+      });
+
+      function escapeHtml(str) {
+        var div = document.createElement("div");
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+      }
+    </script>
+  </body>
+</html>

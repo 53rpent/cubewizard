@@ -64,6 +64,10 @@
             margin-bottom: 2rem;
         }
         
+        .action-bar .full-width {
+            grid-column: 1 / -1;
+        }
+        
         @media (max-width: 600px) {
             .action-bar {
                 grid-template-columns: 1fr;
@@ -346,7 +350,7 @@
     
     <div class="container">
         <div class="action-bar">
-            <div class="action-panel">
+            <div class="action-panel full-width">
                 <h3>📊 View Analytics</h3>
                 <p>Select a cube to explore its performance data, card stats, and synergies.</p>
                 <select id="cube-select" onchange="loadDashboard()">
@@ -360,6 +364,11 @@
                 <h3>📝 Submit a Deck</h3>
                 <p>Played a draft? Upload your decklist photo and match record to contribute data.</p>
                 <a href="submit.html" class="submit-link">Submit New Deck →</a>
+            </div>
+            <div class="action-panel">
+                <h3>🧊 Add a Cube</h3>
+                <p>Have a CubeCobra cube you want to track? Register it here to start collecting data.</p>
+                <a href="add_cube.html" class="submit-link">Add New Cube →</a>
             </div>
         </div>
         

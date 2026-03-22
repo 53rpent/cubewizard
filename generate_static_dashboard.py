@@ -1408,6 +1408,21 @@ class StaticDashboardGenerator:
         else:
             print("WARNING: submit.html not found in templates directory")
         
+        # Process add_cube.html template to add timestamp
+        add_cube_path = templates_dir / "add_cube.html"
+        if add_cube_path.exists():
+            with open(add_cube_path, 'r', encoding='utf-8') as f:
+                add_cube_content = f.read()
+            
+            timestamp = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+            add_cube_content = add_cube_content.replace('{{ timestamp }}', timestamp)
+            
+            with open(self.output_dir / "add_cube.html", 'w', encoding='utf-8') as f:
+                f.write(add_cube_content)
+            print("Processed and copied add_cube.html to static dashboard")
+        else:
+            print("WARNING: add_cube.html not found in templates directory")
+        
         # Copy files that don't need processing
         static_files = ["CNAME"]
         

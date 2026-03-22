@@ -14,6 +14,16 @@ export default {
       return handleUpload(request, env);
     }
 
+    // Validate a CubeCobra cube ID (proxy to avoid CORS)
+    if (url.pathname === "/api/validate-cube" && request.method === "GET") {
+      return handleValidateCube(url, env);
+    }
+
+    // Submit a new cube request
+    if (url.pathname === "/api/add-cube" && request.method === "POST") {
+      return handleAddCube(request, env);
+    }
+
     // Everything else is served by the static assets binding
     return env.ASSETS.fetch(request);
   },
@@ -128,6 +138,90 @@ async function handleUpload(request, env) {
     });
   } catch (err) {
     console.error("Upload error:", err);
+    return jsonResponse(
+      { success: false, errors: ["Internal server error. Please try again."] },
+      500
+    );
+  }
+}
+
+/**
+ * Validate a CubeCobra cube ID by proxying the request (avoids CORS issues).
+ * GET /api/validate-cube?cube_id=proxybacon
+ */
+async function handleValidateCube(url, env) {
+  const cubeId = url.searchParams.get("cube_id")?.trim();
+  if (!cubeId) {
+    return jsonResponse({ valid: false, error: "cube_id parameter is required" }, 400);
+  }
+
+  try {
+    const apiUrl = `https://cubecobra.com/cube/api/cubeJSON/${encodeURIComponent(cubeId)}`;
+    const resp = await fetch(apiUrl, {
+      headers: { "User-Agent": "CubeWizard/1.0" },
+    });
+
+    if (!resp.ok) {
+      return jsonResponse({ valid: false, error: "Cube not found on CubeCobra." });
+    }
+
+    const data = await resp.json();
+
+    // Extract cube name and card count
+    const name = data.name || cubeId;
+    let cardCount = 0;
+    if (data.cards && Array.isArray(data.cards.mainboard)) {
+      cardCount = data.cards.mainboard.length;
+    }
+
+    return jsonResponse({ valid: true, name, card_count: cardCount });
+  } catch (err) {
+    console.error("CubeCobra validation error:", err);
+    return jsonResponse({ valid: false, error: "Failed to reach CubeCobra. Try again later." }, 502);
+  }
+}
+
+/**
+ * Handle a new-cube submission.
+ * Stores the request as a JSON file in R2 under _cube_requests/ for later processing.
+ */
+async function handleAddCube(request, env) {
+  try {
+    const body = await request.json();
+
+    const cubeId = body.cube_id?.trim();
+    const cubeName = body.cube_name?.trim();
+    const description = body.description?.trim() || "";
+
+    const errors = [];
+    if (!cubeId) errors.push("cube_id is required");
+    if (!cubeName) errors.push("cube_name is required");
+    if (errors.length > 0) {
+      return jsonResponse({ success: false, errors }, 400);
+    }
+
+    // Store request in R2 so the scheduled pull can pick it up
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, "-");
+    const key = `_cube_requests/${timestamp}_${cubeId}.json`;
+
+    const payload = {
+      cube_id: cubeId,
+      cube_name: cubeName,
+      description,
+      requested_at: now.toISOString(),
+    };
+
+    await env.BUCKET.put(key, JSON.stringify(payload, null, 2), {
+      httpMetadata: { contentType: "application/json" },
+    });
+
+    return jsonResponse({
+      success: true,
+      message: "Cube registered! It will appear in the dropdown once the next data sync runs.",
+    });
+  } catch (err) {
+    console.error("Add cube error:", err);
     return jsonResponse(
       { success: false, errors: ["Internal server error. Please try again."] },
       500

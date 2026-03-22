@@ -1,14 +1,22 @@
 {
-  "name": "cubewizard-cloudflare-worker",
-  "compatibility_date": "2024-09-19",
-  "main": "src/worker.js",
-  "assets": {
-    "directory": "./docs/"
-  },
-  "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "decklist-uploads"
-    }
-  ]
+	"name": "cubewizard-cloudflare-worker",
+	"compatibility_date": "2024-09-19",
+	"main": "src/worker.js",
+	"assets": {
+		"directory": "./docs/"
+	},
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "decklist-uploads"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "cubewizard_db",
+			"database_name": "cubewizard-db",
+			"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
+			"remote": true
+		}
+	]
 }
