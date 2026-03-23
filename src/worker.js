@@ -368,19 +368,21 @@ function computeColorPerformance(decks, cardsByDeck) {
       colorStats.push({
         color: colorName,
         win_rate: round3(colorWinRate),
+        performance_delta: round3(colorWinRate - overallWinRate),
         total_games: colorGames,
         wins: colorWins,
         losses: colorGames - colorWins,
-        avg_cards_per_deck: round1((dl.length / totalDecksCount) * 100),
+        deck_percentage: round3(dl.length / totalDecksCount),
       });
     } else {
       colorStats.push({
         color: colorName,
         win_rate: 0,
+        performance_delta: 0,
         total_games: 0,
         wins: 0,
         losses: 0,
-        avg_cards_per_deck: 0,
+        deck_percentage: 0,
       });
     }
   }
@@ -418,6 +420,7 @@ function buildPerformanceScatterChart(performances) {
       title: "Card Performance vs Popularity",
       xaxis: { title: "Appearances in Decks" },
       yaxis: { title: "Performance Delta (%)", tickformat: ".0%" },
+      hovermode: "closest",
       showlegend: false,
       shapes: [
         {
@@ -434,34 +437,51 @@ function buildPerformanceScatterChart(performances) {
 
 function buildColorBarChart(colorStats) {
   var clrs = [];
-  var winRates = [];
+  var perfDeltas = [];
   var barColors = [];
   var borderColors = [];
-  var colorHex = { White: "#F9FAF4", Blue: "#0E68AB", Black: "#150B00", Red: "#D3202A", Green: "#00733E" };
+  var customData = [];
+  var textLabels = [];
+  var colorHex = { White: "#FFFBD5", Blue: "#0E68AB", Black: "#150B00", Red: "#D3202A", Green: "#00733E" };
   var borderHex = { White: "#D5C5A1", Blue: "#0E68AB", Black: "#150B00", Red: "#D3202A", Green: "#00733E" };
 
   for (var i = 0; i < colorStats.length; i++) {
     var c = colorStats[i];
     clrs.push(c.color);
-    winRates.push(c.win_rate);
+    perfDeltas.push(c.performance_delta);
     barColors.push(colorHex[c.color] || "#667eea");
     borderColors.push(borderHex[c.color] || "#333");
+    customData.push([c.win_rate, c.deck_percentage * 100]);
+    var sign = c.performance_delta >= 0 ? "+" : "";
+    textLabels.push(sign + (c.performance_delta * 100).toFixed(1) + "%");
   }
 
   return {
     data: [
       {
         x: clrs,
-        y: winRates,
+        y: perfDeltas,
         type: "bar",
+        text: textLabels,
+        textposition: "auto",
+        customdata: customData,
         marker: { color: barColors, line: { color: borderColors, width: 1 } },
-        hovertemplate: "%{x}<br>Win Rate: %{y:.1%}<extra></extra>",
+        hovertemplate: "<b>%{x}</b><br>Performance Delta: %{y:+.1%}<br>Win Rate: %{customdata[0]:.1%}<br>Deck Usage: %{customdata[1]:.1f}%<extra></extra>",
       },
     ],
     layout: {
-      title: "Win Rate by Color",
-      yaxis: { title: "Win Rate", tickformat: ".0%" },
+      title: "Color Performance Analysis",
+      xaxis: { title: "Magic Colors" },
+      yaxis: { title: "Performance Delta", tickformat: "+.1%" },
       showlegend: false,
+      shapes: [
+        {
+          type: "line",
+          x0: 0, x1: 1, xref: "paper",
+          y0: 0, y1: 0,
+          line: { color: "gray", width: 1, dash: "dash" },
+        },
+      ],
       margin: { t: 40, b: 40, l: 60, r: 20 },
     },
   };
@@ -620,13 +640,34 @@ async function handleAddCube(request, env) {
       return jsonResponse({ success: false, errors: errors }, 400);
     }
 
-    var now = new Date();
-    var key = "_cube_requests/" + now.toISOString().replace(/[:.]/g, "-") + "_" + cubeId + ".json";
+    // Check if cube already exists in D1
+    var existing = await env.cubewizard_db.prepare(
+      "SELECT cube_id FROM cubes WHERE cube_id = ?"
+    ).bind(cubeId).first();
+
+    if (existing) {
+      return jsonResponse({ success: false, errors: ["Cube '" + cubeId + "' already exists."] }, 409);
+    }
+
+    // Insert into D1 — both cubes and cube_mapping tables
+    var now = new Date().toISOString();
+
+    await env.cubewizard_db.batch([
+      env.cubewizard_db.prepare(
+        "INSERT INTO cubes (cube_id, created, last_updated, total_decks) VALUES (?, ?, ?, 0)"
+      ).bind(cubeId, now, now),
+      env.cubewizard_db.prepare(
+        "INSERT INTO cube_mapping (cube_id, cube_name, description) VALUES (?, ?, ?)"
+      ).bind(cubeId, cubeName, description),
+    ]);
+
+    // Also write to R2 as an audit trail
+    var key = "_cube_requests/" + now.replace(/[:.]/g, "-") + "_" + cubeId + ".json";
     var payload = {
       cube_id: cubeId,
       cube_name: cubeName,
       description: description,
-      requested_at: now.toISOString(),
+      requested_at: now,
     };
 
     await env.BUCKET.put(key, JSON.stringify(payload, null, 2), {
@@ -635,7 +676,7 @@ async function handleAddCube(request, env) {
 
     return jsonResponse({
       success: true,
-      message: "Cube registered! It will appear in the dropdown once the next data sync runs.",
+      message: "Cube added successfully! It should now appear in the cube selector.",
     });
   } catch (err) {
     console.error("Add cube error:", err);

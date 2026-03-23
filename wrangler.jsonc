@@ -18,5 +18,41 @@
 			"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
 			"remote": true
 		}
-	]
+	],
+	"env": {
+		"stg": {
+			"name": "cubewizard-stg",
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "decklist-uploads"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "cubewizard_db",
+					"database_name": "cubewizard-db",
+					"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
+					"remote": true
+				}
+			]
+		},
+		"prod": {
+			"name": "cubewizard-prod",
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "decklist-uploads"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "cubewizard_db",
+					"database_name": "cubewizard-db",
+					"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
+					"remote": true
+				}
+			]
+		}
+	}
 }

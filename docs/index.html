@@ -443,6 +443,12 @@
                         opt.textContent = cubes[i].cube_name + ' (' + cubes[i].total_decks + ' decks)';
                         select.appendChild(opt);
                     }
+                    // Restore last selected cube from localStorage
+                    var saved = localStorage.getItem('selectedCubeId');
+                    if (saved && select.querySelector('option[value="' + saved + '"]')) {
+                        select.value = saved;
+                        loadDashboard();
+                    }
                 })
                 .catch(function(err) {
                     console.error('Failed to load cube list:', err);
@@ -455,10 +461,12 @@
             
             if (!cubeId) {
                 document.getElementById('dashboard-content').style.display = 'none';
+                localStorage.removeItem('selectedCubeId');
                 return;
             }
             
             currentCubeId = cubeId;
+            localStorage.setItem('selectedCubeId', cubeId);
             showLoading();
             
             fetch('/api/dashboard/' + cubeId)

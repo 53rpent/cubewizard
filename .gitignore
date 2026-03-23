@@ -28,6 +28,7 @@ share/python-wheels/
 MANIFEST
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
@@ -50,6 +51,9 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
+# Wrangler / Cloudflare
+.wrangler/
+
 # Project specific - user data and generated content
 output/
 submissions/
@@ -61,7 +65,6 @@ config.ini
 
 # R2 download tracker
 .r2_downloaded.json
-scheduled_pull.log
 
 # Temporary files
 tmp/

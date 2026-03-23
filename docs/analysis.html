@@ -227,6 +227,11 @@
         var cubeId = params.get('cube') || '';
         var analysisType = params.get('type') || '';
         
+        // Save cube selection to localStorage for cross-page persistence
+        if (cubeId) {
+            localStorage.setItem('selectedCubeId', cubeId);
+        }
+        
         var ANALYSIS_INFO = {
             performance: {
                 title: 'Performance vs Popularity',

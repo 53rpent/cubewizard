@@ -416,6 +416,11 @@
             opt.textContent = cubes[i].cube_name;
             select.appendChild(opt);
           }
+          // Restore last selected cube from localStorage
+          var saved = localStorage.getItem('selectedCubeId');
+          if (saved && select.querySelector('option[value="' + saved + '"]')) {
+            select.value = saved;
+          }
         })
         .catch(function (err) {
           console.error("Failed to load cubes:", err);

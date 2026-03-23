@@ -17,98 +17,7 @@ from typing import List, Dict, Any, Optional
 from image_processor import ImageProcessor
 from scryfall_client import ScryfallClient
 from config_manager import config
-from database_manager import db_manager
-
-
-class CubeMappingManager:
-    """Manages mapping between human-readable cube names and cube IDs."""
-    
-    def __init__(self, mapping_file: str = "cube_mapping.csv"):
-        """Initialize the cube mapping manager."""
-        self.mapping_file = Path(mapping_file)
-        self.name_to_id = {}
-        self.id_to_name = {}
-        self._load_mappings()
-    
-    def _load_mappings(self):
-        """Load cube mappings from CSV file."""
-        if not self.mapping_file.exists():
-            print(f"Cube mapping file not found: {self.mapping_file}")
-            print("Creating default mapping file...")
-            self._create_default_mapping()
-        
-        try:
-            import csv
-            with open(self.mapping_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    cube_name = row.get('cube_name', '').strip()
-                    cube_id = row.get('cube_id', '').strip()
-                    if cube_name and cube_id:
-                        self.name_to_id[cube_name] = cube_id
-                        self.id_to_name[cube_id] = cube_name
-        except Exception as e:
-            print(f"Error loading cube mappings: {e}")
-    
-    def _create_default_mapping(self):
-        """Create a default mapping file."""
-        try:
-            import csv
-            with open(self.mapping_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(['cube_name', 'cube_id', 'description'])
-                writer.writerow(['The Bacon Vintage Cube', 'proxybacon', 'Vintage powered cube with custom additions'])
-        except Exception as e:
-            print(f"Error creating default mapping file: {e}")
-    
-    def get_cube_id(self, cube_name: str) -> Optional[str]:
-        """Get cube ID from human-readable name."""
-        return self.name_to_id.get(cube_name)
-    
-    def get_cube_name(self, cube_id: str) -> Optional[str]:
-        """Get human-readable name from cube ID."""
-        return self.id_to_name.get(cube_id, cube_id)  # Return cube_id if no mapping found
-    
-    def add_mapping(self, cube_name: str, cube_id: str, description: str = "") -> bool:
-        """Add a new cube mapping."""
-        try:
-            import csv
-            # Update in-memory mappings
-            self.name_to_id[cube_name] = cube_id
-            self.id_to_name[cube_id] = cube_name
-            
-            # Read existing mappings
-            existing_rows = []
-            if self.mapping_file.exists():
-                with open(self.mapping_file, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    existing_rows = [row for row in reader if row.get('cube_id') != cube_id]
-            
-            # Write back with new mapping
-            with open(self.mapping_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=['cube_name', 'cube_id', 'description'])
-                writer.writeheader()
-                for row in existing_rows:
-                    writer.writerow(row)
-                writer.writerow({
-                    'cube_name': cube_name,
-                    'cube_id': cube_id,
-                    'description': description
-                })
-            return True
-        except Exception as e:
-            print(f"Error adding cube mapping: {e}")
-            return False
-    
-    def list_mappings(self) -> List[Dict[str, str]]:
-        """List all cube mappings."""
-        mappings = []
-        for cube_id, cube_name in self.id_to_name.items():
-            mappings.append({
-                'cube_name': cube_name,
-                'cube_id': cube_id
-            })
-        return mappings
+import d1_writer
 
 
 class CubeWizard:
@@ -119,7 +28,6 @@ class CubeWizard:
         # Initialize components
         self.image_processor = ImageProcessor()
         self.scryfall_client = ScryfallClient()
-        self.cube_mapper = CubeMappingManager()
         
         # Create output directories
         self.output_dir = Path(config.get_output_directory())
@@ -127,8 +35,6 @@ class CubeWizard:
         
         (self.output_dir / "stored_images").mkdir(exist_ok=True)
         # Note: card_lists and enriched_data directories no longer created as files are not saved
-        
-        # Database is initialized when db_manager is imported
     
     def collect_deck_metadata(self) -> Dict[str, Any]:
         """
@@ -192,63 +98,28 @@ class CubeWizard:
             "win_rate": wins / (wins + losses) if (wins + losses) > 0 else 0.0
         }
     
-    def add_deck_to_database(self, cube_id: str, deck_data: Dict[str, Any]) -> Optional[int]:
+    def add_deck_to_database(self, cube_id: str, deck_data: Dict[str, Any]) -> bool:
         """
-        Add a deck to the database.
+        Add a deck to Cloudflare D1.
         
         Args:
             cube_id: CubeCobra cube ID.
             deck_data: Deck data structure to add.
             
         Returns:
-            Deck ID if successful, None otherwise.
+            True if successful, False otherwise.
         """
         if not cube_id:
-            # If no cube_id, we can't save to database
-            return None
+            return False
             
         try:
-            # Add deck to database
-            deck_id = db_manager.add_deck(cube_id, deck_data)
-            
-            if deck_id:
-                # Get updated cube info
-                cube_info = db_manager.get_cube_info(cube_id)
-                if cube_info:
-                    print(f"Added deck to database: Deck ID {deck_id}")
-                    print(f"Cube '{cube_id}' now contains {cube_info['total_decks']} decks")
-                return deck_id
-            else:
-                print(f"Failed to add deck to database for cube '{cube_id}'")
-                return None
-                
+            success = d1_writer.add_deck(cube_id, deck_data)
+            if not success:
+                print(f"Failed to write deck to D1 for cube '{cube_id}'")
+            return success
         except Exception as e:
-            print(f"Error adding deck to database: {e}")
-            return None
-    
-    def get_cube_summary(self, cube_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a summary of cube data from the database.
-        
-        Args:
-            cube_id: CubeCobra cube ID.
-            
-        Returns:
-            Cube summary dictionary or None if not found.
-        """
-        cube_info = db_manager.get_cube_info(cube_id)
-        if not cube_info:
-            return None
-            
-        decks = db_manager.get_cube_decks(cube_id)
-        
-        return {
-            'cube_id': cube_info['cube_id'],
-            'created': cube_info['created'],
-            'last_updated': cube_info['last_updated'],
-            'total_decks': cube_info['total_decks'],
-            'recent_decks': decks[:5] if decks else []  # Show 5 most recent decks
-        }
+            print(f"Error writing deck to D1: {e}")
+            return False
     
     def parse_filename_metadata(self, filename: str) -> Optional[Dict[str, Any]]:
         """
@@ -402,17 +273,17 @@ class CubeWizard:
         
         # Note: Enriched data goes directly to database without saving to file
         
-        # Add deck to database if cube_id provided
-        deck_id = None
+        # Add deck to D1 if cube_id provided
+        d1_success = False
         if cubecobra_id:
             try:
-                deck_id = self.add_deck_to_database(cubecobra_id, deck_data)
+                d1_success = self.add_deck_to_database(cubecobra_id, deck_data)
             except Exception as e:
-                print(f"Warning: Could not save to database: {e}")
+                print(f"Warning: Could not save to D1: {e}")
         
         print(f"\nProcessing complete!")
-        if deck_id:
-            print(f"  Database: Added to deck ID {deck_id}")
+        if d1_success:
+            print(f"  D1: Deck saved successfully")
         print(f"\nDeck Summary:")
         print(f"  Pilot: {deck_metadata['pilot_name']}")
         if deck_metadata.get('match_draws', 0) > 0:
@@ -548,17 +419,17 @@ class CubeWizard:
         
         # Note: Enriched data goes directly to database without saving to file
         
-        # Add deck to database if cube_id provided
-        deck_id = None
+        # Add deck to D1 if cube_id provided
+        d1_success = False
         if cubecobra_id:
             try:
-                deck_id = self.add_deck_to_database(cubecobra_id, deck_data)
+                d1_success = self.add_deck_to_database(cubecobra_id, deck_data)
             except Exception as e:
-                print(f"Warning: Could not save to database: {e}")
+                print(f"Warning: Could not save to D1: {e}")
         
         print(f"\nProcessing complete!")
-        if deck_id:
-            print(f"  Database: Added to deck ID {deck_id}")
+        if d1_success:
+            print(f"  D1: Deck saved successfully")
         print(f"\nDeck Summary:")
         print(f"  Pilot: {deck_metadata['pilot_name']}")
         if deck_metadata.get('match_draws', 0) > 0:
@@ -781,9 +652,10 @@ class CubeWizard:
             if cube_identifier:
                 # First try as direct cube ID
                 mapped_cube_id = cube_identifier
-                # Then try as human-readable name
-                if cube_identifier in self.cube_mapper.name_to_id:
-                    mapped_cube_id = self.cube_mapper.get_cube_id(cube_identifier)
+                # Then try as human-readable name via D1 cube_mapping table
+                resolved = d1_writer.get_cube_id_by_name(cube_identifier)
+                if resolved:
+                    mapped_cube_id = resolved
 
             # Validate required fields
             if not pilot_name:
