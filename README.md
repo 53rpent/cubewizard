@@ -2,42 +2,43 @@
 
 **Site Maintainer Guide**
 
-CubeWizard is a comprehensive Magic: The Gathering cube analysis platform that processes deck images using AI vision, enriches card data via Scryfall API, and generates detailed analytics dashboards. This README serves as a technical reference for site maintainers.
+CubeWizard is a Magic: The Gathering cube analysis platform that processes deck images using AI vision, enriches card data via Scryfall API, and serves interactive analytics dashboards. This README serves as a technical reference for site maintainers.
 
 ## System Architecture
 
-- **Core Engine**: Python-based processing pipeline with SQLite database
-- **AI Vision**: OpenAI GPT-4 Vision API with structured outputs for card recognition
-- **Data Enrichment**: Scryfall API integration for comprehensive card metadata
-- **Analytics**: Statistical analysis engine with performance metrics and synergy detection
-- **Hosting**: Cloudflare Workers serving a static dashboard from `docs/` + R2 storage for deck submissions
-- **Input Methods**: Web form upload (R2), single images, or manual card lists
+- **Frontend**: Single-page app served as static assets by Cloudflare Workers (`docs/`)
+- **Backend API**: Cloudflare Worker (`src/worker.js`) serving analytics endpoints from D1
+- **Database**: Cloudflare D1 (SQLite-compatible, serverless)
+- **Storage**: Cloudflare R2 for deck image uploads
+- **Processing Pipeline**: Python — OpenAI Vision for card recognition, Scryfall for enrichment, writes to D1 via wrangler CLI
+- **Input**: Web form upload (R2) or direct image processing
 
 ## Environment Setup
 
 ### Prerequisites
 - Python 3.8+ with virtual environment
+- Node.js (for `npx wrangler` CLI)
 - OpenAI API key with GPT-4 Vision access
-- Internet connection for Scryfall API calls
-- Cloudflare account with Workers and R2 (for hosting/uploads)
+- Cloudflare account with Workers, D1, and R2
 
 ### Installation
-```
-# Activate virtual environment (Windows)
-activate.bat
+```bash
+# Create and activate virtual environment (Windows)
+python -m venv .venv
+.venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Configure environment variables
-# Edit .env file with your OpenAI API key:
+# Create .env file with your OpenAI API key:
 OPENAI_API_KEY=your_actual_api_key_here
 ```
 
 ### Configuration
 
-**`config.ini`** — OpenAI model selection, analysis thresholds, file paths, database settings, and R2 credentials:
-```
+**`config.ini`** — OpenAI model selection, analysis thresholds, and R2 credentials:
+```ini
 [r2]
 endpoint_url = https://<account_id>.r2.cloudflarestorage.com
 access_key_id = ...
@@ -45,16 +46,25 @@ secret_access_key = ...
 bucket_name = decklist-uploads
 ```
 
-**`cube_mapping.csv`** — Maps human-readable cube names to CubeCobra IDs (used by the submit form and processing pipeline).
+**`wrangler.jsonc`** — Cloudflare Workers configuration with D1 and R2 bindings. Has `stg` and `prod` environments.
 
-**`wrangler.jsonc`** — Cloudflare Workers configuration with R2 bucket binding.
+**`wrangler-redirect.jsonc`** — Configuration for the domain redirect worker (cubewizard.org → cube-wizard.com).
 
-## Command Line Interface
+## Processing Pipeline
 
-### Core Processing Commands
+### How It Works
 
-#### 1. Single Image Processing
-```
+1. **Players submit decklists** via the web form at `/submit.html`.
+2. **The Worker** (`src/worker.js`) validates the upload and stores it in R2 under `{cube_id}/{timestamp}_{pilotName}/`.
+3. **`pull_from_r2.py`** downloads new submissions from R2 into the local `submissions/` directory.
+4. **`main.py import`** processes each submission (CSV metadata + deck image) through the AI vision pipeline, enriches with Scryfall data, and writes directly to Cloudflare D1.
+5. Successfully processed folders are moved to `imported/` with a timestamp.
+6. The live site immediately reflects new data (no deploy needed — D1 is the source of truth).
+
+### Command Line Interface
+
+#### Single Image Processing
+```bash
 # Basic image processing
 python main.py path/to/deck_image.jpg
 
@@ -62,8 +72,8 @@ python main.py path/to/deck_image.jpg
 python main.py path/to/deck_image.jpg your_cubecobra_id
 ```
 
-#### 2. Import Deck Submissions
-```
+#### Import Deck Submissions
+```bash
 # Process all submissions in submissions/ folder
 python main.py import
 
@@ -71,8 +81,8 @@ python main.py import
 python main.py import path/to/custom_folder
 ```
 
-#### 3. Interactive Mode
-```
+#### Interactive Mode
+```bash
 python main.py
 ```
 Presents menu with options:
@@ -80,73 +90,8 @@ Presents menu with options:
 2. Process deck submissions
 3. Process a manual card list
 
-### Database Management Commands
-
-#### View Database Contents
-```
-python view_database.py
-```
-Interactive database browser showing:
-- All stored decks and metadata
-- Cube statistics and pilot performance
-- Card frequency analysis
-- Browse by user / rename and merge pilot names
-
-#### Delete Specific Decks
-```
-# Interactive mode - select from list
-python delete_deck.py
-
-# Command line - specify deck ID
-python delete_deck.py deck_id_here
-```
-
-#### Reset Database
-```
-python reset_database.py
-```
-Creates backup then completely resets the database.
-
-### Cube Management Commands
-
-#### Manage Cube Mappings
-```
-python manage_cubes.py
-```
-Manage human-readable cube names and their CubeCobra IDs.
-
-#### View Deck Images
-```
-python view_deck_images.py
-```
-Browse stored deck images with metadata.
-
-### Analytics and Dashboard Commands
-
-#### Generate Static Dashboard
-```
-python generate_static_dashboard.py
-```
-Creates self-contained HTML dashboard in `docs/` folder, including the deck submission form.
-
-#### Run Interactive Dashboard
-```
-python dashboard.py
-```
-Launches Flask web server for real-time analytics (development only).
-
-## Cloudflare Workers + R2 Pipeline
-
-### How It Works
-
-1. **Players submit decklists** via a web form at `/submit.html` (served by Cloudflare Workers).
-2. **The Worker** (`src/worker.js`) validates the upload and stores it in R2 under `{cube_id}/{timestamp}_{pilotName}/`.
-3. **`pull_from_r2.py`** downloads new submissions from R2 into the local `submissions/` directory.
-4. **`main.py import`** processes each submission folder (CSV metadata + deck image) through the AI vision pipeline.
-5. Successfully processed folders are moved to `imported/` with a timestamp.
-
 ### R2 Pull Commands
-```
+```bash
 # Pull new submissions from R2
 python pull_from_r2.py --pull
 
@@ -160,128 +105,145 @@ python pull_from_r2.py --reset
 python pull_from_r2.py
 ```
 
-### Deploying the Worker
-```
-# Deploy Worker + static site to Cloudflare
-deploy.bat
-```
-This resets the `deployment` branch to match `main`, then pushes to trigger Cloudflare's automatic deployment.
-
 ### Automated Weekly Pull
 
-A Windows Task Scheduler task named **CubeWizard R2 Pull** runs `scheduled_pull.bat` weekly (Mondays at 9 AM). This script:
+`scheduled_pull.bat` can be run via Windows Task Scheduler. It:
 1. Pulls new submissions from R2 into `submissions/`
-2. Runs `python main.py import` to process them
-3. Logs everything to `scheduled_pull.log`
+2. Runs `python main.py import` to process and write to D1
+3. Logs output to `scheduled_pull.log`
 
 ## Website Update Workflow
 
-```
+Since the Worker reads from D1 directly, the typical workflow is:
+
+```bash
 # 1. Pull new submissions from R2
 python pull_from_r2.py --pull
 
-# 2. Process downloaded decklists
+# 2. Process downloaded decklists (writes to D1 automatically)
 python main.py import
-
-# 3. Regenerate the static dashboard
-python generate_static_dashboard.py
-
-# 4. Deploy to Cloudflare Workers
-deploy.bat
 ```
+
+No deploy step needed — the live site reflects D1 data immediately.
+
+## Deploying Workers
+
+```bash
+# Deploy to staging
+npx wrangler deploy --env stg
+
+# Deploy to production
+npx wrangler deploy --env prod
+
+# Deploy the redirect worker (cubewizard.org → cube-wizard.com)
+npx wrangler deploy --config wrangler-redirect.jsonc
+```
+
+### Worker Environments
+
+| Environment | Worker Name | URL |
+|---|---|---|
+| Staging | `cubewizard-stg` | https://cubewizard-stg.amatveyenko.workers.dev |
+| Production | `cubewizard-prod` | https://cubewizard-prod.amatveyenko.workers.dev |
+| Redirect | `cubewizard-redirect` | cubewizard.org (redirects to cube-wizard.com) |
+
+Both stg and prod share the same D1 database and R2 bucket.
 
 ### Dashboard Features
 
-The generated dashboard includes:
-- **Performance Analysis**: Win rates, match statistics, pilot rankings
-- **Synergy Detection**: Card combination analysis and archetype identification
-- **Meta Analysis**: Color distribution, mana curves, card frequency
+The site includes:
+- **Performance Dashboard**: Win rates, match statistics, pilot rankings
+- **Detailed Analysis**: Color performance, card win rates, mana curves
+- **Scatter Charts**: Win rate vs. appearances with performance metrics
 - **Card Search**: Look up individual card stats across all drafts
 - **Interactive Charts**: Plotly-powered visualizations with hover details
-- **Warning System**: Automatic alerts for datasets under 30 decks
-- **Contact Footer**: Maintainer email and last updated timestamp
+- **Deck Submission Form**: Upload deck images with metadata
+- **Add Cube**: Register new cubes for tracking
 
 ## Project Structure
 
 ```
 CubeWizard/
-├── main.py                      # Primary entry point and core logic
+├── main.py                      # Primary entry point — image processing + D1 writes
+├── d1_writer.py                 # Cloudflare D1 writer (primary storage backend)
 ├── image_processor.py           # OpenAI Vision API integration
 ├── scryfall_client.py           # Scryfall API wrapper
-├── database_manager.py          # SQLite database operations
-├── dashboard.py                 # Analytics and dashboard generation
-├── generate_static_dashboard.py # Static site generator
 ├── config_manager.py            # Configuration handling
 ├── pull_from_r2.py              # R2 download tool
-├── delete_deck.py               # Deck deletion utility
-├── reset_database.py            # Database reset utility
-├── view_database.py             # Database browser
-├── view_deck_images.py          # Image viewer utility
-├── manage_cubes.py              # Cube mapping management
-├── config.ini                   # Configuration settings (incl. R2 creds)
-├── cube_mapping.csv             # Cube name/ID mappings
+├── config.ini                   # Configuration (R2 creds, OpenAI settings)
+├── schema.sql                   # D1 database schema reference
 ├── requirements.txt             # Python dependencies
 ├── .env                         # Environment variables (API keys)
-├── activate.bat                 # Windows venv activation
-├── deploy.bat                   # Cloudflare deployment script
 ├── scheduled_pull.bat           # Automated pull + process script
-├── wrangler.jsonc               # Cloudflare Workers config
+├── wrangler.jsonc               # Cloudflare Workers config (stg/prod)
+├── wrangler-redirect.jsonc      # Redirect worker config
 ├── src/
-│   └── worker.js                # Cloudflare Worker (upload API + static serving)
-├── templates/
-│   ├── dashboard.html           # Main dashboard template
-│   ├── detailed_analysis.html   # Per-cube analysis template
-│   └── submit.html              # Deck submission form template
+│   ├── worker.js                # Main Cloudflare Worker (API + static assets)
+│   └── redirect-worker.js       # Domain redirect worker
+├── docs/                        # Static site assets (served by Worker)
+│   ├── index.html               # Main dashboard SPA
+│   ├── analysis.html            # Detailed analysis page
+│   ├── submit.html              # Deck submission form
+│   ├── add_cube.html            # Add new cube form
+│   └── CubeWizard.png           # Site logo
 ├── submissions/                 # Incoming deck submissions (from R2)
 ├── imported/                    # Processed submissions (archived)
-├── output/
-│   ├── cubewizard.db            # Primary SQLite database
-│   └── stored_images/           # Processed deck images (PNG format)
-└── docs/                        # Generated static website (deployed)
+└── output/
+    └── stored_images/           # Processed deck images (local archive)
 ```
 
-## Maintenance Tasks
+## D1 Database
 
-### Regular Database Maintenance
+The D1 database (`cubewizard-db`) contains five tables:
+
+| Table | Purpose |
+|---|---|
+| `cubes` | Cube metadata (ID, name, deck count) |
+| `decks` | Deck metadata (pilot, record, win rate) |
+| `deck_cards` | Individual card data per deck (Scryfall-enriched) |
+| `deck_stats` | Processing statistics per deck |
+| `cube_mapping` | Human-readable name ↔ cube ID mapping |
+
+### Direct D1 Queries
+```bash
+# Query D1 via wrangler
+npx wrangler d1 execute cubewizard-db --env prod --remote --command "SELECT COUNT(*) FROM decks;"
+
+# JSON output for scripting
+npx wrangler d1 execute cubewizard-db --env prod --remote --json --command "SELECT * FROM cubes;"
 ```
-# View database statistics
-python view_database.py
 
-# Clean up old/invalid entries if needed
-python delete_deck.py
+## Worker API Endpoints
 
-# Full reset if database becomes corrupted
-python reset_database.py
-```
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/cubes` | GET | List all cubes |
+| `/api/dashboard/:cubeId` | GET | Full dashboard data for a cube |
+| `/api/charts/:cubeId/:chartType` | GET | Chart HTML (color-bar, scatter, etc.) |
+| `/api/upload` | POST | Upload deck submission to R2 |
+| `/api/validate-cube` | POST | Validate a CubeCobra cube ID |
+| `/api/add-cube` | POST | Register a new cube in D1 |
 
-### Submission Processing Pipeline
+## Maintenance
+
+### Submission Processing
 1. New submissions arrive in R2 via the web form
-2. Run `python pull_from_r2.py --pull` to download them to `submissions/`
-3. Run `python main.py import` to process all new folders
+2. Run `python pull_from_r2.py --pull` to download to `submissions/`
+3. Run `python main.py import` to process and write to D1
 4. Successfully processed folders move to `imported/` with timestamp
 5. Failed submissions remain in `submissions/` with error details
 
 ### Monitoring
-- Check `submissions/` folder for unprocessed submissions
+- Check `submissions/` for unprocessed submissions
+- Query D1 directly for database statistics
 - Review `scheduled_pull.log` for automated run results
-- Monitor database size growth in `output/cubewizard.db`
-- Verify website accessibility after deployments
 
 ## Troubleshooting
 
 ### Common Issues
 - **HEIC/HEIF Images**: Requires `pillow-heif` package (included in requirements.txt)
 - **OpenAI API Errors**: Check API key in `.env` and account credit balance
-- **Database Locks**: Close any open `view_database.py` sessions before processing
 - **Missing Scryfall Data**: Some cards may not be found due to name variations
 - **R2 Credential Errors**: Verify `[r2]` section in `config.ini` has correct endpoint, key ID, and secret
-
-### Performance Optimization
-- Large images are automatically resized to reduce API costs
-- Database includes indexes for common queries
-- Static dashboard embeds all data to minimize hosting requirements
-- Submission processing includes retry logic for transient failures
-
----
-
-**For technical support, contact the maintainer via the dashboard footer email.**
+- **D1 Write Failures**: Ensure `npx wrangler` is available and authenticated (`npx wrangler whoami`)
+- **Wrangler Auth**: Run `npx wrangler login` if D1 commands return authorization errors

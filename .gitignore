@@ -60,9 +60,6 @@ submissions/
 imported/
 *.log
 
-# Configuration files with sensitive data
-config.ini
-
 # R2 download tracker
 .r2_downloaded.json
 

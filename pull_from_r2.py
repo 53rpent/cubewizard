@@ -21,31 +21,33 @@ Usage:
 
 import json
 import csv
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
+from dotenv import load_dotenv
 import boto3
 from botocore.config import Config as BotoConfig
-
-from config_manager import config
 
 
 class R2Puller:
     """Downloads new submissions from Cloudflare R2 to local submissions/ directory."""
 
     def __init__(self):
-        """Initialize the R2 client using credentials from config.ini."""
-        self.endpoint_url = config.get_string("r2", "endpoint_url")
-        self.access_key_id = config.get_string("r2", "access_key_id")
-        self.secret_access_key = config.get_string("r2", "secret_access_key")
-        self.bucket_name = config.get_string("r2", "bucket_name", "decklist-uploads")
+        """Initialize the R2 client using credentials from .env."""
+        load_dotenv()
+
+        self.endpoint_url = os.environ.get("R2_ENDPOINT_URL", "")
+        self.access_key_id = os.environ.get("R2_ACCESS_KEY_ID", "")
+        self.secret_access_key = os.environ.get("R2_SECRET_ACCESS_KEY", "")
+        self.bucket_name = os.environ.get("R2_BUCKET_NAME", "decklist-uploads")
 
         if not all([self.endpoint_url, self.access_key_id, self.secret_access_key]):
             raise ValueError(
-                "R2 credentials not configured. Add [r2] section to config.ini with:\n"
-                "  endpoint_url, access_key_id, secret_access_key"
+                "R2 credentials not configured. Add to .env file:\n"
+                "  R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY"
             )
 
         self.s3 = boto3.client(
@@ -270,73 +272,6 @@ class R2Puller:
         else:
             print("No tracker file found — nothing to reset.")
 
-    def pull_cube_requests(self) -> int:
-        """
-        Pull new cube registration requests from R2 (_cube_requests/ prefix)
-        and append them to cube_mapping.csv.
-
-        Returns the number of new cubes added.
-        """
-        print("Checking for new cube requests in R2...")
-
-        paginator = self.s3.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=self.bucket_name, Prefix="_cube_requests/")
-
-        request_keys = []
-        for page in pages:
-            for obj in page.get("Contents", []):
-                request_keys.append(obj["Key"])
-
-        if not request_keys:
-            print("No cube requests found.")
-            return 0
-
-        # Load existing cube IDs from cube_mapping.csv
-        mapping_path = Path("cube_mapping.csv")
-        existing_ids = set()
-        if mapping_path.exists():
-            with open(mapping_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    existing_ids.add(row["cube_id"].strip())
-
-        added = 0
-        for key in request_keys:
-            try:
-                resp = self.s3.get_object(Bucket=self.bucket_name, Key=key)
-                data = json.loads(resp["Body"].read().decode("utf-8"))
-
-                cube_id = data.get("cube_id", "").strip()
-                cube_name = data.get("cube_name", "").strip()
-                description = data.get("description", "").strip()
-
-                if not cube_id or not cube_name:
-                    print(f"  Skipping {key} — missing cube_id or cube_name")
-                    continue
-
-                if cube_id in existing_ids:
-                    print(f"  Skipping {cube_id} — already in cube_mapping.csv")
-                else:
-                    # Append to cube_mapping.csv
-                    with open(mapping_path, "a", newline="", encoding="utf-8") as f:
-                        writer = csv.writer(f)
-                        writer.writerow([cube_name, cube_id, description])
-                    existing_ids.add(cube_id)
-                    added += 1
-                    print(f"  [OK] Added cube: {cube_name} ({cube_id})")
-
-                # Delete the request from R2 after processing
-                self.s3.delete_object(Bucket=self.bucket_name, Key=key)
-
-            except Exception as e:
-                print(f"  ERROR processing {key}: {e}")
-
-        if added:
-            print(f"\n{added} new cube(s) added to cube_mapping.csv.")
-        else:
-            print("No new cubes to add (all already exist).")
-
-        return added
 
 
 def main():
@@ -347,7 +282,6 @@ def main():
         puller = R2Puller()
 
         if arg == "pull":
-            puller.pull_cube_requests()
             puller.pull_new()
         elif arg == "list":
             puller.list_remote()

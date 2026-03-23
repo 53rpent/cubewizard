@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Add a Cube | CubeWizard</title>
     <link rel="icon" type="image/png" href="CubeWizard.png">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
       * {
         margin: 0;
@@ -306,6 +307,8 @@
             <textarea id="description" name="description" placeholder="e.g. Vintage powered cube" disabled></textarea>
           </div>
 
+          <div class="cf-turnstile" data-sitekey="0x4AAAAAACupg3Eg8RlFC61P" data-theme="light"></div>
+
           <button type="submit" class="submit-btn" id="submit-btn" disabled>Add Cube</button>
         </form>
 
@@ -416,7 +419,8 @@
         var payload = {
           cube_id: cubeIdInput.value.trim(),
           cube_name: cubeNameInput.value.trim(),
-          description: descInput.value.trim()
+          description: descInput.value.trim(),
+          "cf-turnstile-response": document.querySelector('[name="cf-turnstile-response"]')?.value || ""
         };
 
         fetch("/api/add-cube", {
@@ -437,6 +441,7 @@
               descInput.disabled = true;
               validationEl.className = "validation-result";
               validationEl.style.display = "none";
+              if (window.turnstile) turnstile.reset();
             } else {
               var msg = data.errors ? data.errors.join(", ") : "Submission failed";
               throw new Error(msg);

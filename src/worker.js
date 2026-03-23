@@ -491,9 +491,49 @@ function buildColorBarChart(colorStats) {
 //  Existing handlers (unchanged)
 // ============================================================
 
+/**
+ * Verify a Cloudflare Turnstile token server-side.
+ * Returns true if valid, false otherwise.
+ */
+async function verifyTurnstile(token, ip, env) {
+  if (!token) return false;
+  var secret = env.TURNSTILE_SECRET;
+  if (!secret) {
+    console.error("TURNSTILE_SECRET is not configured");
+    return false;
+  }
+
+  try {
+    var resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        secret: secret,
+        response: token,
+        remoteip: ip || "",
+      }),
+    });
+    var result = await resp.json();
+    return result.success === true;
+  } catch (err) {
+    console.error("Turnstile verification error:", err);
+    return false;
+  }
+}
+
 async function handleUpload(request, env) {
   try {
     var formData = await request.formData();
+
+    // Verify Turnstile token
+    var turnstileToken = formData.get("cf-turnstile-response");
+    var clientIp = request.headers.get("CF-Connecting-IP");
+    if (!await verifyTurnstile(turnstileToken, clientIp, env)) {
+      return jsonResponse(
+        { success: false, errors: ["Bot verification failed. Please try again."] },
+        403
+      );
+    }
 
     var cubeId = formData.get("cube_id")?.trim();
     var pilotName = formData.get("pilot_name")?.trim();
@@ -628,6 +668,16 @@ async function handleValidateCube(url, env) {
 async function handleAddCube(request, env) {
   try {
     var body = await request.json();
+
+    // Verify Turnstile token
+    var turnstileToken = body["cf-turnstile-response"];
+    var clientIp = request.headers.get("CF-Connecting-IP");
+    if (!await verifyTurnstile(turnstileToken, clientIp, env)) {
+      return jsonResponse(
+        { success: false, errors: ["Bot verification failed. Please try again."] },
+        403
+      );
+    }
 
     var cubeId = body.cube_id?.trim();
     var cubeName = body.cube_name?.trim();

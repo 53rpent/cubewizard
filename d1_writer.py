@@ -1,155 +1,230 @@
 """
 D1 Writer for CubeWizard.
 Primary storage backend — writes deck data directly to Cloudflare D1
-via `npx wrangler d1 execute`.  No local SQLite needed.
+via the D1 REST API.  No local SQLite or wrangler CLI needed.
+
+Requires these environment variables (in .env):
+    CLOUDFLARE_ACCOUNT_ID
+    CLOUDFLARE_API_TOKEN       (needs Account / D1 / Edit permission)
+    CLOUDFLARE_D1_DATABASE_ID
 """
 
+import hashlib
 import json
-import subprocess
-import tempfile
 import os
-from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Callable, List, Optional, Tuple
+
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Cloudflare credentials from .env
+_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+_DATABASE_ID = os.environ.get("CLOUDFLARE_D1_DATABASE_ID", "")
+
+_D1_QUERY_URL = (
+    f"https://api.cloudflare.com/client/v4/accounts/{_ACCOUNT_ID}"
+    f"/d1/database/{_DATABASE_ID}/query"
+)
 
 
-# D1 database name from wrangler.jsonc
-D1_DATABASE_NAME = "cubewizard-db"
-
-# Default wrangler environment ("stg" or "prod")
-D1_ENV = "prod"
-
-
-# ---------------------------------------------------------------------------
-# SQL helpers
-# ---------------------------------------------------------------------------
-
-def _escape_sql(value: str) -> str:
-    """Escape a string for a SQL literal (single-quote doubling)."""
-    if value is None:
-        return "NULL"
-    return value.replace("'", "''")
-
-
-def _sql_value(value) -> str:
-    """Convert a Python value to its SQL literal representation."""
-    if value is None:
-        return "NULL"
-    if isinstance(value, bool):
-        return "1" if value else "0"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, str):
-        return f"'{_escape_sql(value)}'"
-    if isinstance(value, (list, dict)):
-        return f"'{_escape_sql(json.dumps(value))}'"
-    return f"'{_escape_sql(str(value))}'"
+def _check_config() -> None:
+    """Raise if required env vars are missing."""
+    missing = []
+    if not _ACCOUNT_ID:
+        missing.append("CLOUDFLARE_ACCOUNT_ID")
+    if not _API_TOKEN:
+        missing.append("CLOUDFLARE_API_TOKEN")
+    if not _DATABASE_ID:
+        missing.append("CLOUDFLARE_D1_DATABASE_ID")
+    if missing:
+        raise ValueError(
+            f"Missing environment variables: {', '.join(missing)}. "
+            "Add them to your .env file."
+        )
 
 
 # ---------------------------------------------------------------------------
-# SQL builder
+# Low-level D1 REST helpers
 # ---------------------------------------------------------------------------
 
-def _build_insert_sql(cube_id: str, deck_data: Dict[str, Any]) -> str:
+def _d1_request(payload: dict) -> dict:
     """
-    Build a multi-statement SQL script that inserts one deck (with cards
-    and stats) into D1.  Mirrors what database_manager.add_deck() did
-    for local SQLite.
+    POST to the D1 /query endpoint and return the JSON response.
+    Raises on HTTP or API-level errors.
+    """
+    _check_config()
+    resp = requests.post(
+        _D1_QUERY_URL,
+        headers={
+            "Authorization": f"Bearer {_API_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
-    The script:
+
+def _execute_batch(statements: List[Dict[str, Any]]) -> list:
+    """
+    Execute a batch of parameterized statements atomically via the D1 API.
+
+    Each element in *statements* is {"sql": "...", "params": [...]}.
+    Returns the list of per-statement result objects.
+    """
+    data = _d1_request({"batch": statements})
+    if not data.get("success"):
+        errors = data.get("errors", [])
+        raise RuntimeError(f"D1 batch failed: {errors}")
+    return data.get("result", [])
+
+
+def _execute_single(sql: str, params: list | None = None) -> list:
+    """
+    Execute a single parameterized query and return result rows.
+    """
+    payload: dict = {"sql": sql}
+    if params:
+        payload["params"] = params
+    data = _d1_request(payload)
+    if not data.get("success"):
+        errors = data.get("errors", [])
+        raise RuntimeError(f"D1 query failed: {errors}")
+    results = data.get("result", [])
+    if results and isinstance(results, list):
+        return results[0].get("results", [])
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Statement builders  (return {"sql": ..., "params": [...]} dicts)
+# ---------------------------------------------------------------------------
+
+def _stmt(sql: str, params: list | None = None) -> dict:
+    """Convenience: build a statement dict."""
+    s: dict = {"sql": sql}
+    if params is not None:
+        s["params"] = params
+    return s
+
+
+def _build_batch(cube_id: str, deck_data: Dict[str, Any]) -> Tuple[List[dict], dict, Callable[[int], List[dict]]]:
+    """
+    Build a list of parameterized statement dicts for inserting one
+    deck (metadata + cards + stats) into D1.
+
+    The batch:
       1. INSERT OR IGNORE into cubes
-      2. INSERT into decks  (deck_id is AUTOINCREMENT)
-      3. INSERT into deck_stats  (uses last_insert_rowid())
-      4. INSERT into deck_cards  (uses a subquery for deck_id)
-      5. UPDATE cubes total_decks / last_updated
+      2. INSERT into decks
+      3. SELECT last deck_id (via processing_timestamp + pilot_name)
+         — done client-side after the first two execute
+    So we split into two batches:
+      Batch A: cube upsert + deck insert
+      Batch B: deck_stats + all deck_cards + cube counter update
+              (needs the deck_id from batch A)
     """
     metadata = deck_data["deck"]["metadata"]
     cards_data = deck_data["deck"]["cards"]
-
     now = metadata.get("record_logged", "")
-    stmts: list[str] = []
 
-    # 1 — cube
-    stmts.append(
-        f"INSERT OR IGNORE INTO cubes (cube_id, created, last_updated, total_decks) "
-        f"VALUES ({_sql_value(cube_id)}, {_sql_value(now)}, {_sql_value(now)}, 0);"
+    # Generate a deterministic image_id for deduplication.
+    # The decks table has a UNIQUE constraint on image_id, so
+    # INSERT OR IGNORE will silently skip duplicate submissions.
+    id_source = f"{cube_id}|{metadata['pilot_name']}|{metadata['processing_timestamp']}"
+    image_id = hashlib.sha256(id_source.encode()).hexdigest()[:16]
+
+    # ---- Batch A: cube + deck ----
+    batch_a = [
+        _stmt(
+            "INSERT OR IGNORE INTO cubes (cube_id, created, last_updated, total_decks) "
+            "VALUES (?, ?, ?, 0);",
+            [cube_id, now, now],
+        ),
+        _stmt(
+            "INSERT OR IGNORE INTO decks "
+            "(cube_id, pilot_name, match_wins, match_losses, match_draws, win_rate, "
+            "record_logged, image_source, image_id, processing_timestamp, total_cards) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            [
+                cube_id,
+                metadata["pilot_name"],
+                metadata["match_wins"],
+                metadata["match_losses"],
+                metadata.get("match_draws", 0),
+                metadata["win_rate"],
+                metadata["record_logged"],
+                metadata.get("image_source", ""),
+                image_id,
+                metadata["processing_timestamp"],
+                metadata["total_cards"],
+            ],
+        ),
+    ]
+
+    # ---- Lookup query to get the new deck_id ----
+    lookup_stmt = _stmt(
+        "SELECT deck_id FROM decks "
+        "WHERE cube_id = ? AND processing_timestamp = ? AND pilot_name = ? "
+        "ORDER BY deck_id DESC LIMIT 1;",
+        [cube_id, metadata["processing_timestamp"], metadata["pilot_name"]],
     )
 
-    # 2 — deck
-    stmts.append(
-        f"INSERT INTO decks "
-        f"(cube_id, pilot_name, match_wins, match_losses, match_draws, win_rate, "
-        f"record_logged, image_source, processing_timestamp, total_cards) "
-        f"VALUES ("
-        f"{_sql_value(cube_id)}, "
-        f"{_sql_value(metadata['pilot_name'])}, "
-        f"{_sql_value(metadata['match_wins'])}, "
-        f"{_sql_value(metadata['match_losses'])}, "
-        f"{_sql_value(metadata.get('match_draws', 0))}, "
-        f"{_sql_value(metadata['win_rate'])}, "
-        f"{_sql_value(metadata['record_logged'])}, "
-        f"{_sql_value(metadata.get('image_source', ''))}, "
-        f"{_sql_value(metadata['processing_timestamp'])}, "
-        f"{_sql_value(metadata['total_cards'])}"
-        f");"
-    )
+    # ---- Batch B builder (called after we know deck_id) ----
+    def build_batch_b(deck_id: int) -> List[dict]:
+        stmts: List[dict] = []
 
-    # 3 — deck_stats  (last_insert_rowid() = new deck_id)
-    stmts.append(
-        f"INSERT INTO deck_stats (deck_id, total_found, total_not_found) "
-        f"VALUES (last_insert_rowid(), "
-        f"{_sql_value(cards_data.get('total_found', 0))}, "
-        f"{_sql_value(cards_data.get('total_not_found', 0))});"
-    )
+        # deck_stats
+        stmts.append(_stmt(
+            "INSERT INTO deck_stats (deck_id, total_found, total_not_found) "
+            "VALUES (?, ?, ?);",
+            [deck_id, cards_data.get("total_found", 0), cards_data.get("total_not_found", 0)],
+        ))
 
-    # 4 — deck_cards
-    #     last_insert_rowid() changed after deck_stats, so look up by
-    #     the unique (cube_id, processing_timestamp, pilot_name) triple.
-    processing_ts = _escape_sql(metadata["processing_timestamp"])
-    pilot = _escape_sql(metadata["pilot_name"])
-    deck_id_sub = (
-        f"(SELECT deck_id FROM decks "
-        f"WHERE cube_id = {_sql_value(cube_id)} "
-        f"AND processing_timestamp = '{processing_ts}' "
-        f"AND pilot_name = '{pilot}' "
-        f"ORDER BY deck_id DESC LIMIT 1)"
-    )
+        # deck_cards
+        for card in cards_data.get("cards", []):
+            stmts.append(_stmt(
+                "INSERT INTO deck_cards "
+                "(deck_id, name, mana_cost, cmc, type_line, colors, color_identity, "
+                "rarity, set_code, set_name, collector_number, power, toughness, "
+                "oracle_text, scryfall_uri, image_uris, prices) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                [
+                    deck_id,
+                    card.get("name"),
+                    card.get("mana_cost"),
+                    card.get("cmc"),
+                    card.get("type_line"),
+                    json.dumps(card.get("colors", [])),
+                    json.dumps(card.get("color_identity", [])),
+                    card.get("rarity"),
+                    card.get("set"),
+                    card.get("set_name"),
+                    card.get("collector_number"),
+                    card.get("power"),
+                    card.get("toughness"),
+                    card.get("oracle_text"),
+                    card.get("scryfall_uri"),
+                    json.dumps(card.get("image_uris", {})),
+                    json.dumps(card.get("prices", {})),
+                ],
+            ))
 
-    for card in cards_data.get("cards", []):
-        stmts.append(
-            f"INSERT INTO deck_cards "
-            f"(deck_id, name, mana_cost, cmc, type_line, colors, color_identity, "
-            f"rarity, set_code, set_name, collector_number, power, toughness, "
-            f"oracle_text, scryfall_uri, image_uris, prices) "
-            f"VALUES ("
-            f"{deck_id_sub}, "
-            f"{_sql_value(card.get('name'))}, "
-            f"{_sql_value(card.get('mana_cost'))}, "
-            f"{_sql_value(card.get('cmc'))}, "
-            f"{_sql_value(card.get('type_line'))}, "
-            f"{_sql_value(json.dumps(card.get('colors', [])))}, "
-            f"{_sql_value(json.dumps(card.get('color_identity', [])))}, "
-            f"{_sql_value(card.get('rarity'))}, "
-            f"{_sql_value(card.get('set'))}, "
-            f"{_sql_value(card.get('set_name'))}, "
-            f"{_sql_value(card.get('collector_number'))}, "
-            f"{_sql_value(card.get('power'))}, "
-            f"{_sql_value(card.get('toughness'))}, "
-            f"{_sql_value(card.get('oracle_text'))}, "
-            f"{_sql_value(card.get('scryfall_uri'))}, "
-            f"{_sql_value(json.dumps(card.get('image_uris', {})))}, "
-            f"{_sql_value(json.dumps(card.get('prices', {})))}"
-            f");"
-        )
+        # update cube counters
+        stmts.append(_stmt(
+            "UPDATE cubes SET "
+            "total_decks = (SELECT COUNT(*) FROM decks WHERE cube_id = ?), "
+            "last_updated = ? "
+            "WHERE cube_id = ?;",
+            [cube_id, now, cube_id],
+        ))
 
-    # 5 — update cube counters
-    stmts.append(
-        f"UPDATE cubes SET "
-        f"total_decks = (SELECT COUNT(*) FROM decks WHERE cube_id = {_sql_value(cube_id)}), "
-        f"last_updated = {_sql_value(now)} "
-        f"WHERE cube_id = {_sql_value(cube_id)};"
-    )
+        return stmts
 
-    return "\n".join(stmts)
+    return batch_a, lookup_stmt, build_batch_b
 
 
 # ---------------------------------------------------------------------------
@@ -159,115 +234,67 @@ def _build_insert_sql(cube_id: str, deck_data: Dict[str, Any]) -> str:
 def add_deck(cube_id: str, deck_data: Dict[str, Any],
              env: Optional[str] = None) -> bool:
     """
-    Write a deck (metadata + cards + stats) to Cloudflare D1.
+    Write a deck (metadata + cards + stats) to Cloudflare D1 via REST API.
+
+    Uses two atomic batches:
+      Batch A: Insert cube (if new) + insert deck row
+      Then:    Look up the new deck_id
+      Batch B: Insert deck_stats + all deck_cards + update cube counters
 
     Args:
         cube_id:   CubeCobra cube identifier.
         deck_data: Deck data dict built by CubeWizard.process_single_image().
-        env:       Wrangler environment override ("stg" / "prod").
+        env:       Unused (kept for API compatibility). REST API uses
+                   CLOUDFLARE_D1_DATABASE_ID from .env directly.
 
     Returns:
         True on success, False on failure.
     """
-    target_env = env if env is not None else D1_ENV
-    sql_script = _build_insert_sql(cube_id, deck_data)
-
-    tmp_path: Optional[str] = None
     try:
-        # Write SQL to a temp file — safer than --command for large scripts
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".sql", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(sql_script)
-            tmp_path = tmp.name
+        batch_a, lookup_stmt, build_batch_b = _build_batch(cube_id, deck_data)
 
-        cmd = [
-            "npx", "wrangler", "d1", "execute",
-            D1_DATABASE_NAME,
-            "--file", tmp_path,
-            "--remote",
-        ]
-        if target_env:
-            cmd.extend(["--env", target_env])
+        print("\n  Writing to D1 (REST API)...")
 
-        print(f"\n  Writing to D1 ({target_env or 'default'})...")
+        # Step 1: insert cube + deck
+        batch_a_results = _execute_batch(batch_a)
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(Path(__file__).parent),
-            timeout=120,
-            shell=True,
-            encoding="utf-8",
-            errors="replace",
+        # Check if the deck INSERT was a no-op (duplicate image_id).
+        # batch_a[0] = cube upsert, batch_a[1] = deck INSERT OR IGNORE.
+        # D1 returns a "meta" object per statement with a "changes" count.
+        deck_insert_meta = (
+            batch_a_results[1].get("meta", {}) if len(batch_a_results) > 1 else {}
         )
-
-        if result.returncode == 0:
-            print("  [OK] D1 write successful")
+        if deck_insert_meta.get("changes", 1) == 0:
+            print("  [SKIP] Duplicate deck — already ingested (image_id match)")
             return True
 
-        # --- failure diagnostics ---
-        print("  [FAIL] D1 write failed:")
-        for stream in (result.stderr, result.stdout):
-            if not stream:
-                continue
-            for line in stream.strip().splitlines():
-                line = line.strip()
-                if line:
-                    print(f"    {line}")
-        return False
+        # Step 2: get the new deck_id
+        rows = _execute_single(lookup_stmt["sql"], lookup_stmt.get("params"))
+        if not rows:
+            print("  [FAIL] Could not retrieve new deck_id after insert")
+            return False
+        deck_id = rows[0]["deck_id"]
 
-    except subprocess.TimeoutExpired:
-        print("  [FAIL] D1 write timed out (120 s)")
-        return False
-    except FileNotFoundError:
-        print("  [FAIL] D1 write failed: 'npx' not found -- is Node.js installed?")
+        # Step 3: insert stats + cards + update counters
+        batch_b = build_batch_b(deck_id)
+        _execute_batch(batch_b)
+
+        print("  [OK] D1 write successful")
+        return True
+
+    except requests.exceptions.HTTPError as exc:
+        print(f"  [FAIL] D1 HTTP error: {exc}")
+        if exc.response is not None:
+            try:
+                body = exc.response.json()
+                for err in body.get("errors", []):
+                    print(f"    {err.get('message', err)}")
+            except Exception:
+                print(f"    {exc.response.text[:500]}")
         return False
     except Exception as exc:
         print(f"  [FAIL] D1 write failed: {exc}")
         return False
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-
-def _run_d1_query(sql: str, env: Optional[str] = None) -> Optional[list]:
-    """
-    Run a read-only SQL query against D1 and return parsed result rows.
-
-    Returns a list of row dicts on success, None on failure.
-    """
-    target_env = env if env is not None else D1_ENV
-    cmd = [
-        "npx", "wrangler", "d1", "execute",
-        D1_DATABASE_NAME,
-        "--command", sql,
-        "--remote",
-        "--json",
-    ]
-    if target_env:
-        cmd.extend(["--env", target_env])
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(Path(__file__).parent),
-            timeout=30,
-            shell=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if result.returncode == 0 and result.stdout:
-            data = json.loads(result.stdout)
-            # wrangler --json returns [{ "results": [...], "success": true, ... }]
-            if data and isinstance(data, list) and data[0].get("success"):
-                return data[0].get("results", [])
-        return None
-    except Exception:
-        return None
 
 
 def get_cube_id_by_name(cube_name: str, env: Optional[str] = None) -> Optional[str]:
@@ -276,14 +303,18 @@ def get_cube_id_by_name(cube_name: str, env: Optional[str] = None) -> Optional[s
 
     Args:
         cube_name: Human-readable cube name (e.g. "The Bacon Vintage Cube").
-        env:       Wrangler environment override.
+        env:       Unused (kept for API compatibility).
 
     Returns:
         The cube_id string if found, None otherwise.
     """
-    safe_name = cube_name.replace("'", "''")
-    sql = f"SELECT cube_id FROM cube_mapping WHERE cube_name = '{safe_name}' LIMIT 1;"
-    rows = _run_d1_query(sql, env)
-    if rows and len(rows) > 0:
-        return rows[0].get("cube_id")
+    try:
+        rows = _execute_single(
+            "SELECT cube_id FROM cube_mapping WHERE cube_name = ? LIMIT 1;",
+            [cube_name],
+        )
+        if rows and len(rows) > 0:
+            return rows[0].get("cube_id")
+    except Exception:
+        pass
     return None

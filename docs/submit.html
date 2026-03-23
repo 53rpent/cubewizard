@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Submit Deck Images | CubeWizard</title>
     <link rel="icon" type="image/png" href="CubeWizard.png">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
       * {
         margin: 0;
@@ -304,6 +305,8 @@
             <div class="image-preview" id="image-preview"></div>
           </div>
 
+          <div class="cf-turnstile" data-sitekey="0x4AAAAAACupg3Eg8RlFC61P" data-theme="light"></div>
+
           <button type="submit" class="submit-btn" id="submit-btn">Upload Deck</button>
         </form>
 
@@ -387,6 +390,7 @@
               form.reset();
               fileDrop.classList.remove("has-file");
               preview.innerHTML = "";
+              if (window.turnstile) turnstile.reset();
             } else {
               var msg = data.errors ? data.errors.join(", ") : "Upload failed";
               throw new Error(msg);
