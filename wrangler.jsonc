@@ -2,6 +2,9 @@
 	"name": "cubewizard-cloudflare-worker",
 	"compatibility_date": "2024-09-19",
 	"main": "src/worker.js",
+	"observability": {
+		"enabled": true
+	},
 	"assets": {
 		"directory": "./docs/"
 	},
@@ -22,6 +25,9 @@
 	"env": {
 		"stg": {
 			"name": "cubewizard-stg",
+			"observability": {
+				"enabled": true
+			},
 			"r2_buckets": [
 				{
 					"binding": "BUCKET",
@@ -39,6 +45,9 @@
 		},
 		"prod": {
 			"name": "cubewizard-prod",
+			"observability": {
+				"enabled": true
+			},
 			"r2_buckets": [
 				{
 					"binding": "BUCKET",

@@ -37,7 +37,12 @@ export default {
       return handleAddCube(request, env);
     }
 
-    return env.ASSETS.fetch(request);
+    // Serve static assets for all other paths
+    try {
+      return await env.ASSETS.fetch(request);
+    } catch {
+      return jsonResponse({ error: "Not found" }, 404);
+    }
   },
 };
 

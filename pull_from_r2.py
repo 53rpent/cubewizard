@@ -55,7 +55,12 @@ class R2Puller:
             endpoint_url=self.endpoint_url,
             aws_access_key_id=self.access_key_id,
             aws_secret_access_key=self.secret_access_key,
-            config=BotoConfig(signature_version="s3v4"),
+            config=BotoConfig(
+                signature_version="s3v4",
+                connect_timeout=10,
+                read_timeout=30,
+                retries={"max_attempts": 3},
+            ),
             region_name="auto",
         )
 

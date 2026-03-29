@@ -13,14 +13,14 @@ echo Run started: %DATE% %TIME% >> "%LOGFILE%"
 echo ================================================== >> "%LOGFILE%"
 
 echo [1/2] Pulling new submissions from R2... >> "%LOGFILE%"
-python pull_from_r2.py --pull >> "%LOGFILE%" 2>&1
+python -u pull_from_r2.py --pull >> "%LOGFILE%" 2>&1
 
 REM Check if submissions has any folders to process
 dir /b /ad submissions >nul 2>&1
 if %errorlevel% equ 0 (
     echo. >> "%LOGFILE%"
     echo [2/2] Processing downloaded decklists... >> "%LOGFILE%"
-    python main.py import >> "%LOGFILE%" 2>&1
+    python -u main.py import >> "%LOGFILE%" 2>&1
 ) else (
     echo. >> "%LOGFILE%"
     echo [2/2] No new decklists to process, skipping. >> "%LOGFILE%"
