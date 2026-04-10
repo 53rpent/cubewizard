@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="card-tooltip.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         * {
@@ -241,6 +242,7 @@
         <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
     </div>
     
+    <script src="card-tooltip.js"></script>
     <script>
         // Read params from URL
         var params = new URLSearchParams(window.location.search);
@@ -325,7 +327,7 @@
             for (var i = 0; i < topPerformers.length; i++) {
                 var card = topPerformers[i];
                 var delta = card.performance_delta >= 0 ? '+' + (card.performance_delta * 100).toFixed(1) + '%' : (card.performance_delta * 100).toFixed(1) + '%';
-                html += '<tr><td><strong>' + card.name + '</strong></td>' +
+                html += '<tr><td><strong>' + CW.cardNameHtml(card.name, card.image_url) + '</strong></td>' +
                     '<td>' + card.appearances + '</td>' +
                     '<td>' + (card.win_rate * 100).toFixed(1) + '%</td>' +
                     '<td class="' + (card.performance_delta >= 0 ? 'positive' : 'negative') + '">' + delta + '</td>' +
@@ -338,7 +340,7 @@
                 html += '<table class="table"><thead><tr><th>Card Name</th><th>Appearances</th><th>Win Rate</th><th>Performance Delta</th><th>Record</th></tr></thead><tbody>';
                 for (var u = 0; u < underperformers.length; u++) {
                     var uc = underperformers[u];
-                    html += '<tr><td><strong>' + uc.name + '</strong></td>' +
+                    html += '<tr><td><strong>' + CW.cardNameHtml(uc.name, uc.image_url) + '</strong></td>' +
                         '<td>' + uc.appearances + '</td>' +
                         '<td>' + (uc.win_rate * 100).toFixed(1) + '%</td>' +
                         '<td class="negative">' + (uc.performance_delta * 100).toFixed(1) + '%</td>' +
@@ -356,8 +358,8 @@
             for (var i = 0; i < synergies.length; i++) {
                 var s = synergies[i];
                 var bonus = s.synergy_bonus >= 0 ? '+' + (s.synergy_bonus * 100).toFixed(1) + '%' : (s.synergy_bonus * 100).toFixed(1) + '%';
-                html += '<tr><td><strong>' + s.card1 + '</strong></td>' +
-                    '<td><strong>' + s.card2 + '</strong></td>' +
+                html += '<tr><td><strong>' + CW.cardNameHtml(s.card1, s.card1_image_url) + '</strong></td>' +
+                    '<td><strong>' + CW.cardNameHtml(s.card2, s.card2_image_url) + '</strong></td>' +
                     '<td>' + (s.together_win_rate * 100).toFixed(1) + '%</td>' +
                     '<td class="' + (s.synergy_bonus >= 0 ? 'positive' : 'negative') + '">' + bonus + '</td>' +
                     '<td>' + s.together_wins + '-' + s.together_losses + '</td></tr>';

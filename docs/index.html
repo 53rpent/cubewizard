@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="card-tooltip.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         * {
@@ -161,6 +162,12 @@
             }
         }
         
+        @media (min-width: 769px) {
+            .dashboard-grid .card-span-2 {
+                grid-column: span 2;
+            }
+        }
+        
         .card {
             background: white;
             border-radius: 8px;
@@ -220,6 +227,23 @@
         
         .table tr:hover {
             background: #f8f9fa;
+        }
+        
+        .trophy-case-wrap {
+            overflow-x: auto;
+            margin-top: 0.5rem;
+        }
+        .trophy-case-wrap .table {
+            font-size: 0.85rem;
+        }
+        .trophy-case-wrap .table th,
+        .trophy-case-wrap .table td {
+            padding: 0.5rem 0.6rem;
+            white-space: nowrap;
+        }
+        .trophy-mono {
+            font-variant-numeric: tabular-nums;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
         
         .positive {
@@ -442,11 +466,12 @@
                 </div>
                 
                 <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDeckView()">Deck-By-Deck View</a></h3>
-                    <p style="color:#666; font-size:0.9rem; margin:0.25rem 0 0 0;">Browse individual decks and click any row to view its card list in a mana curve.</p>
+                    <h3><a href="#" class="clickable-title" onclick="openDeckView(); return false;">Trophy Case</a></h3>
+                    <p style="color:#666; font-size:0.9rem; margin:0.25rem 0 0 0;">Five most recent decks with 0 losses for this cube.</p>
+                    <div id="trophy-case" class="trophy-case-wrap"></div>
                 </div>
                 
-                <div class="card">
+                <div class="card card-span-2">
                     <h3>Card Search</h3>
                     <div class="card-search-section">
                         <input type="text" id="search-input" placeholder="Enter card name..." class="search-input">
@@ -469,6 +494,7 @@
         <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
     </div>
     
+    <script src="card-tooltip.js"></script>
     <script>
         var currentCubeId = '';
         var currentCubeData = null;
@@ -532,6 +558,7 @@
                     
                     populateDashboard(data);
                     loadCharts();
+                    loadTrophyCase();
                     hideLoading();
                 })
                 .catch(function(err) {
@@ -558,7 +585,7 @@
             var topHtml = '<table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
             for (var i = 0; i < topCards.length; i++) {
                 var c = topCards[i];
-                topHtml += '<tr><td>' + c.name + '</td><td>' + c.appearances + '</td>' +
+                topHtml += '<tr><td>' + CW.cardNameHtml(c.name, c.image_url) + '</td><td>' + c.appearances + '</td>' +
                     '<td>' + (c.win_rate * 100).toFixed(1) + '%</td>' +
                     '<td class="positive">+' + (c.performance_delta * 100).toFixed(1) + '%</td></tr>';
             }
@@ -574,7 +601,7 @@
                 var botHtml = '<table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
                 for (var bi = 0; bi < bottomCards.length; bi++) {
                     var bc = bottomCards[bi];
-                    botHtml += '<tr><td>' + bc.name + '</td><td>' + bc.appearances + '</td>' +
+                    botHtml += '<tr><td>' + CW.cardNameHtml(bc.name, bc.image_url) + '</td><td>' + bc.appearances + '</td>' +
                         '<td>' + (bc.win_rate * 100).toFixed(1) + '%</td>' +
                         '<td class="negative">' + (bc.performance_delta * 100).toFixed(1) + '%</td></tr>';
                 }
@@ -592,7 +619,7 @@
                     var s = syns[si];
                     var bonusClass = s.synergy_bonus >= 0 ? 'positive' : 'negative';
                     var bonusSign = s.synergy_bonus >= 0 ? '+' : '';
-                    synHtml += '<tr><td>' + s.card1 + '</td><td>' + s.card2 + '</td>' +
+                    synHtml += '<tr><td>' + CW.cardNameHtml(s.card1, s.card1_image_url) + '</td><td>' + CW.cardNameHtml(s.card2, s.card2_image_url) + '</td>' +
                         '<td>' + (s.together_win_rate * 100).toFixed(1) + '%</td>' +
                         '<td class="' + bonusClass + '">' + bonusSign + (s.synergy_bonus * 100).toFixed(1) + '%</td></tr>';
                 }
@@ -603,6 +630,47 @@
             }
             
             document.getElementById('dashboard-content').style.display = 'block';
+        }
+        
+        function fmtUploaded(value) {
+            if (!value) return '';
+            var d = new Date(value);
+            if (isNaN(d.getTime())) return String(value);
+            return d.toLocaleString();
+        }
+        
+        function loadTrophyCase() {
+            var el = document.getElementById('trophy-case');
+            if (!el || !currentCubeId) return;
+            el.innerHTML = '<p style="color:#888;font-size:0.875rem;">Loading…</p>';
+            fetch('/api/trophy-decks/' + encodeURIComponent(currentCubeId))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var decks = data.decks || [];
+                    if (decks.length === 0) {
+                        el.innerHTML = '<p style="color:#666;font-size:0.875rem;">No undefeated decks yet for this cube.</p>';
+                        return;
+                    }
+                    var html = '<table class="table"><thead><tr>' +
+                        '<th>Pilot</th><th class="trophy-mono">W</th><th class="trophy-mono">L</th><th class="trophy-mono">D</th>' +
+                        '<th class="trophy-mono">Win%</th><th class="trophy-mono">Cards</th><th>Uploaded</th></tr></thead><tbody>';
+                    for (var i = 0; i < decks.length; i++) {
+                        var d = decks[i];
+                        var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
+                        html += '<tr><td>' + (d.pilot_name || '') + '</td>' +
+                            '<td class="trophy-mono">' + (d.match_wins != null ? d.match_wins : '') + '</td>' +
+                            '<td class="trophy-mono">' + (d.match_losses != null ? d.match_losses : '') + '</td>' +
+                            '<td class="trophy-mono">' + (d.match_draws != null ? d.match_draws : 0) + '</td>' +
+                            '<td class="trophy-mono">' + winPct + '</td>' +
+                            '<td class="trophy-mono">' + (d.total_cards != null ? d.total_cards : '') + '</td>' +
+                            '<td>' + fmtUploaded(d.created) + '</td></tr>';
+                    }
+                    html += '</tbody></table>';
+                    el.innerHTML = html;
+                })
+                .catch(function() {
+                    el.innerHTML = '<p style="color:#dc3545;font-size:0.875rem;">Could not load trophy case.</p>';
+                });
         }
         
         function loadCharts() {
@@ -690,7 +758,7 @@
             var deltaSign = card.performance_delta > 0 ? '+' : '';
             
             resultsContainer.innerHTML = '<div class="card-result">' +
-                '<div class="card-name">' + card.name + '</div>' +
+                '<div class="card-name">' + CW.cardNameHtml(card.name, card.image_url) + '</div>' +
                 '<div class="card-stats">' +
                 '<div class="stat-row"><span>Win Rate:</span><strong>' + winRate + '%</strong></div>' +
                 '<div class="stat-row"><span>Total Games:</span><strong>' + totalGames + '</strong></div>' +

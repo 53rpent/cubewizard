@@ -1,0 +1,26 @@
+/* Hover preview for card names (image from data-cw-img, set by CW.cardNameHtml) */
+.cw-card-name {
+  cursor: help;
+  border-bottom: 1px dotted rgba(102, 126, 234, 0.45);
+}
+
+#cw-card-tooltip {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 220px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  display: none;
+}
+
+#cw-card-tooltip img {
+  display: block;
+  max-width: 200px;
+  height: auto;
+  border-radius: 4px;
+  vertical-align: top;
+}

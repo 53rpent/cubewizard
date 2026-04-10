@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="card-tooltip.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -47,38 +48,38 @@
       background: white;
       padding: 1rem 2rem;
       border-bottom: 1px solid #eee;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
     }
     .breadcrumb a { color: #667eea; text-decoration: none; }
     .breadcrumb a:hover { text-decoration: underline; }
-    .breadcrumb .right {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .breadcrumb select {
-      padding: 0.5rem 0.75rem;
-      border: 2px solid #ddd;
-      border-radius: 6px;
-      background: white;
-      min-width: 240px;
-    }
 
     .container {
       max-width: 1400px;
       margin: 2rem auto;
       padding: 0 1rem;
+      align-items: center;
+    }
+
+    .description {
+      background: white;
+      border-radius: 8px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .description h2 {
+      color: #667eea;
+      margin-bottom: 1rem;
+    }
+    .description p {
+      font-size: 1.1rem;
+      line-height: 1.7;
+      color: #555;
     }
 
     .data-container {
       background: white;
       border-radius: 8px;
-      padding: 1.5rem;
+      padding: 2rem;
       margin-bottom: 2rem;
       box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
@@ -94,7 +95,10 @@
       margin-bottom: 1rem;
     }
 
-    .table-wrap { overflow: auto; border-radius: 8px; border: 1px solid #eee; }
+    .table-wrap { overflow: auto; border-radius: 8px; border: 1px solid #eee; margin-top: 1rem; }
+    .data-container .table {
+      margin-top: 0;
+    }
     .table {
       width: 100%;
       border-collapse: collapse;
@@ -118,17 +122,17 @@
 
     .loading {
       text-align: center;
-      padding: 2rem;
+      padding: 3rem;
       color: #666;
-      font-size: 1.1rem;
+      font-size: 1.2rem;
     }
     .error {
       background: #f8d7da;
       color: #721c24;
-      padding: 1.25rem;
+      padding: 2rem;
       border-radius: 8px;
       border: 1px solid #f5c6cb;
-      margin: 1rem 0;
+      margin: 2rem 0;
     }
 
     /* Modal */
@@ -239,24 +243,21 @@
   </div>
 
   <div class="breadcrumb">
-    <div class="left">
-      <a href="index.html">&larr; Back to Dashboard</a> &gt; Deck-By-Deck View
-    </div>
-    <div class="right">
-      <label for="cube-select" style="color:#666; font-size:0.9rem;">Cube</label>
-      <select id="cube-select"></select>
-    </div>
+    <a href="index.html">&larr; Back to Dashboard</a>
   </div>
 
   <div class="container">
-    <div class="data-container">
-      <h2>Decks</h2>
+    <div class="description">
+      <h2>Deck-by-Deck View</h2>
+      <p id="decks-subtitle">Loading…</p>
+    </div>
+
+    <div id="loading" class="loading">Loading decks…</div>
+    <div id="error" class="error" style="display:none;"></div>
+
+    <div id="decks-main" class="data-container" style="display:none;">
       <div class="subtle">Click a deck to view its cards in a mana curve.</div>
-
-      <div id="loading" class="loading" style="display:none;">Loading decks…</div>
-      <div id="error" class="error" style="display:none;"></div>
-
-      <div id="table-section" class="table-wrap" style="display:none;">
+      <div id="table-section" class="table-wrap">
         <table class="table">
           <thead>
             <tr>
@@ -298,11 +299,11 @@
     <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
   </div>
 
+  <script src="card-tooltip.js"></script>
   <script>
     function $(id) { return document.getElementById(id); }
 
     var currentCubeId = '';
-    var cubes = [];
 
     function getCubeFromUrl() {
       var params = new URLSearchParams(window.location.search);
@@ -319,38 +320,16 @@
     function showError(msg) {
       $('error').textContent = msg;
       $('error').style.display = 'block';
+      $('loading').style.display = 'none';
+      setDecksMainVisible(false);
     }
 
     function setLoading(on) {
       $('loading').style.display = on ? 'block' : 'none';
     }
 
-    function setTableVisible(on) {
-      $('table-section').style.display = on ? 'block' : 'none';
-    }
-
-    function loadCubeList() {
-      return fetch('/api/cubes')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          cubes = data.cubes || [];
-          var sel = $('cube-select');
-          sel.innerHTML = '';
-          for (var i = 0; i < cubes.length; i++) {
-            var opt = document.createElement('option');
-            opt.value = cubes[i].cube_id;
-            opt.textContent = (cubes[i].cube_name || cubes[i].cube_id) + ' (' + (cubes[i].total_decks || 0) + ' decks)';
-            sel.appendChild(opt);
-          }
-        });
-    }
-
-    function setCube(cubeId) {
-      currentCubeId = cubeId || '';
-      if (currentCubeId) {
-        localStorage.setItem('selectedCubeId', currentCubeId);
-      }
-      $('cube-select').value = currentCubeId;
+    function setDecksMainVisible(on) {
+      $('decks-main').style.display = on ? 'block' : 'none';
     }
 
     function renderDeckRows(decks) {
@@ -381,7 +360,7 @@
 
     function loadDecks() {
       $('error').style.display = 'none';
-      setTableVisible(false);
+      setDecksMainVisible(false);
       setLoading(true);
 
       if (!currentCubeId) {
@@ -404,7 +383,7 @@
             return;
           }
           renderDeckRows(decks);
-          setTableVisible(true);
+          setDecksMainVisible(true);
         })
         .catch(function(err) {
           setLoading(false);
@@ -449,13 +428,23 @@
         if (!name) continue;
         if (!counts[name]) {
           counts[name] = 0;
-          meta[name] = { cmc: c.cmc, mana_cost: c.mana_cost || '' };
+          meta[name] = {
+            cmc: c.cmc,
+            mana_cost: c.mana_cost || '',
+            image_url: c.image_url || null,
+          };
         }
         counts[name] += 1;
       }
 
       var entries = Object.keys(counts).map(function(name) {
-        return { name: name, count: counts[name], cmc: meta[name].cmc, mana_cost: meta[name].mana_cost };
+        return {
+          name: name,
+          count: counts[name],
+          cmc: meta[name].cmc,
+          mana_cost: meta[name].mana_cost,
+          image_url: meta[name].image_url,
+        };
       });
 
       entries.sort(function(a, b) {
@@ -483,7 +472,8 @@
           for (var li = 0; li < buckets[b].length; li++) {
             var e = buckets[b][li];
             var prefix = e.count > 1 ? (e.count + 'x ') : '';
-            html += '<li title="' + (prefix + e.name).replace(/"/g, '&quot;') + '">' + prefix + e.name + '</li>';
+            var nameHtml = window.CW ? CW.cardNameHtml(e.name, e.image_url) : e.name;
+            html += '<li title="">' + prefix + nameHtml + '</li>';
           }
         }
         html += '</ul></div>';
@@ -577,29 +567,42 @@
       if (e.key === 'Escape') closeModal();
     });
 
-    // Init
+    // Init — cube comes from ?cube= or dashboard selection (localStorage), like analysis.html
     (function init() {
-      var cubeFromUrl = getCubeFromUrl();
-      var cubeFromStorage = localStorage.getItem('selectedCubeId') || '';
-      var initialCube = cubeFromUrl || cubeFromStorage;
+      currentCubeId = getCubeFromUrl() || localStorage.getItem('selectedCubeId') || '';
+      if (currentCubeId) {
+        localStorage.setItem('selectedCubeId', currentCubeId);
+        if (!getCubeFromUrl()) {
+          window.history.replaceState({}, '', 'decks.html?cube=' + encodeURIComponent(currentCubeId));
+        }
+      }
 
-      loadCubeList()
-        .then(function() {
-          if (initialCube) setCube(initialCube);
-          else if (cubes.length > 0) setCube(cubes[0].cube_id);
+      if (!currentCubeId) {
+        $('decks-subtitle').textContent =
+          'Choose a cube on the dashboard first, or open this page with ?cube=your_cube_id in the URL.';
+        $('loading').style.display = 'none';
+        showError('No cube selected.');
+        return;
+      }
+
+      fetch('/api/cubes')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var cubes = data.cubes || [];
+          var label = currentCubeId;
+          for (var i = 0; i < cubes.length; i++) {
+            if (cubes[i].cube_id === currentCubeId) {
+              label = (cubes[i].cube_name || currentCubeId) + ' (' + currentCubeId + ')';
+              break;
+            }
+          }
+          $('decks-subtitle').textContent = 'All decks submitted for ' + label + '.';
           loadDecks();
         })
-        .catch(function(err) {
-          console.error(err);
-          showError('Failed to load cubes. Please try again later.');
+        .catch(function() {
+          $('decks-subtitle').textContent = 'All decks for cube ' + currentCubeId + '.';
+          loadDecks();
         });
-
-      $('cube-select').addEventListener('change', function() {
-        setCube(this.value);
-        var newUrl = 'decks.html?cube=' + encodeURIComponent(currentCubeId);
-        window.history.replaceState({}, '', newUrl);
-        loadDecks();
-      });
     })();
   </script>
 </body>

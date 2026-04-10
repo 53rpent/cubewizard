@@ -24,6 +24,11 @@ export default {
       return handleGetChart(chartsMatch[1], chartsMatch[2], env);
     }
 
+    const trophyDecksMatch = url.pathname.match(/^\/api\/trophy-decks\/([^/]+)$/);
+    if (trophyDecksMatch && request.method === "GET") {
+      return handleGetTrophyDecks(trophyDecksMatch[1], env);
+    }
+
     const decksMatch = url.pathname.match(/^\/api\/decks\/([^/]+)$/);
     if (decksMatch && request.method === "GET") {
       return handleGetDecks(decksMatch[1], env);
@@ -106,8 +111,14 @@ async function handleGetDashboard(cubeId, env) {
     cardsByDeck[card.deck_id].push(card);
   }
 
+  var imageMap = buildCardImageMapFromRows(allCards);
+
   var cardPerformances = computeCardPerformance(decks, cardsByDeck);
+  attachPerformanceImages(cardPerformances, imageMap);
+
   var synergies = computeSynergies(decks, cardsByDeck);
+  attachSynergyImages(synergies, imageMap);
+
   var colorAnalysis = computeColorPerformance(decks, cardsByDeck);
 
   var allDeckWinRates = [];
@@ -173,6 +184,63 @@ async function handleGetChart(cubeId, chartType, env) {
 }
 
 // ============================================================
+//  Card image helpers (deck_cards.image_uris JSON from Scryfall)
+// ============================================================
+
+function parseImageUrisCell(raw) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function pickCardImageUrl(uriObj) {
+  if (!uriObj || typeof uriObj !== "object") return null;
+  return (
+    uriObj.normal ||
+    uriObj.small ||
+    uriObj.large ||
+    uriObj.png ||
+    uriObj.art_crop ||
+    uriObj.border_crop ||
+    null
+  );
+}
+
+function buildCardImageMapFromRows(rows) {
+  var m = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var n = r.name;
+    if (!n) continue;
+    var k = String(n).toLowerCase();
+    if (m[k]) continue;
+    var uris = parseImageUrisCell(r.image_uris);
+    var url = pickCardImageUrl(uris);
+    if (url) m[k] = url;
+  }
+  return m;
+}
+
+function attachPerformanceImages(arr, map) {
+  for (var i = 0; i < arr.length; i++) {
+    var p = arr[i];
+    p.image_url = map[String(p.name).toLowerCase()] || null;
+  }
+}
+
+function attachSynergyImages(arr, map) {
+  for (var i = 0; i < arr.length; i++) {
+    var s = arr[i];
+    s.card1_image_url = map[String(s.card1).toLowerCase()] || null;
+    s.card2_image_url = map[String(s.card2).toLowerCase()] || null;
+  }
+}
+
+// ============================================================
 //  Deck-by-deck API handlers
 // ============================================================
 
@@ -182,6 +250,18 @@ async function handleGetDecks(cubeId, env) {
     " win_rate, record_logged, total_cards, created" +
     " FROM decks WHERE cube_id = ?" +
     " ORDER BY created DESC"
+  ).bind(cubeId).all();
+
+  return jsonResponse({ decks: results });
+}
+
+async function handleGetTrophyDecks(cubeId, env) {
+  const { results } = await env.cubewizard_db.prepare(
+    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+    " win_rate, total_cards, created" +
+    " FROM decks WHERE cube_id = ? AND match_losses = 0" +
+    " ORDER BY created DESC" +
+    " LIMIT 5"
   ).bind(cubeId).all();
 
   return jsonResponse({ decks: results });
@@ -210,17 +290,19 @@ async function handleGetDeck(deckId, env) {
   ).bind(deckId).first();
 
   const { results: cardsRows } = await env.cubewizard_db.prepare(
-    "SELECT name, mana_cost, cmc, type_line FROM deck_cards WHERE deck_id = ?"
+    "SELECT name, mana_cost, cmc, type_line, image_uris FROM deck_cards WHERE deck_id = ?"
   ).bind(deckId).all();
 
   var cards = [];
   for (var i = 0; i < cardsRows.length; i++) {
     var c = cardsRows[i];
+    var uris = parseImageUrisCell(c.image_uris);
     cards.push({
       name: c.name,
       mana_cost: c.mana_cost || "",
       cmc: normalizeCmc(c.cmc),
       type_line: c.type_line || "",
+      image_url: pickCardImageUrl(uris),
     });
   }
 

@@ -100,6 +100,15 @@ def _execute_single(sql: str, params: list | None = None) -> list:
     return []
 
 
+def cube_id_registered(cube_id: str) -> bool:
+    """Return True if *cube_id* exists in the D1 ``cubes`` table."""
+    rows = _execute_single(
+        "SELECT cube_id FROM cubes WHERE cube_id = ? LIMIT 1",
+        [cube_id],
+    )
+    return len(rows) > 0
+
+
 # ---------------------------------------------------------------------------
 # Statement builders  (return {"sql": ..., "params": [...]} dicts)
 # ---------------------------------------------------------------------------
