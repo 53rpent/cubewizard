@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decks | CubeWizard</title>
+  <link rel="icon" type="image/png" href="CubeWizard.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .header {
+      background: #faf8f6;
+      border-bottom: 1px solid #e8e0dc;
+      padding: 1rem 1.5rem;
+    }
+    .header-inner { max-width: 1400px; margin: 0 auto; }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      justify-content: flex-start;
+    }
+    .header-logo {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .header-wordmark {
+      font-family: "Brookshire", serif;
+      color: #523f38;
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      line-height: 1.1;
+      font-weight: 400;
+    }
+
+    .breadcrumb {
+      background: white;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .breadcrumb a { color: #667eea; text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb .right {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .breadcrumb select {
+      padding: 0.5rem 0.75rem;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      background: white;
+      min-width: 240px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .data-container {
+      background: white;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    .data-container h2 {
+      color: #667eea;
+      margin-bottom: 0.75rem;
+    }
+
+    .subtle {
+      color: #666;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .table-wrap { overflow: auto; border-radius: 8px; border: 1px solid #eee; }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+    .table th, .table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      white-space: nowrap;
+    }
+    .table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .table tr:hover { background: #f8f9fa; cursor: pointer; }
+    .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+      font-size: 1.1rem;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 1.25rem;
+      border-radius: 8px;
+      border: 1px solid #f5c6cb;
+      margin: 1rem 0;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 1000;
+    }
+    .modal {
+      width: min(1400px, 98vw);
+      max-height: 94vh;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .modal-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    .modal-meta {
+      margin-top: 0.25rem;
+      color: #666;
+      font-size: 0.9rem;
+    }
+    .close-btn {
+      border: 1px solid #ddd;
+      background: #fff;
+      border-radius: 8px;
+      padding: 0.4rem 0.6rem;
+      cursor: pointer;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .close-btn:hover { background: #f8f9fa; }
+    .modal-body {
+      padding: 1rem 1.25rem 1.25rem 1.25rem;
+      overflow: auto;
+    }
+
+    .curve-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(120px, 1fr));
+      gap: 0.75rem;
+    }
+    @media (max-width: 900px) {
+      .curve-grid { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+    }
+    @media (max-width: 520px) {
+      .curve-grid { grid-template-columns: 1fr; }
+    }
+    .curve-col {
+      border: 1px solid #eee;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+      min-height: 120px;
+    }
+    .curve-col h4 {
+      background: #f8f9fa;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #eee;
+      font-size: 0.95rem;
+    }
+    .curve-list { list-style: none; padding: 0.5rem 0.75rem 0.75rem 0.75rem; }
+    .curve-list li {
+      padding: 0.2rem 0;
+      border-bottom: 1px dashed #f0f0f0;
+      white-space: nowrap;
+    }
+    .curve-list li:last-child { border-bottom: none; }
+
+    .footer {
+      background: white;
+      border-top: 1px solid #eee;
+      padding: 2rem;
+      margin-top: 4rem;
+      text-align: center;
+      color: #666;
+    }
+    .footer a { color: #667eea; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <img src="CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+        <span class="header-wordmark">CubeWizard</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="breadcrumb">
+    <div class="left">
+      <a href="index.html">&larr; Back to Dashboard</a> &gt; Deck-By-Deck View
+    </div>
+    <div class="right">
+      <label for="cube-select" style="color:#666; font-size:0.9rem;">Cube</label>
+      <select id="cube-select"></select>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="data-container">
+      <h2>Decks</h2>
+      <div class="subtle">Click a deck to view its cards in a mana curve.</div>
+
+      <div id="loading" class="loading" style="display:none;">Loading decks…</div>
+      <div id="error" class="error" style="display:none;"></div>
+
+      <div id="table-section" class="table-wrap" style="display:none;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Pilot</th>
+              <th class="mono">W</th>
+              <th class="mono">L</th>
+              <th class="mono">D</th>
+              <th class="mono">Win%</th>
+              <th class="mono">Cards</th>
+              <th>Uploaded</th>
+            </tr>
+          </thead>
+          <tbody id="decks-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <div id="modal-title" class="modal-title">Deck</div>
+          <div id="modal-meta" class="modal-meta"></div>
+        </div>
+        <button class="close-btn" onclick="closeModal()" aria-label="Close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body">
+        <div class="loading">Loading deck…</div>
+      </div>
+      <div style="padding:0.5rem 1.25rem 0.75rem 1.25rem; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:1rem;">
+        <div id="modal-image-id" class="mono" style="color:#999; font-size:0.85rem;"></div>
+        <div class="mono" style="color:#bbb; font-size:0.85rem;">Esc to close</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+  </div>
+
+  <script>
+    function $(id) { return document.getElementById(id); }
+
+    var currentCubeId = '';
+    var cubes = [];
+
+    function getCubeFromUrl() {
+      var params = new URLSearchParams(window.location.search);
+      return params.get('cube') || '';
+    }
+
+    function fmtDate(value) {
+      if (!value) return '';
+      var d = new Date(value);
+      if (isNaN(d.getTime())) return String(value);
+      return d.toLocaleString();
+    }
+
+    function showError(msg) {
+      $('error').textContent = msg;
+      $('error').style.display = 'block';
+    }
+
+    function setLoading(on) {
+      $('loading').style.display = on ? 'block' : 'none';
+    }
+
+    function setTableVisible(on) {
+      $('table-section').style.display = on ? 'block' : 'none';
+    }
+
+    function loadCubeList() {
+      return fetch('/api/cubes')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          cubes = data.cubes || [];
+          var sel = $('cube-select');
+          sel.innerHTML = '';
+          for (var i = 0; i < cubes.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = cubes[i].cube_id;
+            opt.textContent = (cubes[i].cube_name || cubes[i].cube_id) + ' (' + (cubes[i].total_decks || 0) + ' decks)';
+            sel.appendChild(opt);
+          }
+        });
+    }
+
+    function setCube(cubeId) {
+      currentCubeId = cubeId || '';
+      if (currentCubeId) {
+        localStorage.setItem('selectedCubeId', currentCubeId);
+      }
+      $('cube-select').value = currentCubeId;
+    }
+
+    function renderDeckRows(decks) {
+      var tbody = $('decks-tbody');
+      tbody.innerHTML = '';
+      for (var i = 0; i < decks.length; i++) {
+        var d = decks[i];
+        var tr = document.createElement('tr');
+        tr.dataset.deckId = d.deck_id;
+
+        var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
+
+        tr.innerHTML =
+          '<td>' + (d.pilot_name || '') + '</td>' +
+          '<td class="mono">' + (d.match_wins ?? '') + '</td>' +
+          '<td class="mono">' + (d.match_losses ?? '') + '</td>' +
+          '<td class="mono">' + (d.match_draws ?? 0) + '</td>' +
+          '<td class="mono">' + winPct + '</td>' +
+          '<td class="mono">' + (d.total_cards ?? '') + '</td>' +
+          '<td>' + fmtDate(d.created) + '</td>';
+
+        tr.addEventListener('click', function(e) {
+          openDeck(this.dataset.deckId);
+        });
+        tbody.appendChild(tr);
+      }
+    }
+
+    function loadDecks() {
+      $('error').style.display = 'none';
+      setTableVisible(false);
+      setLoading(true);
+
+      if (!currentCubeId) {
+        setLoading(false);
+        showError('No cube selected. Go back to the dashboard and select a cube first.');
+        return;
+      }
+
+      fetch('/api/decks/' + encodeURIComponent(currentCubeId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          setLoading(false);
+          if (data.error) {
+            showError(data.error);
+            return;
+          }
+          var decks = data.decks || [];
+          if (decks.length === 0) {
+            showError('No decks found for this cube yet.');
+            return;
+          }
+          renderDeckRows(decks);
+          setTableVisible(true);
+        })
+        .catch(function(err) {
+          setLoading(false);
+          showError('Failed to load decks. Please try again.');
+          console.error(err);
+        });
+    }
+
+    function openModal() {
+      var overlay = $('modal-overlay');
+      overlay.style.display = 'flex';
+      overlay.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+      var overlay = $('modal-overlay');
+      overlay.style.display = 'none';
+      overlay.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    }
+
+    function bucketLabel(b) {
+      if (b === 6) return '6+';
+      return String(b);
+    }
+
+    function bucketCmc(cmc) {
+      var n = Number(cmc);
+      if (!isFinite(n) || n < 0) n = 0;
+      var b = Math.floor(n);
+      if (b >= 6) return 6;
+      return b;
+    }
+
+    function renderManaCurve(cards) {
+      var counts = {};
+      var meta = {};
+      for (var i = 0; i < cards.length; i++) {
+        var c = cards[i];
+        var name = c.name || '';
+        if (!name) continue;
+        if (!counts[name]) {
+          counts[name] = 0;
+          meta[name] = { cmc: c.cmc, mana_cost: c.mana_cost || '' };
+        }
+        counts[name] += 1;
+      }
+
+      var entries = Object.keys(counts).map(function(name) {
+        return { name: name, count: counts[name], cmc: meta[name].cmc, mana_cost: meta[name].mana_cost };
+      });
+
+      entries.sort(function(a, b) {
+        var ac = Number(a.cmc) || 0;
+        var bc = Number(b.cmc) || 0;
+        if (ac !== bc) return ac - bc;
+        return a.name.localeCompare(b.name);
+      });
+
+      var buckets = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+      for (var ei = 0; ei < entries.length; ei++) {
+        var e = entries[ei];
+        var b = bucketCmc(e.cmc);
+        buckets[b].push(e);
+      }
+
+      var html = '<div class="curve-grid">';
+      for (var b = 0; b <= 6; b++) {
+        html += '<div class="curve-col">' +
+          '<h4>MV ' + bucketLabel(b) + '</h4>' +
+          '<ul class="curve-list">';
+        if (buckets[b].length === 0) {
+          html += '<li style="color:#999;">—</li>';
+        } else {
+          for (var li = 0; li < buckets[b].length; li++) {
+            var e = buckets[b][li];
+            var prefix = e.count > 1 ? (e.count + 'x ') : '';
+            html += '<li title="' + (prefix + e.name).replace(/"/g, '&quot;') + '">' + prefix + e.name + '</li>';
+          }
+        }
+        html += '</ul></div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function fitCurveText() {
+      var items = document.querySelectorAll('.curve-list li');
+      for (var i = 0; i < items.length; i++) {
+        var el = items[i];
+        if (!el || el.textContent === '—') continue;
+        el.style.fontSize = '';
+        var minPx = 11;
+        var size = parseFloat(getComputedStyle(el).fontSize) || 14;
+        var guard = 0;
+        while (el.scrollWidth > el.clientWidth && size > minPx && guard < 20) {
+          size -= 0.5;
+          el.style.fontSize = size + 'px';
+          guard += 1;
+        }
+      }
+    }
+
+    function openDeck(deckId) {
+      $('modal-title').textContent = 'Deck';
+      $('modal-meta').textContent = '';
+      $('modal-body').innerHTML = '<div class="loading">Loading deck…</div>';
+      openModal();
+
+      fetch('/api/deck/' + encodeURIComponent(deckId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) {
+            $('modal-body').innerHTML = '<div class="error">' + data.error + '</div>';
+            return;
+          }
+          var deck = data.deck || {};
+          var deckStats = data.deck_stats || null;
+          var cards = data.cards || [];
+
+          var title = (deck.pilot_name ? (deck.pilot_name + ' — ') : '') + (deck.match_wins + '-' + deck.match_losses + (deck.match_draws ? ('-' + deck.match_draws) : ''));
+          $('modal-title').textContent = title;
+
+          var metaParts = [];
+          if (deck.created) metaParts.push('Uploaded: ' + fmtDate(deck.created));
+          var ocrTotal = (deck && deck.total_cards != null) ? deck.total_cards : '';
+          metaParts.push('Total Cards Found: ' + ocrTotal);
+          metaParts.push('Scryfall Cards Matched: ' + cards.length);
+          $('modal-meta').textContent = metaParts.join(' • ');
+
+          $('modal-image-id').textContent = deck.image_id ? ('Image ID: ' + deck.image_id) : '';
+
+          $('modal-body').innerHTML = renderManaCurve(cards);
+          fitCurveText();
+
+          // Show not-found list if present in processing_notes JSON.
+          if (deckStats && deckStats.processing_notes) {
+            try {
+              var notes = JSON.parse(deckStats.processing_notes);
+              var nf = (notes && notes.not_found) ? notes.not_found : [];
+              if (nf && nf.length > 0) {
+                nf.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+                var html = '<div style="margin-top:1rem; padding-top:1rem; border-top:1px solid #eee;">' +
+                  '<div style="font-weight:700; margin-bottom:0.5rem;">Cards not found (' + nf.length + ')</div>' +
+                  '<div style="color:#666; font-size:0.9rem; margin-bottom:0.5rem;">These were extracted from the image but did not match a Scryfall card at ingest time.</div>' +
+                  '<ul style="margin-left:1.25rem;">';
+                for (var i = 0; i < nf.length; i++) {
+                  html += '<li>' + String(nf[i]).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</li>';
+                }
+                html += '</ul></div>';
+                $('modal-body').insertAdjacentHTML('beforeend', html);
+              }
+            } catch (e) {
+              // ignore malformed notes
+            }
+          }
+        })
+        .catch(function(err) {
+          $('modal-body').innerHTML = '<div class="error">Failed to load deck.</div>';
+          console.error(err);
+        });
+    }
+
+    // Close interactions
+    $('modal-overlay').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Init
+    (function init() {
+      var cubeFromUrl = getCubeFromUrl();
+      var cubeFromStorage = localStorage.getItem('selectedCubeId') || '';
+      var initialCube = cubeFromUrl || cubeFromStorage;
+
+      loadCubeList()
+        .then(function() {
+          if (initialCube) setCube(initialCube);
+          else if (cubes.length > 0) setCube(cubes[0].cube_id);
+          loadDecks();
+        })
+        .catch(function(err) {
+          console.error(err);
+          showError('Failed to load cubes. Please try again later.');
+        });
+
+      $('cube-select').addEventListener('change', function() {
+        setCube(this.value);
+        var newUrl = 'decks.html?cube=' + encodeURIComponent(currentCubeId);
+        window.history.replaceState({}, '', newUrl);
+        loadDecks();
+      });
+    })();
+  </script>
+</body>
+</html>

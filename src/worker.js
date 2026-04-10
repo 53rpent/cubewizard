@@ -24,6 +24,16 @@ export default {
       return handleGetChart(chartsMatch[1], chartsMatch[2], env);
     }
 
+    const decksMatch = url.pathname.match(/^\/api\/decks\/([^/]+)$/);
+    if (decksMatch && request.method === "GET") {
+      return handleGetDecks(decksMatch[1], env);
+    }
+
+    const deckMatch = url.pathname.match(/^\/api\/deck\/([^/]+)$/);
+    if (deckMatch && request.method === "GET") {
+      return handleGetDeck(deckMatch[1], env);
+    }
+
     // --- Existing endpoints ---
     if (url.pathname === "/api/upload" && request.method === "POST") {
       return handleUpload(request, env);
@@ -160,6 +170,61 @@ async function handleGetChart(cubeId, chartType, env) {
   }
 
   return jsonResponse({ chart: JSON.stringify(chart) });
+}
+
+// ============================================================
+//  Deck-by-deck API handlers
+// ============================================================
+
+async function handleGetDecks(cubeId, env) {
+  const { results } = await env.cubewizard_db.prepare(
+    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+    " win_rate, record_logged, total_cards, created" +
+    " FROM decks WHERE cube_id = ?" +
+    " ORDER BY created DESC"
+  ).bind(cubeId).all();
+
+  return jsonResponse({ decks: results });
+}
+
+function normalizeCmc(value) {
+  var n = Number(value);
+  if (!isFinite(n)) return 0;
+  if (n < 0) return 0;
+  return n;
+}
+
+async function handleGetDeck(deckId, env) {
+  const deck = await env.cubewizard_db.prepare(
+    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+    " win_rate, record_logged, image_id, total_cards, created" +
+    " FROM decks WHERE deck_id = ?"
+  ).bind(deckId).first();
+
+  if (!deck) {
+    return jsonResponse({ error: "Deck not found" }, 404);
+  }
+
+  const deckStats = await env.cubewizard_db.prepare(
+    "SELECT total_found, total_not_found, processing_notes FROM deck_stats WHERE deck_id = ?"
+  ).bind(deckId).first();
+
+  const { results: cardsRows } = await env.cubewizard_db.prepare(
+    "SELECT name, mana_cost, cmc, type_line FROM deck_cards WHERE deck_id = ?"
+  ).bind(deckId).all();
+
+  var cards = [];
+  for (var i = 0; i < cardsRows.length; i++) {
+    var c = cardsRows[i];
+    cards.push({
+      name: c.name,
+      mana_cost: c.mana_cost || "",
+      cmc: normalizeCmc(c.cmc),
+      type_line: c.type_line || "",
+    });
+  }
+
+  return jsonResponse({ deck: deck, deck_stats: deckStats || null, cards: cards });
 }
 
 // ============================================================
@@ -399,26 +464,53 @@ function computeColorPerformance(decks, cardsByDeck) {
 //  Chart builders (Plotly JSON)
 // ============================================================
 
+function performanceScatterKey(p) {
+  return String(p.appearances) + "\t" + String(p.performance_delta);
+}
+
 function buildPerformanceScatterChart(performances) {
+  var groups = {};
+  for (var i = 0; i < performances.length; i++) {
+    var k = performanceScatterKey(performances[i]);
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(i);
+  }
+
   var x = [];
   var y = [];
-  var text = [];
+  var customdata = [];
   var colors = [];
-  for (var i = 0; i < performances.length; i++) {
-    x.push(performances[i].appearances);
-    y.push(performances[i].performance_delta);
-    text.push(performances[i].name);
-    colors.push(performances[i].performance_delta >= 0 ? "rgba(40,167,69,0.7)" : "rgba(220,53,69,0.7)");
+
+  var keys = Object.keys(groups);
+  for (var gi = 0; gi < keys.length; gi++) {
+    var indices = groups[keys[gi]].slice();
+    indices.sort(function (a, b) {
+      return performances[a].name.localeCompare(performances[b].name);
+    });
+    var names = [];
+    for (var j = 0; j < indices.length; j++) {
+      names.push(performances[indices[j]].name);
+    }
+    var p = performances[indices[0]];
+    var cx = p.appearances;
+    var cy = p.performance_delta;
+    x.push(cx);
+    y.push(cy);
+    customdata.push([cx, cy, names.join("<br>")]);
+    colors.push(cy >= 0 ? "rgba(40,167,69,0.7)" : "rgba(220,53,69,0.7)");
   }
 
   return {
     data: [
       {
-        x: x, y: y, text: text,
+        x: x,
+        y: y,
+        customdata: customdata,
         mode: "markers",
         type: "scatter",
         marker: { size: 8, color: colors },
-        hovertemplate: "%{text}<br>Appearances: %{x}<br>Delta: %{y:.1%}<extra></extra>",
+        hovertemplate:
+          "%{customdata[2]}<br><br>Appearances: %{customdata[0]}<br>Delta: %{customdata[1]:.1%}<extra></extra>",
       },
     ],
     layout: {

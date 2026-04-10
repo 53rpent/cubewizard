@@ -178,10 +178,27 @@ def _build_batch(cube_id: str, deck_data: Dict[str, Any]) -> Tuple[List[dict], d
         stmts: List[dict] = []
 
         # deck_stats
+        not_found = cards_data.get("not_found", []) or []
+        total_not_found = cards_data.get("total_not_found")
+        if total_not_found is None:
+            total_not_found = len(not_found)
+
+        processing_notes = {
+            "total_requested": cards_data.get("total_requested"),
+            "total_found": cards_data.get("total_found"),
+            "total_not_found": total_not_found,
+            "not_found": not_found,
+            "success_rate": cards_data.get("success_rate"),
+        }
         stmts.append(_stmt(
-            "INSERT INTO deck_stats (deck_id, total_found, total_not_found) "
-            "VALUES (?, ?, ?);",
-            [deck_id, cards_data.get("total_found", 0), cards_data.get("total_not_found", 0)],
+            "INSERT INTO deck_stats (deck_id, total_found, total_not_found, processing_notes) "
+            "VALUES (?, ?, ?, ?);",
+            [
+                deck_id,
+                cards_data.get("total_found", 0),
+                total_not_found,
+                json.dumps(processing_notes),
+            ],
         ))
 
         # deck_cards

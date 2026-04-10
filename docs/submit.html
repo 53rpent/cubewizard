@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Submit Deck Images | CubeWizard</title>
     <link rel="icon" type="image/png" href="CubeWizard.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
       * {
@@ -22,36 +25,50 @@
       }
 
       .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1.5rem;
-        text-align: center;
+        background: #faf8f6;
+        border-bottom: 1px solid #e8e0dc;
+        padding: 1rem 1.5rem;
+      }
+
+      .header-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .header-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        justify-content: flex-start;
       }
 
       .header-logo {
-        width: 64px;
-        height: 64px;
-        margin-bottom: 0.25rem;
+        width: 56px;
+        height: 56px;
+        object-fit: contain;
+        flex-shrink: 0;
       }
 
-      .header-title {
-        font-size: 0.9rem;
+      .header-wordmark {
+        font-family: "Brookshire", serif;
+        color: #523f38;
+        font-size: clamp(1.75rem, 4vw, 2.25rem);
+        line-height: 1.1;
         font-weight: 400;
-        opacity: 0.9;
-        margin: 0 0 0.5rem 0;
       }
 
-      .breadcrumb {
-        opacity: 0.8;
-        margin-top: 0.5rem;
+      .header .breadcrumb {
+        margin-top: 0.65rem;
+        font-size: 0.9rem;
+        color: #7a6a62;
       }
 
-      .breadcrumb a {
-        color: white;
+      .header .breadcrumb a {
+        color: #667eea;
         text-decoration: none;
       }
 
-      .breadcrumb a:hover {
+      .header .breadcrumb a:hover {
         text-decoration: underline;
       }
 
@@ -251,10 +268,14 @@
   </head>
   <body>
     <div class="header">
-      <img src="CubeWizard.png" alt="CubeWizard" class="header-logo">
-      <p class="header-title">CubeWizard Dashboard</p>
-      <div class="breadcrumb">
-        <a href="index.html">&larr; Back to Dashboard</a> &gt; Submit Deck Images
+      <div class="header-inner">
+        <div class="header-brand">
+          <img src="CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+          <span class="header-wordmark">CubeWizard</span>
+        </div>
+        <div class="breadcrumb">
+          <a href="index.html">&larr; Back to Dashboard</a> &gt; Submit Deck Images
+        </div>
       </div>
     </div>
 
