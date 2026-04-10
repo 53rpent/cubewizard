@@ -98,7 +98,7 @@ class CubeWizard:
             "win_rate": wins / (wins + losses) if (wins + losses) > 0 else 0.0
         }
     
-    def add_deck_to_database(self, cube_id: str, deck_data: Dict[str, Any]) -> bool:
+    def add_deck_to_database(self, cube_id: str, deck_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Add a deck to Cloudflare D1.
         
@@ -107,19 +107,19 @@ class CubeWizard:
             deck_data: Deck data structure to add.
             
         Returns:
-            True if successful, False otherwise.
+            Dict with keys: success, image_id, deck_id, duplicate.
         """
         if not cube_id:
-            return False
+            return {"success": False, "image_id": None, "deck_id": None, "duplicate": False}
             
         try:
-            success = d1_writer.add_deck(cube_id, deck_data)
-            if not success:
+            result = d1_writer.add_deck(cube_id, deck_data)
+            if not result.get("success"):
                 print(f"Failed to write deck to D1 for cube '{cube_id}'")
-            return success
+            return result
         except Exception as e:
             print(f"Error writing deck to D1: {e}")
-            return False
+            return {"success": False, "image_id": None, "deck_id": None, "duplicate": False}
     
     def parse_filename_metadata(self, filename: str) -> Optional[Dict[str, Any]]:
         """
@@ -277,7 +277,20 @@ class CubeWizard:
         d1_success = False
         if cubecobra_id:
             try:
-                d1_success = self.add_deck_to_database(cubecobra_id, deck_data)
+                d1_result = self.add_deck_to_database(cubecobra_id, deck_data)
+                d1_success = d1_result.get("success", False) if isinstance(d1_result, dict) else bool(d1_result)
+                
+                # Store oriented image using the image_id from D1
+                if d1_success and isinstance(d1_result, dict) and d1_result.get("image_id") and not d1_result.get("duplicate"):
+                    image_id = d1_result["image_id"]
+                    deck_id = d1_result["deck_id"]
+                    ext = Path(oriented_image_path).suffix
+                    stored_name = f"{image_id}{ext}"
+                    dest = self.output_dir / "stored_images" / stored_name
+                    shutil.copy2(oriented_image_path, dest)
+                    stored_image_path = f"stored_images/{stored_name}"
+                    d1_writer.update_stored_image_path(deck_id, stored_image_path)
+                    print(f"  Stored image: {stored_image_path}")
             except Exception as e:
                 print(f"Warning: Could not save to D1: {e}")
         

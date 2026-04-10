@@ -232,7 +232,7 @@ def _build_batch(cube_id: str, deck_data: Dict[str, Any]) -> Tuple[List[dict], d
 # ---------------------------------------------------------------------------
 
 def add_deck(cube_id: str, deck_data: Dict[str, Any],
-             env: Optional[str] = None) -> bool:
+             env: Optional[str] = None) -> Dict[str, Any]:
     """
     Write a deck (metadata + cards + stats) to Cloudflare D1 via REST API.
 
@@ -248,12 +248,17 @@ def add_deck(cube_id: str, deck_data: Dict[str, Any],
                    CLOUDFLARE_D1_DATABASE_ID from .env directly.
 
     Returns:
-        True on success, False on failure.
+        Dict with keys: success (bool), image_id (str|None), deck_id (int|None),
+        duplicate (bool).
     """
+    result = {"success": False, "image_id": None, "deck_id": None, "duplicate": False}
     try:
         batch_a, lookup_stmt, build_batch_b = _build_batch(cube_id, deck_data)
 
         print("\n  Writing to D1 (REST API)...")
+
+        # Extract the image_id that _build_batch generated
+        result["image_id"] = batch_a[1]["params"][8]  # image_id position in INSERT params
 
         # Step 1: insert cube + deck
         batch_a_results = _execute_batch(batch_a)
@@ -266,21 +271,25 @@ def add_deck(cube_id: str, deck_data: Dict[str, Any],
         )
         if deck_insert_meta.get("changes", 1) == 0:
             print("  [SKIP] Duplicate deck — already ingested (image_id match)")
-            return True
+            result["success"] = True
+            result["duplicate"] = True
+            return result
 
         # Step 2: get the new deck_id
         rows = _execute_single(lookup_stmt["sql"], lookup_stmt.get("params"))
         if not rows:
             print("  [FAIL] Could not retrieve new deck_id after insert")
-            return False
+            return result
         deck_id = rows[0]["deck_id"]
+        result["deck_id"] = deck_id
 
         # Step 3: insert stats + cards + update counters
         batch_b = build_batch_b(deck_id)
         _execute_batch(batch_b)
 
         print("  [OK] D1 write successful")
-        return True
+        result["success"] = True
+        return result
 
     except requests.exceptions.HTTPError as exc:
         print(f"  [FAIL] D1 HTTP error: {exc}")
@@ -291,9 +300,31 @@ def add_deck(cube_id: str, deck_data: Dict[str, Any],
                     print(f"    {err.get('message', err)}")
             except Exception:
                 print(f"    {exc.response.text[:500]}")
-        return False
+        return result
     except Exception as exc:
         print(f"  [FAIL] D1 write failed: {exc}")
+        return result
+
+
+def update_stored_image_path(deck_id: int, stored_image_path: str) -> bool:
+    """
+    Update the stored_image_path for an existing deck record.
+
+    Args:
+        deck_id: The deck's primary key in D1.
+        stored_image_path: Relative path to the stored image file.
+
+    Returns:
+        True on success, False on failure.
+    """
+    try:
+        _execute_single(
+            "UPDATE decks SET stored_image_path = ? WHERE deck_id = ?;",
+            [stored_image_path, deck_id],
+        )
+        return True
+    except Exception as exc:
+        print(f"  [FAIL] Could not update stored_image_path: {exc}")
         return False
 
 
