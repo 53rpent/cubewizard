@@ -22,6 +22,9 @@
             background: #f5f5f5;
             color: #333;
             line-height: 1.6;
+            padding-left: max(0px, env(safe-area-inset-left));
+            padding-right: max(0px, env(safe-area-inset-right));
+            padding-bottom: env(safe-area-inset-bottom);
         }
         
         .header {
@@ -31,7 +34,7 @@
         }
         
         .header-inner {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
         }
         
@@ -59,7 +62,7 @@
         
         .breadcrumb {
             background: white;
-            padding: 1rem 2rem;
+            padding: 1rem 1rem;
             border-bottom: 1px solid #eee;
         }
         
@@ -73,7 +76,7 @@
         }
         
         .container {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 2rem auto;
             padding: 0 1rem;
             align-items: center;
@@ -117,6 +120,24 @@
             justify-content: center;
             align-items: center;
         }
+
+        @media (max-width: 640px) {
+            .chart-container {
+                min-height: 360px;
+            }
+            #detailed-chart {
+                min-height: 300px;
+            }
+            .description {
+                padding: 1.25rem;
+            }
+            .description p {
+                font-size: 1rem;
+            }
+            .data-container {
+                padding: 1.25rem;
+            }
+        }
         
         #detailed-chart .plotly-graph-div {
             margin: 0 auto !important;
@@ -128,6 +149,12 @@
             padding: 2rem;
             margin-bottom: 2rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .data-container .table {
+            min-width: 560px;
         }
         
         .table {
@@ -200,6 +227,23 @@
         
         .footer a:hover {
             text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 0.75rem 1rem;
+            }
+            .header-logo {
+                width: 48px;
+                height: 48px;
+            }
+            .container {
+                margin: 1rem auto;
+            }
+            .footer {
+                padding: 1.5rem 1rem;
+                margin-top: 2.5rem;
+            }
         }
     </style>
 </head>
@@ -383,6 +427,23 @@
             document.getElementById('detailed-data').innerHTML = html;
         }
         
+        function getDetailedChartLayoutSize() {
+            var container = document.querySelector('.container');
+            var w = container && container.clientWidth > 100
+                ? Math.max(260, container.clientWidth - 32)
+                : Math.min(1200, Math.max(280, window.innerWidth - 32));
+            var narrow = window.innerWidth <= 640;
+            var h = narrow ? Math.max(280, Math.min(420, Math.round(w * 0.72))) : 560;
+            return { width: w, height: h };
+        }
+
+        function relayoutDetailedChartPlot() {
+            var chartDiv = document.getElementById('detailed-chart');
+            if (!chartDiv || !chartDiv.querySelector('.js-plotly-plot')) return;
+            var sz = getDetailedChartLayoutSize();
+            Plotly.relayout('detailed-chart', { width: sz.width, height: sz.height });
+        }
+
         function loadDetailedChart(chartType) {
             fetch('/api/charts/' + encodeURIComponent(cubeId) + '/' + chartType)
                 .then(function(r) { return r.json(); })
@@ -393,10 +454,9 @@
                     }
                     
                     var chartData = JSON.parse(data.chart);
-                    
-                    var containerWidth = document.getElementById('detailed-chart').clientWidth;
-                    chartData.layout.width = containerWidth;
-                    chartData.layout.height = 560;
+                    var sz = getDetailedChartLayoutSize();
+                    chartData.layout.width = sz.width;
+                    chartData.layout.height = sz.height;
                     chartData.layout.margin = { l: 60, r: 60, t: 40, b: 60 };
                     chartData.layout.autosize = false;
                     
@@ -416,11 +476,6 @@
                             plotlyDiv.style.margin = '0 auto';
                             plotlyDiv.style.display = 'block';
                         }
-                        
-                        window.addEventListener('resize', function() {
-                            var newWidth = document.getElementById('detailed-chart').clientWidth;
-                            Plotly.relayout('detailed-chart', { width: newWidth });
-                        });
                     });
                     
                     document.getElementById('chart-section').style.display = 'block';
@@ -440,7 +495,11 @@
             document.getElementById('loading').style.display = 'none';
         }
         
-        document.addEventListener('DOMContentLoaded', loadDetailedAnalysis);
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDetailedAnalysis();
+            window.addEventListener('resize', relayoutDetailedChartPlot);
+            window.addEventListener('orientationchange', relayoutDetailedChartPlot);
+        });
     </script>
 </body>
 </html>

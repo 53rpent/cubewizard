@@ -18,6 +18,7 @@ from image_processor import ImageProcessor
 from scryfall_client import ScryfallClient
 from config_manager import config
 import d1_writer
+import oriented_r2
 
 
 class CubeWizard:
@@ -291,6 +292,20 @@ class CubeWizard:
                     stored_image_path = f"stored_images/{stored_name}"
                     d1_writer.update_stored_image_path(deck_id, stored_image_path)
                     print(f"  Stored image: {stored_image_path}")
+                    if deck_metadata.get("staging_image_r2_key"):
+                        d1_writer.update_staging_image_r2_key(
+                            deck_id, deck_metadata["staging_image_r2_key"]
+                        )
+                    r2_key = oriented_r2.upload_oriented_image(
+                        dest, cubecobra_id, image_id
+                    )
+                    if r2_key:
+                        d1_writer.update_oriented_image_r2_key(deck_id, r2_key)
+                        thumb_key = oriented_r2.upload_oriented_thumb(
+                            dest, cubecobra_id, image_id
+                        )
+                        if thumb_key:
+                            d1_writer.update_oriented_thumb_r2_key(deck_id, thumb_key)
             except Exception as e:
                 print(f"Warning: Could not save to D1: {e}")
         
@@ -526,6 +541,16 @@ class CubeWizard:
                     errors.append(error_msg)
                     failed_count += 1
                     continue
+
+                meta_json = folder / "metadata.json"
+                if meta_json.exists():
+                    try:
+                        with open(meta_json, "r", encoding="utf-8") as mjf:
+                            mj = json.load(mjf)
+                        if mj.get("image_key"):
+                            metadata["staging_image_r2_key"] = mj["image_key"]
+                    except Exception as e:
+                        print(f"  Warning: could not read metadata.json: {e}")
                 
                 print(f"  Parsed metadata: {metadata['pilot_name']} ({metadata['match_wins']}-{metadata['match_losses']}" + 
                       (f"-{metadata['match_draws']}" if metadata.get('match_draws', 0) > 0 else "") + ")")

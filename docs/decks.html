@@ -11,11 +11,24 @@
   <link rel="stylesheet" href="card-tooltip.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      border: 0;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: #f5f5f5;
       color: #333;
       line-height: 1.6;
+      padding-left: max(0px, env(safe-area-inset-left));
+      padding-right: max(0px, env(safe-area-inset-right));
+      padding-bottom: env(safe-area-inset-bottom);
     }
 
     .header {
@@ -23,7 +36,7 @@
       border-bottom: 1px solid #e8e0dc;
       padding: 1rem 1.5rem;
     }
-    .header-inner { max-width: 1400px; margin: 0 auto; }
+    .header-inner { max-width: 1200px; margin: 0 auto; }
     .header-brand {
       display: flex;
       align-items: center;
@@ -46,14 +59,14 @@
 
     .breadcrumb {
       background: white;
-      padding: 1rem 2rem;
+      padding: 1rem 1rem;
       border-bottom: 1px solid #eee;
     }
     .breadcrumb a { color: #667eea; text-decoration: none; }
     .breadcrumb a:hover { text-decoration: underline; }
 
     .container {
-      max-width: 1400px;
+      max-width: 1200px;
       margin: 2rem auto;
       padding: 0 1rem;
       align-items: center;
@@ -102,7 +115,7 @@
     .table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 980px;
+      min-width: 1060px;
     }
     .table th, .table td {
       padding: 0.75rem;
@@ -119,6 +132,37 @@
     }
     .table tr:hover { background: #f8f9fa; cursor: pointer; }
     .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .deck-table-photo {
+      width: 52px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #eee;
+      vertical-align: middle;
+      display: block;
+    }
+    .deck-table-photo-cell {
+      width: 64px;
+      padding: 0.5rem 0.75rem !important;
+      vertical-align: middle;
+    }
+    .modal-deck-photo-wrap {
+      margin: 0 0 1rem 0;
+      text-align: center;
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 0.75rem;
+      border: 1px solid #eee;
+    }
+    .modal-deck-photo {
+      max-width: 100%;
+      max-height: min(50vh, 520px);
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 6px;
+    }
 
     .loading {
       text-align: center;
@@ -143,12 +187,12 @@
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 1rem;
+      padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
       z-index: 1000;
     }
     .modal {
-      width: min(1400px, 98vw);
-      max-height: 94vh;
+      width: min(1200px, calc(100vw - 1rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+      max-height: min(94vh, calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem));
       background: white;
       border-radius: 12px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
@@ -163,6 +207,7 @@
       justify-content: space-between;
       align-items: flex-start;
       gap: 1rem;
+      flex-wrap: wrap;
     }
     .modal-title {
       font-size: 1.1rem;
@@ -177,12 +222,83 @@
       border: 1px solid #ddd;
       background: #fff;
       border-radius: 8px;
-      padding: 0.4rem 0.6rem;
+      padding: 0.5rem 0.75rem;
+      min-width: 44px;
+      min-height: 44px;
       cursor: pointer;
       font-weight: 700;
       line-height: 1;
     }
     .close-btn:hover { background: #f8f9fa; }
+    .modal-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .btn-edit-deck {
+      border: 1px solid #667eea;
+      background: #fff;
+      color: #667eea;
+      border-radius: 8px;
+      padding: 0.5rem 0.85rem;
+      min-height: 44px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-edit-deck:hover { background: #f5f7ff; }
+    .btn-edit-deck:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .deck-edit-panel {
+      margin-top: 0.5rem;
+    }
+    .deck-edit-panel textarea {
+      width: 100%;
+      min-height: 280px;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .deck-edit-actions {
+      margin-top: 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .btn-primary {
+      border: none;
+      background: #667eea;
+      color: #fff;
+      border-radius: 8px;
+      padding: 0.55rem 1rem;
+      min-height: 44px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .btn-primary:hover { background: #5a6fd6; }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-secondary {
+      border: 1px solid #ccc;
+      background: #fff;
+      border-radius: 8px;
+      padding: 0.55rem 1rem;
+      min-height: 44px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .btn-secondary:hover { background: #f8f9fa; }
+    .deck-edit-message { margin-top: 0.5rem; font-size: 0.9rem; min-height: 1.25rem; }
+    .deck-edit-message.error { color: #c0392b; }
+    .deck-edit-message.ok { color: #1e7e34; }
     .modal-body {
       padding: 1rem 1.25rem 1.25rem 1.25rem;
       overflow: auto;
@@ -230,6 +346,15 @@
     }
     .footer a { color: #667eea; text-decoration: none; }
     .footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 768px) {
+      .header { padding: 0.75rem 1rem; }
+      .header-logo { width: 48px; height: 48px; }
+      .container { margin: 1rem auto; padding: 0 0.85rem; }
+      .description, .data-container { padding: 1.25rem; }
+      .description p { font-size: 1rem; }
+      .footer { padding: 1.5rem 1rem; margin-top: 2.5rem; }
+    }
   </style>
 </head>
 <body>
@@ -261,6 +386,7 @@
         <table class="table">
           <thead>
             <tr>
+              <th>Photo</th>
               <th>Pilot</th>
               <th class="mono">W</th>
               <th class="mono">L</th>
@@ -279,14 +405,29 @@
   <div id="modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="modal">
       <div class="modal-header">
-        <div>
+        <div style="flex:1; min-width:0;">
           <div id="modal-title" class="modal-title">Deck</div>
           <div id="modal-meta" class="modal-meta"></div>
         </div>
-        <button class="close-btn" onclick="closeModal()" aria-label="Close">✕</button>
+        <div class="modal-header-actions">
+          <button type="button" id="modal-edit-cards-btn" class="btn-edit-deck" style="display:none;">Edit card list</button>
+          <button class="close-btn" onclick="closeModal()" aria-label="Close">✕</button>
+        </div>
       </div>
       <div id="modal-body" class="modal-body">
-        <div class="loading">Loading deck…</div>
+        <div id="deck-dynamic-root">
+          <div class="loading">Loading deck…</div>
+        </div>
+        <div id="deck-edit-panel" class="deck-edit-panel" style="display:none;">
+          <p class="subtle" style="margin-bottom:0.5rem;">One card per line. Repeat a name for multiple copies. Names are looked up on Scryfall (fuzzy match).</p>
+          <label for="deck-edit-textarea" class="visually-hidden">Card names</label>
+          <textarea id="deck-edit-textarea" autocomplete="off" spellcheck="false"></textarea>
+          <div class="deck-edit-actions">
+            <button type="button" id="deck-edit-save" class="btn-primary">Save changes</button>
+            <button type="button" id="deck-edit-cancel" class="btn-secondary">Cancel</button>
+          </div>
+          <div id="deck-edit-message" class="deck-edit-message" role="status"></div>
+        </div>
       </div>
       <div style="padding:0.5rem 1.25rem 0.75rem 1.25rem; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:1rem;">
         <div id="modal-image-id" class="mono" style="color:#999; font-size:0.85rem;"></div>
@@ -302,6 +443,10 @@
   <script src="card-tooltip.js"></script>
   <script>
     function $(id) { return document.getElementById(id); }
+
+    function escapeHtmlAttr(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
 
     var currentCubeId = '';
 
@@ -342,7 +487,13 @@
 
         var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
 
+        var thumbSrc = d.deck_thumb_url || d.deck_photo_url;
+        var photoCell = thumbSrc
+          ? '<td class="deck-table-photo-cell"><img class="deck-table-photo" src="' + escapeHtmlAttr(thumbSrc) + '" alt="" loading="lazy" decoding="async" /></td>'
+          : '<td class="deck-table-photo-cell">—</td>';
+
         tr.innerHTML =
+          photoCell +
           '<td>' + (d.pilot_name || '') + '</td>' +
           '<td class="mono">' + (d.match_wins ?? '') + '</td>' +
           '<td class="mono">' + (d.match_losses ?? '') + '</td>' +
@@ -392,6 +543,81 @@
         });
     }
 
+    var deckEditContext = { deckId: null, names: [] };
+
+    function setDeckViewMode(editing) {
+      $('deck-dynamic-root').style.display = editing ? 'none' : 'block';
+      $('deck-edit-panel').style.display = editing ? 'block' : 'none';
+      if (editing) {
+        $('modal-edit-cards-btn').style.display = 'none';
+      } else {
+        $('modal-edit-cards-btn').style.display = deckEditContext.deckId ? 'inline-block' : 'none';
+      }
+      $('deck-edit-message').textContent = '';
+      $('deck-edit-message').className = 'deck-edit-message';
+    }
+
+    function parseNamesFromTextarea() {
+      var raw = $('deck-edit-textarea').value.split(/\r?\n/);
+      var out = [];
+      for (var i = 0; i < raw.length; i++) {
+        var line = String(raw[i] || '').trim();
+        if (line.length) out.push(line);
+      }
+      return out;
+    }
+
+    function saveDeckCardEdits() {
+      var names = parseNamesFromTextarea();
+      if (names.length === 0) {
+        $('deck-edit-message').textContent = 'Add at least one card name.';
+        $('deck-edit-message').className = 'deck-edit-message error';
+        return;
+      }
+      var btn = $('deck-edit-save');
+      btn.disabled = true;
+      $('deck-edit-message').textContent = 'Saving (Scryfall lookups — may take a few seconds)…';
+      $('deck-edit-message').className = 'deck-edit-message';
+      fetch('/api/deck/' + encodeURIComponent(deckEditContext.deckId) + '/cards', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ names: names })
+      })
+        .then(function(r) {
+          return r.json().then(function(data) {
+            return { ok: r.ok, status: r.status, data: data };
+          });
+        })
+        .then(function(res) {
+          btn.disabled = false;
+          var data = res.data;
+          if (!res.ok) {
+            $('deck-edit-message').textContent = (data && data.error) ? data.error : ('Save failed (HTTP ' + res.status + ')');
+            $('deck-edit-message').className = 'deck-edit-message error';
+            return;
+          }
+          if (!data.success) {
+            $('deck-edit-message').textContent = (data && data.error) ? data.error : 'Save failed.';
+            $('deck-edit-message').className = 'deck-edit-message error';
+            return;
+          }
+          var nf = data.not_found || [];
+          var msg = 'Saved.';
+          if (nf.length) {
+            msg += ' ' + nf.length + ' name(s) could not be matched on Scryfall — those lines were stored as plain text.';
+          }
+          $('deck-edit-message').textContent = msg;
+          $('deck-edit-message').className = 'deck-edit-message ok';
+          openDeck(deckEditContext.deckId);
+        })
+        .catch(function(err) {
+          btn.disabled = false;
+          $('deck-edit-message').textContent = 'Network error.';
+          $('deck-edit-message').className = 'deck-edit-message error';
+          console.error(err);
+        });
+    }
+
     function openModal() {
       var overlay = $('modal-overlay');
       overlay.style.display = 'flex';
@@ -400,6 +626,9 @@
     }
 
     function closeModal() {
+      deckEditContext.deckId = null;
+      deckEditContext.names = [];
+      setDeckViewMode(false);
       var overlay = $('modal-overlay');
       overlay.style.display = 'none';
       overlay.setAttribute('aria-hidden', 'true');
@@ -502,19 +731,29 @@
     function openDeck(deckId) {
       $('modal-title').textContent = 'Deck';
       $('modal-meta').textContent = '';
-      $('modal-body').innerHTML = '<div class="loading">Loading deck…</div>';
+      $('deck-edit-panel').style.display = 'none';
+      $('deck-dynamic-root').style.display = 'block';
+      $('deck-dynamic-root').innerHTML = '<div class="loading">Loading deck…</div>';
+      $('modal-edit-cards-btn').style.display = 'none';
       openModal();
 
       fetch('/api/deck/' + encodeURIComponent(deckId))
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.error) {
-            $('modal-body').innerHTML = '<div class="error">' + data.error + '</div>';
+            $('deck-dynamic-root').innerHTML = '<div class="error">' + data.error + '</div>';
             return;
           }
           var deck = data.deck || {};
           var deckStats = data.deck_stats || null;
           var cards = data.cards || [];
+
+          deckEditContext.deckId = deckId;
+          var ordered = data.card_names_ordered;
+          if ((!ordered || !ordered.length) && cards.length) {
+            ordered = cards.map(function(c) { return c.name; });
+          }
+          deckEditContext.names = ordered || [];
 
           var title = (deck.pilot_name ? (deck.pilot_name + ' — ') : '') + (deck.match_wins + '-' + deck.match_losses + (deck.match_draws ? ('-' + deck.match_draws) : ''));
           $('modal-title').textContent = title;
@@ -528,8 +767,15 @@
 
           $('modal-image-id').textContent = deck.image_id ? ('Image ID: ' + deck.image_id) : '';
 
-          $('modal-body').innerHTML = renderManaCurve(cards);
+          var photoBlock = '';
+          if (deck.deck_photo_url) {
+            photoBlock = '<div class="modal-deck-photo-wrap"><img class="modal-deck-photo" src="' +
+              escapeHtmlAttr(deck.deck_photo_url) + '" alt="Deck photo" loading="lazy" /></div>';
+          }
+          $('deck-dynamic-root').innerHTML = photoBlock +
+            '<div id="deck-curve-container">' + renderManaCurve(cards) + '</div>';
           fitCurveText();
+          $('modal-edit-cards-btn').style.display = 'inline-block';
 
           // Show not-found list if present in processing_notes JSON.
           if (deckStats && deckStats.processing_notes) {
@@ -546,7 +792,7 @@
                   html += '<li>' + String(nf[i]).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</li>';
                 }
                 html += '</ul></div>';
-                $('modal-body').insertAdjacentHTML('beforeend', html);
+                $('deck-dynamic-root').insertAdjacentHTML('beforeend', html);
               }
             } catch (e) {
               // ignore malformed notes
@@ -554,7 +800,7 @@
           }
         })
         .catch(function(err) {
-          $('modal-body').innerHTML = '<div class="error">Failed to load deck.</div>';
+          $('deck-dynamic-root').innerHTML = '<div class="error">Failed to load deck.</div>';
           console.error(err);
         });
     }
@@ -566,6 +812,15 @@
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeModal();
     });
+
+    $('modal-edit-cards-btn').addEventListener('click', function() {
+      $('deck-edit-textarea').value = (deckEditContext.names || []).join('\n');
+      setDeckViewMode(true);
+    });
+    $('deck-edit-cancel').addEventListener('click', function() {
+      setDeckViewMode(false);
+    });
+    $('deck-edit-save').addEventListener('click', saveDeckCardEdits);
 
     // Init — cube comes from ?cube= or dashboard selection (localStorage), like analysis.html
     (function init() {

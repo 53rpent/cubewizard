@@ -26,17 +26,32 @@ export default {
 
     const trophyDecksMatch = url.pathname.match(/^\/api\/trophy-decks\/([^/]+)$/);
     if (trophyDecksMatch && request.method === "GET") {
-      return handleGetTrophyDecks(trophyDecksMatch[1], env);
+      return handleGetTrophyDecks(trophyDecksMatch[1], env, request);
     }
 
     const decksMatch = url.pathname.match(/^\/api\/decks\/([^/]+)$/);
     if (decksMatch && request.method === "GET") {
-      return handleGetDecks(decksMatch[1], env);
+      return handleGetDecks(decksMatch[1], env, request);
+    }
+
+    const deckThumbMatch = url.pathname.match(/^\/api\/deck\/([^/]+)\/thumb$/);
+    if (deckThumbMatch && request.method === "GET") {
+      return handleGetDeckThumb(deckThumbMatch[1], env);
+    }
+
+    const deckPhotoMatch = url.pathname.match(/^\/api\/deck\/([^/]+)\/photo$/);
+    if (deckPhotoMatch && request.method === "GET") {
+      return handleGetDeckPhoto(deckPhotoMatch[1], env);
+    }
+
+    const deckCardsPut = url.pathname.match(/^\/api\/deck\/([^/]+)\/cards$/);
+    if (deckCardsPut && request.method === "PUT") {
+      return handlePutDeckCards(deckCardsPut[1], request, env);
     }
 
     const deckMatch = url.pathname.match(/^\/api\/deck\/([^/]+)$/);
     if (deckMatch && request.method === "GET") {
-      return handleGetDeck(deckMatch[1], env);
+      return handleGetDeck(deckMatch[1], env, request);
     }
 
     // --- Existing endpoints ---
@@ -244,25 +259,117 @@ function attachSynergyImages(arr, map) {
 //  Deck-by-deck API handlers
 // ============================================================
 
-async function handleGetDecks(cubeId, env) {
+function buildBlobImageUrl(request, env, deckId, objectKey, pathSegment) {
+  if (!objectKey) return null;
+  var base = env.DECK_IMAGE_PUBLIC_BASE_URL;
+  if (base && String(base).trim()) {
+    var b = String(base).replace(/\/$/, "");
+    var parts = String(objectKey).split("/");
+    return b + "/" + parts.map(encodeURIComponent).join("/");
+  }
+  return new URL(
+    "/api/deck/" + encodeURIComponent(String(deckId)) + "/" + pathSegment,
+    request.url
+  ).href;
+}
+
+function contentTypeForDeckPhotoKey(key) {
+  var lower = String(key).toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".heic") || lower.endsWith(".heif")) return "image/heic";
+  return "application/octet-stream";
+}
+
+async function handleGetDeckThumb(deckId, env) {
+  const deck = await env.cubewizard_db.prepare(
+    "SELECT oriented_thumb_r2_key FROM decks WHERE deck_id = ?"
+  ).bind(deckId).first();
+
+  if (!deck || !deck.oriented_thumb_r2_key) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const obj = await env.DECK_IMAGES_BLOB.get(deck.oriented_thumb_r2_key);
+  if (!obj) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  var ct =
+    obj.httpMetadata && obj.httpMetadata.contentType
+      ? obj.httpMetadata.contentType
+      : "image/webp";
+  var headers = new Headers();
+  headers.set("Content-Type", ct);
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  return new Response(obj.body, { headers });
+}
+
+async function handleGetDeckPhoto(deckId, env) {
+  const deck = await env.cubewizard_db.prepare(
+    "SELECT oriented_image_r2_key FROM decks WHERE deck_id = ?"
+  ).bind(deckId).first();
+
+  if (!deck || !deck.oriented_image_r2_key) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const obj = await env.DECK_IMAGES_BLOB.get(deck.oriented_image_r2_key);
+  if (!obj) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  var ct =
+    obj.httpMetadata && obj.httpMetadata.contentType
+      ? obj.httpMetadata.contentType
+      : contentTypeForDeckPhotoKey(deck.oriented_image_r2_key);
+  var headers = new Headers();
+  headers.set("Content-Type", ct);
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  return new Response(obj.body, { headers });
+}
+
+async function handleGetDecks(cubeId, env, request) {
   const { results } = await env.cubewizard_db.prepare(
     "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-    " win_rate, record_logged, total_cards, created" +
+    " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
+    " oriented_thumb_r2_key" +
     " FROM decks WHERE cube_id = ?" +
     " ORDER BY created DESC"
   ).bind(cubeId).all();
 
+  for (var i = 0; i < results.length; i++) {
+    var d = results[i];
+    d.deck_photo_url = buildBlobImageUrl(
+      request, env, d.deck_id, d.oriented_image_r2_key, "photo"
+    );
+    d.deck_thumb_url = d.oriented_thumb_r2_key
+      ? buildBlobImageUrl(request, env, d.deck_id, d.oriented_thumb_r2_key, "thumb")
+      : d.deck_photo_url;
+  }
+
   return jsonResponse({ decks: results });
 }
 
-async function handleGetTrophyDecks(cubeId, env) {
+async function handleGetTrophyDecks(cubeId, env, request) {
   const { results } = await env.cubewizard_db.prepare(
     "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-    " win_rate, total_cards, created" +
+    " win_rate, total_cards, created, oriented_image_r2_key, oriented_thumb_r2_key" +
     " FROM decks WHERE cube_id = ? AND match_losses = 0" +
     " ORDER BY created DESC" +
     " LIMIT 5"
   ).bind(cubeId).all();
+
+  for (var j = 0; j < results.length; j++) {
+    var t = results[j];
+    t.deck_photo_url = buildBlobImageUrl(
+      request, env, t.deck_id, t.oriented_image_r2_key, "photo"
+    );
+    t.deck_thumb_url = t.oriented_thumb_r2_key
+      ? buildBlobImageUrl(request, env, t.deck_id, t.oriented_thumb_r2_key, "thumb")
+      : t.deck_photo_url;
+  }
 
   return jsonResponse({ decks: results });
 }
@@ -274,16 +381,34 @@ function normalizeCmc(value) {
   return n;
 }
 
-async function handleGetDeck(deckId, env) {
+async function handleGetDeck(deckId, env, request) {
   const deck = await env.cubewizard_db.prepare(
     "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-    " win_rate, record_logged, image_id, total_cards, created" +
+    " win_rate, record_logged, image_id, total_cards, created," +
+    " oriented_image_r2_key, oriented_thumb_r2_key, staging_image_r2_key" +
     " FROM decks WHERE deck_id = ?"
   ).bind(deckId).first();
 
   if (!deck) {
     return jsonResponse({ error: "Deck not found" }, 404);
   }
+
+  deck.deck_photo_url = buildBlobImageUrl(
+    request,
+    env,
+    deck.deck_id,
+    deck.oriented_image_r2_key,
+    "photo"
+  );
+  deck.deck_thumb_url = deck.oriented_thumb_r2_key
+    ? buildBlobImageUrl(
+        request,
+        env,
+        deck.deck_id,
+        deck.oriented_thumb_r2_key,
+        "thumb"
+      )
+    : deck.deck_photo_url;
 
   const deckStats = await env.cubewizard_db.prepare(
     "SELECT total_found, total_not_found, processing_notes FROM deck_stats WHERE deck_id = ?"
@@ -306,7 +431,339 @@ async function handleGetDeck(deckId, env) {
     });
   }
 
-  return jsonResponse({ deck: deck, deck_stats: deckStats || null, cards: cards });
+  const { results: orderRows } = await env.cubewizard_db.prepare(
+    "SELECT name FROM deck_cards WHERE deck_id = ? ORDER BY card_id ASC"
+  ).bind(deckId).all();
+
+  var card_names_ordered = [];
+  for (var oi = 0; oi < orderRows.length; oi++) {
+    card_names_ordered.push(orderRows[oi].name);
+  }
+
+  return jsonResponse({
+    deck: deck,
+    deck_stats: deckStats || null,
+    cards: cards,
+    card_names_ordered: card_names_ordered,
+  });
+}
+
+function scryfallCardToDeckRow(card) {
+  if (!card) return null;
+  var imgUris = card.image_uris;
+  if (!imgUris && card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris) {
+    imgUris = card.card_faces[0].image_uris;
+  }
+  var cmc = typeof card.cmc === "number" ? card.cmc : parseFloat(card.cmc);
+  if (!isFinite(cmc)) cmc = 0;
+  return {
+    name: card.name || "",
+    mana_cost: card.mana_cost || "",
+    cmc: cmc,
+    type_line: card.type_line || "",
+    colors: JSON.stringify(card.colors || []),
+    color_identity: JSON.stringify(card.color_identity || []),
+    rarity: card.rarity || "",
+    set_code: card.set || "",
+    set_name: card.set_name || "",
+    collector_number: String(card.collector_number != null ? card.collector_number : ""),
+    power: card.power != null ? String(card.power) : "",
+    toughness: card.toughness != null ? String(card.toughness) : "",
+    oracle_text: card.oracle_text || "",
+    scryfall_uri: card.scryfall_uri || "",
+    image_uris: JSON.stringify(imgUris || {}),
+    prices: JSON.stringify(card.prices || {}),
+  };
+}
+
+function stubDeckRowForName(name) {
+  return {
+    name: name,
+    mana_cost: "",
+    cmc: 0,
+    type_line: "",
+    colors: "[]",
+    color_identity: "[]",
+    rarity: "",
+    set_code: "",
+    set_name: "",
+    collector_number: "",
+    power: "",
+    toughness: "",
+    oracle_text: "",
+    scryfall_uri: "",
+    image_uris: "{}",
+    prices: "{}",
+  };
+}
+
+function sleepMs(ms) {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+/** Scryfall /cards/collection allows max 75 identifiers; rate ~2/sec. */
+var SCRYFALL_COLLECTION_CHUNK = 75;
+/** Per-request wall-clock cap so the Worker does not hang on slow Scryfall responses. */
+var SCRYFALL_NAMED_TIMEOUT_MS = 12000;
+/** Parallel fuzzy lookups after collection (named endpoint allows ~10/sec). */
+var SCRYFALL_FUZZY_CONCURRENCY = 6;
+
+async function fetchCardFromScryfallFuzzyWithTimeout(name, timeoutMs) {
+  var ctrl = new AbortController();
+  var tid = setTimeout(function () {
+    ctrl.abort();
+  }, timeoutMs);
+  try {
+    var u = new URL("https://api.scryfall.com/cards/named");
+    u.searchParams.set("fuzzy", name);
+    var r = await fetch(u.toString(), {
+      signal: ctrl.signal,
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "CubeWizard-Worker/1.0",
+      },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      return null;
+    }
+    return r.json();
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      console.error("Scryfall named timeout for:", name);
+    } else {
+      console.error("Scryfall named error for " + name + ":", e);
+    }
+    return null;
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
+function buildScryfallNamePool(dataArr) {
+  var pool = {};
+  for (var i = 0; i < dataArr.length; i++) {
+    var c = dataArr[i];
+    if (!c || !c.name) continue;
+    var k = String(c.name).toLowerCase();
+    if (!pool[k]) pool[k] = [];
+    pool[k].push(c);
+  }
+  return pool;
+}
+
+function takeCardFromNamePool(pool, reqName) {
+  var k = String(reqName).toLowerCase();
+  if (!pool[k] || pool[k].length === 0) return null;
+  return pool[k].shift();
+}
+
+async function scryfallPostCollection(identifiers) {
+  var r = await fetch("https://api.scryfall.com/cards/collection", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "CubeWizard-Worker/1.0",
+    },
+    body: JSON.stringify({ identifiers: identifiers }),
+  });
+  if (!r.ok) {
+    var errText = await r.text();
+    throw new Error("collection " + r.status + ": " + errText.slice(0, 160));
+  }
+  return r.json();
+}
+
+/**
+ * Resolve card rows: batched POST /cards/collection (exact name match), then
+ * parallel fuzzy /cards/named for anything the batch did not return.
+ */
+async function resolveDeckCardRowsFromNames(trimmed) {
+  var foundRows = new Array(trimmed.length);
+  var fuzzyQueue = [];
+
+  for (var start = 0; start < trimmed.length; start += SCRYFALL_COLLECTION_CHUNK) {
+    if (start > 0) {
+      await sleepMs(550);
+    }
+    var chunk = trimmed.slice(start, start + SCRYFALL_COLLECTION_CHUNK);
+    var identifiers = chunk.map(function (n) {
+      return { name: n };
+    });
+    var json;
+    try {
+      json = await scryfallPostCollection(identifiers);
+    } catch (e) {
+      console.error("Scryfall collection batch failed:", e);
+      for (var ej = 0; ej < chunk.length; ej++) {
+        fuzzyQueue.push({ index: start + ej, name: chunk[ej] });
+      }
+      continue;
+    }
+
+    var pool = buildScryfallNamePool(json.data || []);
+    for (var i = 0; i < chunk.length; i++) {
+      var globalIdx = start + i;
+      var reqName = chunk[i];
+      var card = takeCardFromNamePool(pool, reqName);
+      if (card) {
+        foundRows[globalIdx] = scryfallCardToDeckRow(card);
+      } else {
+        fuzzyQueue.push({ index: globalIdx, name: reqName });
+      }
+    }
+  }
+
+  for (var b = 0; b < fuzzyQueue.length; b += SCRYFALL_FUZZY_CONCURRENCY) {
+    var slice = fuzzyQueue.slice(b, b + SCRYFALL_FUZZY_CONCURRENCY);
+    await Promise.all(
+      slice.map(function (q) {
+        return fetchCardFromScryfallFuzzyWithTimeout(q.name, SCRYFALL_NAMED_TIMEOUT_MS).then(function (card) {
+          if (card) {
+            foundRows[q.index] = scryfallCardToDeckRow(card);
+          }
+        });
+      })
+    );
+  }
+
+  var notFoundNames = [];
+  var outRows = [];
+  for (var ri = 0; ri < trimmed.length; ri++) {
+    var row = foundRows[ri];
+    if (row && row.scryfall_uri) {
+      outRows.push(row);
+    } else {
+      outRows.push(stubDeckRowForName(trimmed[ri]));
+      notFoundNames.push(trimmed[ri]);
+    }
+  }
+
+  return { rows: outRows, notFoundNames: notFoundNames };
+}
+
+async function handlePutDeckCards(deckIdStr, request, env) {
+  var deckId = parseInt(String(deckIdStr), 10);
+  if (!isFinite(deckId)) {
+    return jsonResponse({ error: "Invalid deck id" }, 400);
+  }
+
+  var deck = await env.cubewizard_db
+    .prepare("SELECT deck_id FROM decks WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
+  if (!deck) {
+    return jsonResponse({ error: "Deck not found" }, 404);
+  }
+
+  var body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  var names = body.names;
+  if (!Array.isArray(names)) {
+    return jsonResponse({ error: "Request body must include names: string[]" }, 400);
+  }
+
+  var trimmed = [];
+  for (var ni = 0; ni < names.length; ni++) {
+    var n = String(names[ni] == null ? "" : names[ni]).trim();
+    if (n.length > 0) trimmed.push(n);
+  }
+  if (trimmed.length === 0) {
+    return jsonResponse({ error: "At least one card name is required" }, 400);
+  }
+
+  var resolved;
+  try {
+    resolved = await resolveDeckCardRowsFromNames(trimmed);
+  } catch (e) {
+    console.error("resolveDeckCardRowsFromNames:", e);
+    return jsonResponse({ error: "Scryfall lookup failed. Try again with fewer cards or shorter names." }, 502);
+  }
+
+  var foundRows = resolved.rows;
+  var notFoundNames = resolved.notFoundNames;
+
+  await env.cubewizard_db.prepare("DELETE FROM deck_cards WHERE deck_id = ?").bind(deckId).run();
+
+  for (var ri = 0; ri < foundRows.length; ri++) {
+    var row = foundRows[ri];
+    await env.cubewizard_db
+      .prepare(
+        "INSERT INTO deck_cards (deck_id, name, mana_cost, cmc, type_line, colors, color_identity, " +
+          "rarity, set_code, set_name, collector_number, power, toughness, oracle_text, scryfall_uri, image_uris, prices) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(
+        deckId,
+        row.name,
+        row.mana_cost,
+        row.cmc,
+        row.type_line,
+        row.colors,
+        row.color_identity,
+        row.rarity,
+        row.set_code,
+        row.set_name,
+        row.collector_number,
+        row.power,
+        row.toughness,
+        row.oracle_text,
+        row.scryfall_uri,
+        row.image_uris,
+        row.prices
+      )
+      .run();
+  }
+
+  var totalFound = trimmed.length - notFoundNames.length;
+  var notesObj = {
+    total_requested: trimmed.length,
+    total_found: totalFound,
+    total_not_found: notFoundNames.length,
+    not_found: notFoundNames,
+    success_rate: trimmed.length ? totalFound / trimmed.length : 0,
+    edited_via: "deck_view",
+  };
+  var notesStr = JSON.stringify(notesObj);
+
+  var statRow = await env.cubewizard_db
+    .prepare("SELECT deck_id FROM deck_stats WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
+  if (statRow) {
+    await env.cubewizard_db
+      .prepare(
+        "UPDATE deck_stats SET total_found = ?, total_not_found = ?, processing_notes = ? WHERE deck_id = ?"
+      )
+      .bind(totalFound, notFoundNames.length, notesStr, deckId)
+      .run();
+  } else {
+    await env.cubewizard_db
+      .prepare(
+        "INSERT INTO deck_stats (deck_id, total_found, total_not_found, processing_notes) VALUES (?, ?, ?, ?)"
+      )
+      .bind(deckId, totalFound, notFoundNames.length, notesStr)
+      .run();
+  }
+
+  await env.cubewizard_db
+    .prepare("UPDATE decks SET total_cards = ? WHERE deck_id = ?")
+    .bind(trimmed.length, deckId)
+    .run();
+
+  return jsonResponse({
+    success: true,
+    total_cards: trimmed.length,
+    not_found: notFoundNames,
+  });
 }
 
 // ============================================================
@@ -754,10 +1211,10 @@ async function handleUpload(request, env) {
       );
     }
 
-    var MAX_SIZE = 10 * 1024 * 1024;
+    var MAX_SIZE = 20 * 1024 * 1024;
     if (imageFile.size > MAX_SIZE) {
       return jsonResponse(
-        { success: false, errors: ["Image file must be under 10 MB"] },
+        { success: false, errors: ["Image file must be under 20 MB"] },
         400
       );
     }

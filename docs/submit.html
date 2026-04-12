@@ -22,6 +22,9 @@
         background: #f5f5f5;
         color: #333;
         line-height: 1.6;
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+        padding-bottom: env(safe-area-inset-bottom);
       }
 
       .header {
@@ -93,6 +96,33 @@
         background: #5a6fd8;
       }
 
+      @media (max-width: 768px) {
+        .header {
+          padding: 0.75rem 1rem;
+        }
+        .header-logo {
+          width: 48px;
+          height: 48px;
+        }
+        .container {
+          margin: 1rem auto;
+          padding: 0 0.85rem;
+        }
+        .upload-card {
+          padding: 1.25rem;
+        }
+        .back-button {
+          min-height: 44px;
+          display: inline-flex;
+          align-items: center;
+          box-sizing: border-box;
+        }
+        .footer {
+          padding: 1.5rem 1rem;
+          margin-top: 2.5rem;
+        }
+      }
+
       .upload-card {
         background: white;
         border-radius: 8px;
@@ -119,7 +149,8 @@
       .form-group input[type="number"],
       .form-group select {
         width: 100%;
-        padding: 0.6rem 0.75rem;
+        padding: 0.65rem 0.75rem;
+        min-height: 44px;
         border: 2px solid #e9ecef;
         border-radius: 4px;
         font-size: 1rem;
@@ -136,6 +167,12 @@
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
         gap: 0.75rem;
+      }
+
+      @media (max-width: 520px) {
+        .record-row {
+          grid-template-columns: 1fr;
+        }
       }
 
       .file-drop {
@@ -195,6 +232,7 @@
       .submit-btn {
         width: 100%;
         padding: 0.85rem;
+        min-height: 48px;
         background: #28a745;
         color: white;
         border: none;

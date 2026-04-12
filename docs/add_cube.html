@@ -22,6 +22,9 @@
         background: #f5f5f5;
         color: #333;
         line-height: 1.6;
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+        padding-bottom: env(safe-area-inset-bottom);
       }
 
       .header {
@@ -131,7 +134,8 @@
       .form-group input[type="text"],
       .form-group textarea {
         width: 100%;
-        padding: 0.6rem 0.75rem;
+        padding: 0.65rem 0.75rem;
+        min-height: 44px;
         border: 2px solid #e9ecef;
         border-radius: 4px;
         font-size: 1rem;
@@ -147,20 +151,33 @@
 
       .form-group textarea {
         resize: vertical;
-        min-height: 60px;
+        min-height: 88px;
       }
 
       .input-row {
         display: flex;
+        flex-wrap: wrap;
         gap: 0.5rem;
       }
 
       .input-row input {
         flex: 1;
+        min-width: 0;
+        min-height: 44px;
+      }
+
+      @media (max-width: 520px) {
+        .input-row {
+          flex-direction: column;
+        }
+        .input-row .validate-btn {
+          width: 100%;
+        }
       }
 
       .validate-btn {
-        padding: 0.6rem 1.25rem;
+        padding: 0.65rem 1.25rem;
+        min-height: 44px;
         background: #667eea;
         color: white;
         border: none;
@@ -212,6 +229,7 @@
       .submit-btn {
         width: 100%;
         padding: 0.85rem;
+        min-height: 48px;
         background: #28a745;
         color: white;
         border: none;
@@ -280,6 +298,33 @@
       .footer .timestamp {
         font-size: 0.875rem;
         color: #999;
+      }
+
+      @media (max-width: 768px) {
+        .header {
+          padding: 0.75rem 1rem;
+        }
+        .header-logo {
+          width: 48px;
+          height: 48px;
+        }
+        .container {
+          margin: 1rem auto;
+          padding: 0 0.85rem;
+        }
+        .add-cube-card {
+          padding: 1.25rem;
+        }
+        .back-button {
+          min-height: 44px;
+          display: inline-flex;
+          align-items: center;
+          box-sizing: border-box;
+        }
+        .footer {
+          padding: 1.5rem 1rem;
+          margin-top: 2.5rem;
+        }
       }
     </style>
   </head>

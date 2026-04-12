@@ -12,8 +12,19 @@
 		{
 			"binding": "BUCKET",
 			"bucket_name": "decklist-uploads"
+		},
+		{
+			"binding": "DECK_IMAGES_BLOB",
+			"bucket_name": "cubewizard-deck-images"
+		},
+		{
+			"bucket_name": "cubewizard-deck-images",
+			"binding": "cubewizard_deck_images"
 		}
 	],
+	"vars": {
+		"DECK_IMAGE_PUBLIC_BASE_URL": ""
+	},
 	"d1_databases": [
 		{
 			"binding": "cubewizard_db",
@@ -28,10 +39,17 @@
 			"observability": {
 				"enabled": true
 			},
+			"vars": {
+				"DECK_IMAGE_PUBLIC_BASE_URL": ""
+			},
 			"r2_buckets": [
 				{
 					"binding": "BUCKET",
 					"bucket_name": "decklist-uploads"
+				},
+				{
+					"binding": "DECK_IMAGES_BLOB",
+					"bucket_name": "cubewizard-deck-images"
 				}
 			],
 			"d1_databases": [
@@ -48,10 +66,17 @@
 			"observability": {
 				"enabled": true
 			},
+			"vars": {
+				"DECK_IMAGE_PUBLIC_BASE_URL": ""
+			},
 			"r2_buckets": [
 				{
 					"binding": "BUCKET",
 					"bucket_name": "decklist-uploads"
+				},
+				{
+					"binding": "DECK_IMAGES_BLOB",
+					"bucket_name": "cubewizard-deck-images"
 				}
 			],
 			"d1_databases": [

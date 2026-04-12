@@ -332,21 +332,76 @@ def add_deck(cube_id: str, deck_data: Dict[str, Any],
         return result
 
 
+def update_oriented_image_r2_key(deck_id: int, oriented_image_r2_key: str) -> bool:
+    """Set the blob-bucket object key for the oriented deck photo."""
+    try:
+        _execute_single(
+            "UPDATE decks SET oriented_image_r2_key = ? WHERE deck_id = ?;",
+            [oriented_image_r2_key, deck_id],
+        )
+        return True
+    except Exception as exc:
+        print(f"  [FAIL] Could not update oriented_image_r2_key: {exc}")
+        return False
+
+
+def update_oriented_thumb_r2_key(deck_id: int, oriented_thumb_r2_key: str) -> bool:
+    """Set the blob-bucket object key for the oriented deck WebP thumbnail."""
+    try:
+        _execute_single(
+            "UPDATE decks SET oriented_thumb_r2_key = ? WHERE deck_id = ?;",
+            [oriented_thumb_r2_key, deck_id],
+        )
+        return True
+    except Exception as exc:
+        print(f"  [FAIL] Could not update oriented_thumb_r2_key: {exc}")
+        return False
+
+
+def update_staging_image_r2_key(deck_id: int, staging_image_r2_key: str) -> bool:
+    """Set the staging-bucket object key for the original upload (lineage)."""
+    try:
+        _execute_single(
+            "UPDATE decks SET staging_image_r2_key = ? WHERE deck_id = ?;",
+            [staging_image_r2_key, deck_id],
+        )
+        return True
+    except Exception as exc:
+        print(f"  [FAIL] Could not update staging_image_r2_key: {exc}")
+        return False
+
+
+def normalize_stored_image_path_relative_to_output(stored_image_path: str) -> str:
+    """
+    Canonical value for decks.stored_image_path: path relative to the output root only,
+    e.g. ``stored_images/<image_id>.jpg``.
+
+    Strips repeated leading ``output/`` segments so joining ``Path(output_directory) / path``
+    does not produce ``output/output/stored_images/...`` when D1 mistakenly included
+    the output folder name.
+    """
+    s = (stored_image_path or "").strip().replace("\\", "/").lstrip("/")
+    while s.lower().startswith("output/"):
+        s = s[7:]
+    return s
+
+
 def update_stored_image_path(deck_id: int, stored_image_path: str) -> bool:
     """
     Update the stored_image_path for an existing deck record.
 
     Args:
         deck_id: The deck's primary key in D1.
-        stored_image_path: Relative path to the stored image file.
+        stored_image_path: Relative path to the stored image file (normalized before save).
 
     Returns:
         True on success, False on failure.
     """
+    canonical = normalize_stored_image_path_relative_to_output(stored_image_path)
     try:
         _execute_single(
             "UPDATE decks SET stored_image_path = ? WHERE deck_id = ?;",
-            [stored_image_path, deck_id],
+            [canonical, deck_id],
         )
         return True
     except Exception as exc:

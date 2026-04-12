@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS decks (
     win_rate REAL NOT NULL,
     record_logged TIMESTAMP NOT NULL,
     image_source TEXT,
-    stored_image_path TEXT,
+    stored_image_path TEXT,  -- relative to output dir only (e.g. stored_images/<id>.ext); not output/stored_images/...
+    oriented_image_r2_key TEXT,
+    oriented_thumb_r2_key TEXT,
+    staging_image_r2_key TEXT,
     image_id TEXT UNIQUE,
     processing_timestamp TEXT NOT NULL,
     total_cards INTEGER NOT NULL,

@@ -147,7 +147,41 @@ npx wrangler deploy --config wrangler-redirect.jsonc
 | Production | `cubewizard-prod` | https://cubewizard-prod.amatveyenko.workers.dev |
 | Redirect | `cubewizard-redirect` | cubewizard.org (redirects to cube-wizard.com) |
 
-Both stg and prod share the same D1 database and R2 bucket.
+Both stg and prod share the same D1 database. The Worker binds two R2 buckets: **`decklist-uploads`** (staging — raw uploads + `metadata.json`) and **`cubewizard-deck-images`** (oriented deck photos for the site). Create the blob bucket before deploy:
+
+```bash
+npx wrangler r2 bucket create cubewizard-deck-images
+```
+
+Apply D1 schema additions for deck image keys (run once against remote D1):
+
+```bash
+npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/001_oriented_image_r2_columns.sql
+npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/002_oriented_thumb_r2_key.sql
+```
+
+Backfill oriented images from local `output/stored_images/` into the blob bucket (requires `.env` R2 + D1). This also uploads a small WebP thumbnail per deck (`{cube_id}/{image_id}_thumb.webp`):
+
+```bash
+python migrate_stored_images_to_r2.py --dry-run
+python migrate_stored_images_to_r2.py
+```
+
+If decks were processed but `output/stored_images/` was never populated, copy each **staging** object from R2 into the filename the pipeline would use (`stored_images/{image_id}.{ext}`). `image_id` comes from D1 (same hash as ingest), not from metadata alone — the script lists staging, looks up the deck by `staging_image_r2_key` or by cube + pilot + W–L–D, then downloads only if the file is missing:
+
+```bash
+python recover_staging_to_stored_images.py --dry-run
+python recover_staging_to_stored_images.py
+# Optional: set stored_image_path in D1 after download; resolve duplicate D1 matches
+python recover_staging_to_stored_images.py --update-d1 --pick-latest
+```
+
+After full images exist in R2, generate any missing list thumbnails (or `--force` to rebuild):
+
+```bash
+python backfill_thumbnails.py --dry-run
+python backfill_thumbnails.py
+```
 
 ### Dashboard Features
 
@@ -169,7 +203,12 @@ CubeWizard/
 ├── image_processor.py           # OpenAI Vision API integration
 ├── scryfall_client.py           # Scryfall API wrapper
 ├── config_manager.py            # Configuration handling
-├── pull_from_r2.py              # R2 download tool
+├── pull_from_r2.py              # R2 download tool (staging bucket)
+├── oriented_r2.py               # Upload oriented deck images to blob R2 bucket
+├── migrate_stored_images_to_r2.py # One-time migration: local stored_images → blob bucket + D1 (+ WebP thumbs)
+├── backfill_thumbnails.py         # Build WebP thumbs for decks that have full image in R2 but no thumb row
+├── recover_staging_to_stored_images.py # Download staging R2 images into stored_images/ by image_id
+├── migrations/                  # D1 SQL migrations (e.g. oriented_image_r2 columns)
 ├── config.ini                   # Configuration (R2 creds, OpenAI settings)
 ├── schema.sql                   # D1 database schema reference
 ├── requirements.txt             # Python dependencies
@@ -223,6 +262,14 @@ npx wrangler d1 execute cubewizard-db --env prod --remote --json --command "SELE
 | `/api/upload` | POST | Upload deck submission to R2 |
 | `/api/validate-cube` | POST | Validate a CubeCobra cube ID |
 | `/api/add-cube` | POST | Register a new cube in D1 |
+| `/api/decks/:cubeId` | GET | Deck list (`deck_photo_url` full, `deck_thumb_url` small WebP for grids) |
+| `/api/trophy-decks/:cubeId` | GET | Undefeated decks (same URL fields) |
+| `/api/deck/:deckId` | GET | Single deck + cards (`deck_photo_url`, `deck_thumb_url`) |
+| `/api/deck/:deckId/photo` | GET | Full oriented image from blob bucket |
+| `/api/deck/:deckId/thumb` | GET | WebP thumbnail (~256px long edge) for list views |
+| `/api/deck/:deckId/cards` | PUT | Replace deck list: JSON `{ "names": ["Card A", "Card B", ...] }` (one name per card; duplicates allowed). Resolves names via Scryfall **POST /cards/collection** in batches of 75 (500ms between batches), then **GET /cards/named?fuzzy=** for misses, with **~12s timeout** per fuzzy call and parallel fuzzy waves so large decks stay within Worker limits. |
+
+Optional Worker var **`DECK_IMAGE_PUBLIC_BASE_URL`**: set to your public R2 custom domain (no trailing slash) so APIs return absolute image URLs instead of same-origin `/api/deck/.../photo` or `/thumb`.
 
 ## Maintenance
 

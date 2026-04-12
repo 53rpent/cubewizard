@@ -21,6 +21,9 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
             color: #333;
+            padding-left: max(0px, env(safe-area-inset-left));
+            padding-right: max(0px, env(safe-area-inset-right));
+            padding-bottom: env(safe-area-inset-bottom);
         }
         
         .header {
@@ -100,7 +103,7 @@
             grid-column: 1 / -1;
         }
         
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             .action-bar {
                 grid-template-columns: 1fr;
             }
@@ -152,14 +155,13 @@
         
         .dashboard-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 2rem;
         }
-        
-        @media (max-width: 768px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
+
+        /* Let grid columns shrink; Plotly's intrinsic width otherwise widens cards vs action panels */
+        .dashboard-grid > .card {
+            min-width: 0;
         }
         
         @media (min-width: 769px) {
@@ -257,6 +259,88 @@
         .chart-container {
             height: 400px;
             margin-top: 1rem;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        #performance-chart,
+        #color-chart {
+            width: 100% !important;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        .table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-top: 0.5rem;
+            border-radius: 8px;
+        }
+
+        .table-scroll .table {
+            min-width: 480px;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+                gap: 1.25rem;
+            }
+            .header {
+                padding: 0.75rem 1rem;
+            }
+            .header-logo {
+                width: 48px;
+                height: 48px;
+            }
+            .container {
+                margin: 1rem auto;
+                padding: 0 0.85rem;
+            }
+            .action-bar {
+                gap: 1rem;
+                margin-bottom: 1.25rem;
+            }
+            .action-panel {
+                padding: 1.15rem;
+            }
+            .card {
+                padding: 1.15rem;
+            }
+            .chart-container {
+                height: min(58vh, 360px);
+                min-height: 260px;
+            }
+            .stats-overview {
+                gap: 0.65rem;
+                margin-bottom: 1.25rem;
+            }
+            .stat-item {
+                padding: 0.75rem 0.5rem;
+            }
+            .stat-value {
+                font-size: 1.65rem;
+            }
+            .footer {
+                padding: 1.5rem 1rem;
+                margin-top: 2.5rem;
+            }
+            .submit-link {
+                min-height: 44px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                box-sizing: border-box;
+            }
+            .search-button {
+                min-height: 44px;
+            }
+            .card-stats {
+                grid-template-columns: 1fr;
+            }
         }
         
         .card-search-section {
@@ -582,14 +666,14 @@
             
             // Top performing cards
             var topCards = data.card_performances.filter(function(c) { return c.performance_delta > 0; }).slice(0, 5);
-            var topHtml = '<table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
+            var topHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
             for (var i = 0; i < topCards.length; i++) {
                 var c = topCards[i];
                 topHtml += '<tr><td>' + CW.cardNameHtml(c.name, c.image_url) + '</td><td>' + c.appearances + '</td>' +
                     '<td>' + (c.win_rate * 100).toFixed(1) + '%</td>' +
                     '<td class="positive">+' + (c.performance_delta * 100).toFixed(1) + '%</td></tr>';
             }
-            topHtml += '</tbody></table>';
+            topHtml += '</tbody></table></div>';
             document.getElementById('top-cards').innerHTML = topHtml;
             
             // Underperforming cards
@@ -598,14 +682,14 @@
                 .sort(function(a, b) { return a.performance_delta - b.performance_delta; })
                 .slice(0, 5);
             if (bottomCards.length > 0) {
-                var botHtml = '<table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
+                var botHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
                 for (var bi = 0; bi < bottomCards.length; bi++) {
                     var bc = bottomCards[bi];
                     botHtml += '<tr><td>' + CW.cardNameHtml(bc.name, bc.image_url) + '</td><td>' + bc.appearances + '</td>' +
                         '<td>' + (bc.win_rate * 100).toFixed(1) + '%</td>' +
                         '<td class="negative">' + (bc.performance_delta * 100).toFixed(1) + '%</td></tr>';
                 }
-                botHtml += '</tbody></table>';
+                botHtml += '</tbody></table></div>';
                 document.getElementById('bottom-cards').innerHTML = botHtml;
             } else {
                 document.getElementById('bottom-cards').innerHTML = '<p>No significantly underperforming cards found.</p>';
@@ -614,7 +698,7 @@
             // Synergies
             var syns = data.synergies.slice(0, 8);
             if (syns.length > 0) {
-                var synHtml = '<table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Together</th><th>Bonus</th></tr></thead><tbody>';
+                var synHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Together</th><th>Bonus</th></tr></thead><tbody>';
                 for (var si = 0; si < syns.length; si++) {
                     var s = syns[si];
                     var bonusClass = s.synergy_bonus >= 0 ? 'positive' : 'negative';
@@ -623,7 +707,7 @@
                         '<td>' + (s.together_win_rate * 100).toFixed(1) + '%</td>' +
                         '<td class="' + bonusClass + '">' + bonusSign + (s.synergy_bonus * 100).toFixed(1) + '%</td></tr>';
                 }
-                synHtml += '</tbody></table>';
+                synHtml += '</tbody></table></div>';
                 document.getElementById('synergies').innerHTML = synHtml;
             } else {
                 document.getElementById('synergies').innerHTML = '<p>Not enough data for synergy analysis.</p>';
@@ -652,12 +736,16 @@
                         return;
                     }
                     var html = '<table class="table"><thead><tr>' +
-                        '<th>Pilot</th><th class="trophy-mono">W</th><th class="trophy-mono">L</th><th class="trophy-mono">D</th>' +
+                        '<th>Photo</th><th>Pilot</th><th class="trophy-mono">W</th><th class="trophy-mono">L</th><th class="trophy-mono">D</th>' +
                         '<th class="trophy-mono">Win%</th><th class="trophy-mono">Cards</th><th>Uploaded</th></tr></thead><tbody>';
                     for (var i = 0; i < decks.length; i++) {
                         var d = decks[i];
                         var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
-                        html += '<tr><td>' + (d.pilot_name || '') + '</td>' +
+                        var thumbSrc = d.deck_thumb_url || d.deck_photo_url;
+                        var photoTd = thumbSrc
+                            ? '<td style="width:56px;"><img src="' + String(thumbSrc).replace(/"/g, '&quot;') + '" alt="" loading="lazy" decoding="async" style="width:48px;height:48px;object-fit:cover;border-radius:6px;background:#eee;" /></td>'
+                            : '<td style="width:56px;">—</td>';
+                        html += '<tr>' + photoTd + '<td>' + (d.pilot_name || '') + '</td>' +
                             '<td class="trophy-mono">' + (d.match_wins != null ? d.match_wins : '') + '</td>' +
                             '<td class="trophy-mono">' + (d.match_losses != null ? d.match_losses : '') + '</td>' +
                             '<td class="trophy-mono">' + (d.match_draws != null ? d.match_draws : 0) + '</td>' +
@@ -683,9 +771,19 @@
                             if (data.error) { console.error('Chart error:', data.error); return; }
                             var chartData = JSON.parse(data.chart);
                             var containerId = chartType === 'performance_scatter' ? 'performance-chart' : 'color-chart';
+                            chartData.layout = chartData.layout || {};
+                            chartData.layout.autosize = true;
+                            delete chartData.layout.width;
+                            delete chartData.layout.height;
+                            var plotEl = document.getElementById(containerId);
                             Plotly.newPlot(containerId, chartData.data, chartData.layout, {
                                 responsive: true,
                                 displayModeBar: false
+                            }).then(function() {
+                                Plotly.Plots.resize(plotEl);
+                                requestAnimationFrame(function() {
+                                    Plotly.Plots.resize(plotEl);
+                                });
                             });
                         })
                         .catch(function(err) { console.error('Failed to load chart:', chartType, err); });
@@ -779,7 +877,20 @@
                     if (e.key === 'Enter') { searchCard(); }
                 });
             }
+
+            var resizeDashCharts = function() {
+                ['performance-chart', 'color-chart'].forEach(function(cid) {
+                    var el = document.getElementById(cid);
+                    if (el && el.querySelector('.js-plotly-plot')) {
+                        Plotly.Plots.resize(el);
+                    }
+                });
+            };
+            window.addEventListener('resize', resizeDashCharts);
+            window.addEventListener('orientationchange', resizeDashCharts);
         });
     </script>
+    <!-- Buy me a coffee widget, removed until everything is set up/there are real costs -->
+    <!-- <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="5erpent" data-description="Support me on Buy me a coffee!" data-color="#667eea" data-position="Right" data-x_margin="18" data-y_margin="18"></script> -->
 </body>
 </html>
