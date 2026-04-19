@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Detailed Analysis - CubeWizard</title>
-    <link rel="icon" type="image/png" href="CubeWizard.png">
+    <link rel="icon" type="image/png" href="/CubeWizard.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="card-tooltip.css">
+    <link rel="stylesheet" href="/site-header.css">
+    <link rel="stylesheet" href="/card-tooltip.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         * {
@@ -25,54 +26,6 @@
             padding-left: max(0px, env(safe-area-inset-left));
             padding-right: max(0px, env(safe-area-inset-right));
             padding-bottom: env(safe-area-inset-bottom);
-        }
-        
-        .header {
-            background: #faf8f6;
-            border-bottom: 1px solid #e8e0dc;
-            padding: 1rem 1.5rem;
-        }
-        
-        .header-inner {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .header-brand {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            justify-content: flex-start;
-        }
-        
-        .header-logo {
-            width: 56px;
-            height: 56px;
-            object-fit: contain;
-            flex-shrink: 0;
-        }
-        
-        .header-wordmark {
-            font-family: "Brookshire", serif;
-            color: #523f38;
-            font-size: clamp(1.75rem, 4vw, 2.25rem);
-            line-height: 1.1;
-            font-weight: 400;
-        }
-        
-        .breadcrumb {
-            background: white;
-            padding: 1rem 1rem;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .breadcrumb a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        .breadcrumb a:hover {
-            text-decoration: underline;
         }
         
         .container {
@@ -207,42 +160,9 @@
             margin: 2rem 0;
         }
         
-        .footer {
-            background: white;
-            border-top: 1px solid #eee;
-            padding: 2rem;
-            margin-top: 4rem;
-            text-align: center;
-            color: #666;
-        }
-        
-        .footer p {
-            margin-bottom: 0.5rem;
-        }
-        
-        .footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        .footer a:hover {
-            text-decoration: underline;
-        }
-
         @media (max-width: 768px) {
-            .header {
-                padding: 0.75rem 1rem;
-            }
-            .header-logo {
-                width: 48px;
-                height: 48px;
-            }
             .container {
                 margin: 1rem auto;
-            }
-            .footer {
-                padding: 1.5rem 1rem;
-                margin-top: 2.5rem;
             }
         }
     </style>
@@ -250,15 +170,35 @@
 <body>
     <div class="header">
         <div class="header-inner">
-            <div class="header-brand">
-                <img src="CubeWizard.png" alt="" class="header-logo" width="56" height="56">
-                <span class="header-wordmark">CubeWizard</span>
+            <div class="header-brand-stack">
+                <a href="/" class="header-brand-link" title="CubeWizard home">
+                    <img src="/CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+                    <div class="header-brand-text">
+                        <span class="header-wordmark">CubeWizard</span>
+                        <span class="header-subtitle">Analysis</span>
+                    </div>
+                </a>
+                <div class="header-cube-wrap">
+                    <label class="visually-hidden" for="cube-select">Cube</label>
+                    <select id="cube-select" aria-label="Select cube">
+                        <option value="">Choose a cube...</option>
+                    </select>
+                </div>
             </div>
+            <nav class="header-nav" aria-label="Primary">
+                <div class="nav-dropdown">
+                    <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
+                    <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
+                        <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck view</a></li>
+                        <li role="none"><a role="menuitem" href="#" data-analysis-type="performance" class="js-analysis-link">Performance vs popularity</a></li>
+                        <li role="none"><a role="menuitem" href="#" data-analysis-type="color" class="js-analysis-link">Color performance</a></li>
+                        <li role="none"><a role="menuitem" href="#" data-analysis-type="synergies" class="js-analysis-link">Card synergies</a></li>
+                    </ul>
+                </div>
+                <a href="/submit">Submit deck</a>
+                <a href="/addcube">Add cube</a>
+            </nav>
         </div>
-    </div>
-    
-    <div class="breadcrumb">
-        <a href="index.html">&larr; Back to Dashboard</a>
     </div>
     
     <div class="container">
@@ -283,19 +223,57 @@
     </div>
     
     <div class="footer">
-        <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p>Questions or feedback? Contact <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p class="footer-version" id="cw-footer-version-line" hidden><span id="cw-footer-version"></span></p>
     </div>
-    
-    <script src="card-tooltip.js"></script>
+
+    <script src="/site-footer.js"></script>
+    <script src="/cw-paths.js"></script>
+    <script src="/site-nav.js"></script>
+    <script src="/card-tooltip.js"></script>
     <script>
-        // Read params from URL
         var params = new URLSearchParams(window.location.search);
-        var cubeId = params.get('cube') || '';
-        var analysisType = params.get('type') || '';
-        
-        // Save cube selection to localStorage for cross-page persistence
+        var parsedPath = window.CWPaths ? CWPaths.parsePathname(window.location.pathname) : {};
+        var cubeId = '';
+        try {
+            if (window.CWPaths && CWPaths.preferredCubeId) {
+                cubeId = CWPaths.preferredCubeId();
+            } else {
+                cubeId = parsedPath.cubeId || params.get('cube') || '';
+                if (!cubeId) cubeId = localStorage.getItem('selectedCubeId') || '';
+            }
+        } catch (e) {
+            cubeId = '';
+        }
+        var analysisType = parsedPath.analysisType || params.get('type') || '';
+        if (cubeId && !analysisType) {
+            analysisType = 'performance';
+        }
+        if (cubeId && analysisType && window.CWPaths && CWPaths.analysisPathMatches) {
+            try {
+                if (!CWPaths.analysisPathMatches(cubeId, analysisType)) {
+                    history.replaceState({}, '', CWPaths.analysis(cubeId, analysisType));
+                }
+            } catch (ePretty) {}
+        }
         if (cubeId) {
-            localStorage.setItem('selectedCubeId', cubeId);
+            try {
+                localStorage.setItem('selectedCubeId', cubeId);
+            } catch (e2) {}
+        }
+
+        function resetAnalysisViewForReload() {
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('error').innerHTML = '';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('chart-section').style.display = 'none';
+            document.getElementById('data-section').style.display = 'none';
+            document.getElementById('detailed-data').innerHTML = '';
+            var dc = document.getElementById('detailed-chart');
+            if (dc && window.Plotly && dc.querySelector('.js-plotly-plot')) {
+                Plotly.purge('detailed-chart');
+            }
+            if (dc) dc.innerHTML = '';
         }
         
         var ANALYSIS_INFO = {
@@ -318,10 +296,11 @@
         
         function loadDetailedAnalysis() {
             if (!cubeId || !analysisType) {
-                showError('Missing cube or analysis type parameter.');
+                showError('Missing cube or analysis type. Select a cube in the header or open this page from the dashboard.');
                 return;
             }
-            
+            resetAnalysisViewForReload();
+
             var info = ANALYSIS_INFO[analysisType];
             if (!info) {
                 showError('Unknown analysis type: ' + analysisType);
@@ -490,15 +469,76 @@
         }
         
         function showError(message) {
+            document.getElementById('chart-section').style.display = 'none';
+            document.getElementById('data-section').style.display = 'none';
             document.getElementById('error').innerHTML = message;
             document.getElementById('error').style.display = 'block';
             document.getElementById('loading').style.display = 'none';
         }
-        
+
         document.addEventListener('DOMContentLoaded', function() {
-            loadDetailedAnalysis();
+            fetch('/api/cubes')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var loc = window.CWPaths ? CWPaths.parsePathname(window.location.pathname) : {};
+                    if (loc.cubeId) {
+                        cubeId = loc.cubeId;
+                    }
+                    if (loc.analysisType) {
+                        analysisType = loc.analysisType;
+                    }
+                    if (cubeId && !analysisType) {
+                        analysisType = 'performance';
+                    }
+                    if (cubeId) {
+                        try {
+                            localStorage.setItem('selectedCubeId', cubeId);
+                        } catch (eSync) {}
+                    }
+                    var select = document.getElementById('cube-select');
+                    var cubes = data.cubes || [];
+                    for (var i = 0; i < cubes.length; i++) {
+                        var opt = document.createElement('option');
+                        opt.value = cubes[i].cube_id;
+                        opt.textContent = cubes[i].cube_name + ' (' + cubes[i].total_decks + ' decks)';
+                        select.appendChild(opt);
+                    }
+                    if (cubeId && window.CWPaths && CWPaths.setCubeSelectValue(select, cubeId)) {
+                        /* synced */
+                    }
+                    select.addEventListener('change', function() {
+                        var v = select.value;
+                        if (!v) return;
+                        cubeId = v;
+                        try {
+                            localStorage.setItem('selectedCubeId', cubeId);
+                        } catch (e3) {}
+                        try {
+                            if (window.CWPaths && analysisType) {
+                                history.replaceState({}, '', CWPaths.analysis(cubeId, analysisType));
+                            }
+                        } catch (e4) {}
+                        if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
+                        loadDetailedAnalysis();
+                    });
+                    loadDetailedAnalysis();
+                })
+                .catch(function() {
+                    loadDetailedAnalysis();
+                });
             window.addEventListener('resize', relayoutDetailedChartPlot);
             window.addEventListener('orientationchange', relayoutDetailedChartPlot);
+
+            window.addEventListener('pageshow', function(ev) {
+                if (!ev.persisted) return;
+                if (!window.CWPaths || !CWPaths.preferredCubeId || !CWPaths.setCubeSelectValue) return;
+                var id = CWPaths.preferredCubeId();
+                var sel = document.getElementById('cube-select');
+                if (!sel || !id || !CWPaths.setCubeSelectValue(sel, id)) return;
+                cubeId = id;
+                if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
+                loadDetailedAnalysis();
+            });
         });
     </script>
 </body>

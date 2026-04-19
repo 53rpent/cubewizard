@@ -10,6 +10,10 @@ export default {
     const url = new URL(request.url);
 
     // --- Analytics API endpoints (D1) ---
+    if (url.pathname === "/api/version" && request.method === "GET") {
+      return handleGetVersion(env);
+    }
+
     if (url.pathname === "/api/cubes" && request.method === "GET") {
       return handleGetCubes(env);
     }
@@ -67,6 +71,19 @@ export default {
       return handleAddCube(request, env);
     }
 
+    // Pretty URLs → static HTML (see docs/cw-paths.js)
+    const assetPath = mapPrettyUrlToAsset(url.pathname);
+    if (assetPath) {
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname = assetPath;
+      const assetReq = new Request(assetUrl.toString(), request);
+      try {
+        return await env.ASSETS.fetch(assetReq);
+      } catch {
+        return jsonResponse({ error: "Not found" }, 404);
+      }
+    }
+
     // Serve static assets for all other paths
     try {
       return await env.ASSETS.fetch(request);
@@ -75,6 +92,62 @@ export default {
     }
   },
 };
+
+/** @returns {string|null} asset path under docs/, or null to fall through */
+function mapPrettyUrlToAsset(pathname) {
+  if (/\.[a-z0-9]{1,6}$/i.test(pathname)) {
+    return null;
+  }
+  const p = pathname.replace(/\/+$/, "") || "/";
+  if (p === "/submit") return "/submit.html";
+  if (p === "/addcube" || p === "/add_cube") return "/add_cube.html";
+  if (p === "/" || p === "") return "/index.html";
+
+  const RESERVED = new Set(["submit", "addcube", "add_cube", "api", "decks", "analysis"]);
+
+  const one = p.match(/^\/([^/]+)$/);
+  if (one) {
+    const seg = one[1];
+    if (!RESERVED.has(seg.toLowerCase())) return "/index.html";
+    return null;
+  }
+
+  const decks = p.match(/^\/([^/]+)\/decks$/);
+  if (decks && !RESERVED.has(decks[1].toLowerCase())) return "/decks.html";
+
+  const an = p.match(/^\/([^/]+)\/analysis\/(performance|color|synergies)$/);
+  if (an && !RESERVED.has(an[1].toLowerCase())) return "/analysis.html";
+
+  return null;
+}
+
+/** CubeCobra ids that conflict with CubeWizard URL segments (must match docs/cw-paths.js RESERVED_FIRST). */
+const RESERVED_CUBE_IDS = new Set([
+  "submit",
+  "addcube",
+  "add_cube",
+  "api",
+  "decks",
+  "analysis",
+]);
+
+function isReservedCubeId(cubeId) {
+  if (!cubeId || typeof cubeId !== "string") return false;
+  return RESERVED_CUBE_IDS.has(cubeId.trim().toLowerCase());
+}
+
+/** Deploy metadata for footer (`CWW_DEPLOY_VERSION` / `CWW_ENV` in wrangler). */
+function handleGetVersion(env) {
+  var envLabel = typeof env.CWW_ENV === "string" ? env.CWW_ENV.trim() : "";
+  if (!envLabel) envLabel = "local";
+  var verRaw = env.CWW_DEPLOY_VERSION;
+  var version =
+    typeof verRaw === "string" ? verRaw.trim() : verRaw != null ? String(verRaw).trim() : "";
+  if (!version) {
+    version = envLabel === "local" ? "dev" : "unknown";
+  }
+  return jsonResponse({ version: version, environment: envLabel });
+}
 
 // ============================================================
 //  Analytics API handlers
@@ -1276,6 +1349,16 @@ async function handleValidateCube(url, env) {
   if (!cubeId) {
     return jsonResponse({ valid: false, error: "cube_id parameter is required" }, 400);
   }
+  if (isReservedCubeId(cubeId)) {
+    return jsonResponse(
+      {
+        valid: false,
+        error:
+          "This CubeCobra id matches a CubeWizard URL path and cannot be used. Pick another cube or contact support.",
+      },
+      400
+    );
+  }
 
   try {
     var apiUrl = "https://cubecobra.com/cube/api/cubeJSON/" + encodeURIComponent(cubeId);
@@ -1320,8 +1403,13 @@ async function handleAddCube(request, env) {
     var description = body.description?.trim() || "";
 
     var errors = [];
-    if (!cubeId) errors.push("cube_id is required");
-    if (!cubeName) errors.push("cube_name is required");
+    if (!cubeId) errors.push("Cube ID is required");
+    if (!cubeName) errors.push("Cube Name is required");
+    if (cubeId && isReservedCubeId(cubeId)) {
+      errors.push(
+        "This CubeCobra ID cannot be used inside CubeWizard. Please change the the ID in CubeCobra and try again."
+      );
+    }
     if (errors.length > 0) {
       return jsonResponse({ success: false, errors: errors }, 400);
     }

@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CubeWizard Dashboard</title>
-    <link rel="icon" type="image/png" href="CubeWizard.png">
+    <link rel="icon" type="image/png" href="/CubeWizard.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="card-tooltip.css">
+    <link rel="stylesheet" href="/site-header.css">
+    <link rel="stylesheet" href="/card-tooltip.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         * {
@@ -26,131 +27,62 @@
             padding-bottom: env(safe-area-inset-bottom);
         }
         
-        .header {
-            background: #faf8f6;
-            border-bottom: 1px solid #e8e0dc;
-            padding: 1rem 1.5rem;
-        }
-        
-        .header-inner {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .header-brand {
+        .card-heading-row {
             display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            justify-content: flex-start;
+            flex-wrap: wrap;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 0.5rem 1rem;
+            margin-bottom: 0.75rem;
         }
-        
-        .header-logo {
-            width: 56px;
-            height: 56px;
-            object-fit: contain;
-            flex-shrink: 0;
+
+        .card-heading-row h3 {
+            margin-bottom: 0;
         }
-        
-        .header-brand-text {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.1rem;
-        }
-        
-        .header-wordmark {
-            font-family: "Brookshire", serif;
-            color: #523f38;
-            font-size: clamp(1.75rem, 4vw, 2.25rem);
-            line-height: 1.1;
-            font-weight: 400;
-        }
-        
-        .header-subtitle {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 0.9rem;
-            font-weight: 500;
-            color: #7a6a62;
-            margin: 0;
-        }
-        
-        .clickable-title {
-            cursor: pointer;
-            color: #667eea;
+
+        .card-action-link {
+            display: inline-block;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #fff;
+            background: #667eea;
+            border-radius: 4px;
             text-decoration: none;
-            transition: color 0.2s ease;
+            white-space: nowrap;
+            transition: background 0.2s ease;
         }
-        
-        .clickable-title:hover {
-            color: #764ba2;
-            text-decoration: underline;
+
+        .card-action-link:hover {
+            background: #5a6fd8;
+            color: #fff;
         }
-        
+
+        .card-action-link.is-disabled {
+            opacity: 0.45;
+            pointer-events: none;
+            cursor: not-allowed;
+        }
+
+        .empty-dashboard-hint {
+            margin-bottom: 1.5rem;
+            padding: 1rem 1.25rem;
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            color: #555;
+            font-size: 0.95rem;
+            display: none;
+        }
+
+        .empty-dashboard-hint.is-visible {
+            display: block;
+        }
+
         .container {
             max-width: 1200px;
             margin: 2rem auto;
             padding: 0 1rem;
-        }
-        
-        .action-bar {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        
-        .action-bar .full-width {
-            grid-column: 1 / -1;
-        }
-        
-        @media (max-width: 768px) {
-            .action-bar {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .action-panel {
-            background: white;
-            border-radius: 8px;
-            padding: 1.5rem;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .action-panel h3 {
-            margin-bottom: 0.75rem;
-            color: #667eea;
-            font-size: 1.1rem;
-        }
-        
-        .action-panel p {
-            font-size: 0.875rem;
-            color: #666;
-            margin-bottom: 0.75rem;
-        }
-        
-        .action-panel select {
-            width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            background: white;
-        }
-        
-        .submit-link {
-            display: inline-block;
-            background: #28a745;
-            color: white;
-            padding: 0.75rem 1.5rem;
-            text-decoration: none;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 1rem;
-            transition: background 0.2s ease;
-        }
-        
-        .submit-link:hover {
-            background: #218838;
         }
         
         .dashboard-grid {
@@ -179,8 +111,16 @@
         
         .card h3 {
             margin-bottom: 1rem;
-            color: #667eea;
+            color: #523f38;
             font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .card-with-action .card-heading-row + .chart-container,
+        .card-with-action .card-heading-row + .table-scroll,
+        .card-with-action .card-heading-row + p,
+        .card-with-action .card-heading-row + .trophy-case-wrap {
+            margin-top: 0;
         }
         
         .stats-overview {
@@ -289,23 +229,9 @@
                 grid-template-columns: 1fr;
                 gap: 1.25rem;
             }
-            .header {
-                padding: 0.75rem 1rem;
-            }
-            .header-logo {
-                width: 48px;
-                height: 48px;
-            }
             .container {
                 margin: 1rem auto;
                 padding: 0 0.85rem;
-            }
-            .action-bar {
-                gap: 1rem;
-                margin-bottom: 1.25rem;
-            }
-            .action-panel {
-                padding: 1.15rem;
             }
             .card {
                 padding: 1.15rem;
@@ -324,17 +250,6 @@
             .stat-value {
                 font-size: 1.65rem;
             }
-            .footer {
-                padding: 1.5rem 1rem;
-                margin-top: 2.5rem;
-            }
-            .submit-link {
-                min-height: 44px;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                box-sizing: border-box;
-            }
             .search-button {
                 min-height: 44px;
             }
@@ -346,6 +261,11 @@
         .card-search-section {
             padding: 1rem 0;
         }
+
+        .card-search-field-wrap {
+            position: relative;
+            margin-bottom: 0.75rem;
+        }
         
         .search-input {
             width: 100%;
@@ -353,13 +273,52 @@
             border: 2px solid #e9ecef;
             border-radius: 4px;
             font-size: 1rem;
-            margin-bottom: 0.75rem;
             transition: border-color 0.2s ease;
         }
         
         .search-input:focus {
             outline: none;
             border-color: #667eea;
+        }
+
+        .card-search-suggestions {
+            display: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 100%;
+            margin-top: 2px;
+            max-height: 240px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+            z-index: 50;
+            list-style: none;
+        }
+
+        .card-search-suggestions.is-open {
+            display: block;
+        }
+
+        .card-search-suggestions li button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border: none;
+            background: transparent;
+            font: inherit;
+            font-size: 0.95rem;
+            cursor: pointer;
+            color: #333;
+        }
+
+        .card-search-suggestions li button:hover,
+        .card-search-suggestions li button:focus {
+            background: #f0f0ff;
+            outline: none;
         }
         
         .search-button {
@@ -427,33 +386,6 @@
             border: 1px solid #f5c6cb;
         }
         
-        .footer {
-            background: white;
-            border-top: 1px solid #eee;
-            padding: 2rem;
-            margin-top: 4rem;
-            text-align: center;
-            color: #666;
-        }
-        
-        .footer p {
-            margin-bottom: 0.5rem;
-        }
-        
-        .footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        
-        .footer .timestamp {
-            font-size: 0.875rem;
-            color: #999;
-        }
-        
         .warning-banner {
             background: #fff3cd;
             border: 1px solid #ffeaa7;
@@ -475,91 +407,111 @@
             line-height: 1.4;
         }
         
-        .warning-icon {
-            font-size: 1.2rem;
-            margin-right: 0.5rem;
-        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="header-inner">
-            <div class="header-brand">
-                <img src="CubeWizard.png" alt="" class="header-logo" width="56" height="56">
-                <div class="header-brand-text">
-                    <span class="header-wordmark">CubeWizard</span>
-                    <span class="header-subtitle">Dashboard</span>
+            <div class="header-brand-stack">
+                <a href="/" class="header-brand-link" title="CubeWizard home">
+                    <img src="/CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+                    <div class="header-brand-text">
+                        <span class="header-wordmark">CubeWizard</span>
+                        <span class="header-subtitle">Dashboard</span>
+                    </div>
+                </a>
+                <div class="header-cube-wrap">
+                    <label class="visually-hidden" for="cube-select">Cube</label>
+                    <select id="cube-select" aria-label="Select cube">
+                        <option value="">Choose a cube...</option>
+                    </select>
                 </div>
             </div>
+            <nav class="header-nav" aria-label="Primary">
+                <div class="nav-dropdown">
+                    <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
+                    <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
+                        <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck view</a></li>
+                        <li role="none"><a role="menuitem" href="#" data-analysis-type="performance" class="js-analysis-link">Performance vs popularity</a></li>
+                        <li role="none"><a role="menuitem" href="#" data-analysis-type="color" class="js-analysis-link">Color performance</a></li>
+                        <li role="none"><a role="menuitem" href="#" data-analysis-type="synergies" class="js-analysis-link">Card synergies</a></li>
+                    </ul>
+                </div>
+                <a href="/submit">Submit deck</a>
+                <a href="/addcube">Add cube</a>
+            </nav>
         </div>
     </div>
     
     <div class="container">
-        <div class="action-bar">
-            <div class="action-panel full-width">
-                <h3>📊 View Analytics</h3>
-                <p>Select a cube to explore its performance data, card stats, and synergies.</p>
-                <select id="cube-select" onchange="loadDashboard()">
-                    <option value="">Choose a cube...</option>
-                </select>
-            </div>
-            <div class="action-panel">
-                <h3>📝 Submit a Deck</h3>
-                <p>Played a draft? Upload your decklist photo and match record to contribute data.</p>
-                <a href="submit.html" class="submit-link">Submit New Deck →</a>
-            </div>
-            <div class="action-panel">
-                <h3>🧊 Add a Cube</h3>
-                <p>Have a CubeCobra cube you want to track? Register it here to start collecting data.</p>
-                <a href="add_cube.html" class="submit-link">Add New Cube →</a>
-            </div>
-        </div>
+        <p id="empty-dashboard-hint" class="empty-dashboard-hint is-visible" role="status">Select a cube in the header to load analytics.</p>
         
         <div id="dashboard-content" style="display: none;">
             <div id="warning-banner" class="warning-banner">
-                <h4><span class="warning-icon">⚠️</span>Small Dataset Warning</h4>
+                <h4>Small dataset</h4>
                 <p>This cube has fewer than 30 decks. Statistical insights may be less reliable. Consider collecting more deck data for more accurate analysis.</p>
             </div>
             
             <div class="stats-overview" id="stats-overview"></div>
             
             <div class="dashboard-grid">
-                <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('performance')">Performance vs Popularity</a></h3>
+                <div class="card card-with-action">
+                    <div class="card-heading-row">
+                        <h3>Performance vs popularity</h3>
+                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="performance">Open detailed analysis</a>
+                    </div>
                     <div id="performance-chart" class="chart-container"></div>
                 </div>
                 
-                <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('color')">Color Performance</a></h3>
+                <div class="card card-with-action">
+                    <div class="card-heading-row">
+                        <h3>Color performance</h3>
+                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="color">Open detailed analysis</a>
+                    </div>
                     <div id="color-chart" class="chart-container"></div>
                 </div>
                 
-                <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('performance')">Top Performing Cards</a></h3>
+                <div class="card card-with-action">
+                    <div class="card-heading-row">
+                        <h3>Top performing cards</h3>
+                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="performance">Open detailed analysis</a>
+                    </div>
                     <div id="top-cards"></div>
                 </div>
                 
-                <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('performance')">Underperforming Cards</a></h3>
+                <div class="card card-with-action">
+                    <div class="card-heading-row">
+                        <h3>Underperforming cards</h3>
+                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="performance">Open detailed analysis</a>
+                    </div>
                     <div id="bottom-cards"></div>
                 </div>
                 
-                <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDetailedAnalysis('synergies')">Best Synergies</a></h3>
+                <div class="card card-with-action">
+                    <div class="card-heading-row">
+                        <h3>Best synergies</h3>
+                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="synergies">Open detailed analysis</a>
+                    </div>
                     <div id="synergies"></div>
                 </div>
                 
-                <div class="card">
-                    <h3><a href="#" class="clickable-title" onclick="openDeckView(); return false;">Trophy Case</a></h3>
-                    <p style="color:#666; font-size:0.9rem; margin:0.25rem 0 0 0;">Five most recent decks with 0 losses for this cube.</p>
+                <div class="card card-with-action">
+                    <div class="card-heading-row">
+                        <h3>Trophy case</h3>
+                        <a href="#" class="card-action-link js-decks-link">View decks</a>
+                    </div>
+                    <p style="color:#666; font-size:0.9rem; margin:0.25rem 0 0.75rem 0;">Five most recent decks with no losses for this cube.</p>
                     <div id="trophy-case" class="trophy-case-wrap"></div>
                 </div>
                 
                 <div class="card card-span-2">
-                    <h3>Card Search</h3>
+                    <h3>Card search</h3>
                     <div class="card-search-section">
-                        <input type="text" id="search-input" placeholder="Type to search by card name…" class="search-input" autocomplete="off" spellcheck="false">
-                        <button onclick="searchCard()" class="search-button">Search</button>
+                        <div class="card-search-field-wrap">
+                            <input type="text" id="search-input" class="search-input" placeholder="Type a card name to see suggestions" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-controls="card-search-suggestions" aria-expanded="false" role="combobox">
+                            <ul id="card-search-suggestions" class="card-search-suggestions" role="listbox" hidden></ul>
+                        </div>
+                        <button type="button" id="search-button" class="search-button">Search</button>
                         <div id="card-search-results"></div>
                     </div>
                 </div>
@@ -575,14 +527,36 @@
     </div>
     
     <div class="footer">
-        <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p>Questions or feedback? Contact <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p class="footer-version" id="cw-footer-version-line" hidden><span id="cw-footer-version"></span></p>
     </div>
-    
-    <script src="card-tooltip.js"></script>
+
+    <script src="/site-footer.js"></script>
+    <script src="/cw-paths.js"></script>
+    <script src="/card-tooltip.js"></script>
     <script>
         var currentCubeId = '';
         var currentCubeData = null;
         
+        function bindCubeSelectChangeOnce() {
+            var select = document.getElementById('cube-select');
+            if (!select || select.dataset.cwCubeChangeBound) return;
+            select.dataset.cwCubeChangeBound = '1';
+            select.addEventListener('change', function() {
+                if (!select.value) {
+                    try {
+                        localStorage.removeItem('selectedCubeId');
+                    } catch (eRm) {}
+                    try {
+                        if (window.location.pathname !== '/' && window.location.pathname !== '') {
+                            history.replaceState({}, '', '/');
+                        }
+                    } catch (eHist0) {}
+                }
+                loadDashboard();
+            });
+        }
+
         // Fetch cube list from API on page load
         function loadCubeList() {
             fetch('/api/cubes')
@@ -596,10 +570,22 @@
                         opt.textContent = cubes[i].cube_name + ' (' + cubes[i].total_decks + ' decks)';
                         select.appendChild(opt);
                     }
-                    // Restore last selected cube from localStorage
-                    var saved = localStorage.getItem('selectedCubeId');
-                    if (saved && select.querySelector('option[value="' + saved + '"]')) {
-                        select.value = saved;
+                    var pick = '';
+                    try {
+                        if (window.CWPaths && CWPaths.preferredCubeId) {
+                            pick = CWPaths.preferredCubeId();
+                        } else {
+                            pick = localStorage.getItem('selectedCubeId') || '';
+                        }
+                    } catch (ePath) {
+                        pick = '';
+                    }
+                    if (pick) {
+                        try {
+                            localStorage.setItem('selectedCubeId', pick);
+                        } catch (eLs) {}
+                    }
+                    if (pick && window.CWPaths && CWPaths.setCubeSelectValue(select, pick)) {
                         loadDashboard();
                     }
                 })
@@ -614,12 +600,31 @@
             
             if (!cubeId) {
                 document.getElementById('dashboard-content').style.display = 'none';
-                localStorage.removeItem('selectedCubeId');
+                var hint = document.getElementById('empty-dashboard-hint');
+                if (hint) hint.classList.add('is-visible');
+                currentCubeId = '';
+                currentCubeData = null;
+                updateCubeDependentLinks();
+                clearCardSearchUi();
+                hideLoading();
+                document.getElementById('error').style.display = 'none';
                 return;
             }
             
             currentCubeId = cubeId;
-            localStorage.setItem('selectedCubeId', cubeId);
+            try {
+                localStorage.setItem('selectedCubeId', cubeId);
+            } catch (eLs) {}
+            try {
+                if (window.CWPaths) {
+                    var dashPath = CWPaths.dashboard(cubeId);
+                    if (window.location.pathname !== dashPath) {
+                        history.replaceState({}, '', dashPath);
+                    }
+                }
+            } catch (eHist) {}
+            updateCubeDependentLinks();
+            clearCardSearchUi();
             showLoading();
             
             fetch('/api/dashboard/' + cubeId)
@@ -631,8 +636,8 @@
                     }
                     
                     currentCubeData = data;
+                    updateCubeDependentLinks();
                     
-                    // Show/hide warning banner for small datasets
                     var warningBanner = document.getElementById('warning-banner');
                     if (data.cube_info.total_decks < 30) {
                         warningBanner.style.display = 'block';
@@ -644,8 +649,6 @@
                     loadCharts();
                     loadTrophyCase();
                     hideLoading();
-                    var si = document.getElementById('search-input');
-                    if (si && si.value.trim()) searchCard();
                 })
                 .catch(function(err) {
                     showError('Failed to load dashboard data: ' + err.message);
@@ -716,6 +719,8 @@
             }
             
             document.getElementById('dashboard-content').style.display = 'block';
+            var hintEl = document.getElementById('empty-dashboard-hint');
+            if (hintEl) hintEl.classList.remove('is-visible');
         }
         
         function fmtUploaded(value) {
@@ -728,7 +733,7 @@
         function loadTrophyCase() {
             var el = document.getElementById('trophy-case');
             if (!el || !currentCubeId) return;
-            el.innerHTML = '<p style="color:#888;font-size:0.875rem;">Loading…</p>';
+            el.innerHTML = '<p style="color:#888;font-size:0.875rem;">Loading...</p>';
             fetch('/api/trophy-decks/' + encodeURIComponent(currentCubeId))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
@@ -797,6 +802,8 @@
             document.getElementById('loading').style.display = 'block';
             document.getElementById('dashboard-content').style.display = 'none';
             document.getElementById('error').style.display = 'none';
+            var hint = document.getElementById('empty-dashboard-hint');
+            if (hint) hint.classList.remove('is-visible');
         }
         
         function hideLoading() {
@@ -809,92 +816,255 @@
             document.getElementById('loading').style.display = 'none';
             document.getElementById('dashboard-content').style.display = 'none';
         }
-        
-        function openDetailedAnalysis(analysisType) {
-            if (currentCubeId) {
-                window.location.href = 'analysis.html?cube=' + encodeURIComponent(currentCubeId) + '&type=' + encodeURIComponent(analysisType);
+
+        function updateCubeDependentLinks() {
+            var navDash = document.getElementById('nav-dashboard-trigger');
+            var brand = document.querySelector('.header-brand-link');
+            if (window.CWPaths) {
+                if (navDash) navDash.href = currentCubeId ? CWPaths.dashboard(currentCubeId) : CWPaths.home();
+                if (brand) brand.href = currentCubeId ? CWPaths.dashboard(currentCubeId) : CWPaths.home();
+            }
+            var analysisLinks = document.querySelectorAll('a.js-analysis-link[data-analysis-type]');
+            var i;
+            for (i = 0; i < analysisLinks.length; i++) {
+                var a = analysisLinks[i];
+                var t = a.getAttribute('data-analysis-type');
+                if (currentCubeId && window.CWPaths) {
+                    a.href = CWPaths.analysis(currentCubeId, t);
+                    a.classList.remove('is-disabled');
+                    a.removeAttribute('aria-disabled');
+                    a.tabIndex = 0;
+                } else {
+                    a.href = '#';
+                    a.classList.add('is-disabled');
+                    a.setAttribute('aria-disabled', 'true');
+                    a.tabIndex = -1;
+                }
+            }
+            var deckLinks = document.querySelectorAll('a.js-decks-link');
+            for (i = 0; i < deckLinks.length; i++) {
+                var d = deckLinks[i];
+                if (currentCubeId && window.CWPaths) {
+                    d.href = CWPaths.decks(currentCubeId);
+                    d.classList.remove('is-disabled');
+                    d.removeAttribute('aria-disabled');
+                    d.tabIndex = 0;
+                } else {
+                    d.href = '#';
+                    d.classList.add('is-disabled');
+                    d.setAttribute('aria-disabled', 'true');
+                    d.tabIndex = -1;
+                }
             }
         }
 
-        function openDeckView() {
-            if (currentCubeId) {
-                window.location.href = 'decks.html?cube=' + encodeURIComponent(currentCubeId);
-            } else {
-                alert('Please select a cube first.');
-            }
-        }
-        
-        var searchCardDebounceMs = 150;
-        var searchCardTimer = null;
+        var searchSuggestDebounceMs = 150;
+        var searchSuggestTimer = null;
 
-        function searchCard() {
+        function clearCardSearchUi() {
+            var si = document.getElementById('search-input');
+            if (si) si.value = '';
+            var res = document.getElementById('card-search-results');
+            if (res) res.innerHTML = '';
+            hideSearchSuggestions();
+        }
+
+        function hideSearchSuggestions() {
+            var ul = document.getElementById('card-search-suggestions');
+            var inp = document.getElementById('search-input');
+            if (ul) {
+                ul.innerHTML = '';
+                ul.classList.remove('is-open');
+                ul.hidden = true;
+            }
+            if (inp) inp.setAttribute('aria-expanded', 'false');
+        }
+
+        function getSearchSuggestions(query) {
+            if (!currentCubeData || !currentCubeData.card_performances) return [];
+            var ql = query.trim().toLowerCase();
+            if (!ql) return [];
+            var perf = currentCubeData.card_performances;
+            var starts = [];
+            var rest = [];
+            var j;
+            for (j = 0; j < perf.length; j++) {
+                var n = perf[j].name;
+                var nl = n.toLowerCase();
+                if (nl.indexOf(ql) === -1) continue;
+                if (nl.indexOf(ql) === 0) starts.push(perf[j]);
+                else rest.push(perf[j]);
+            }
+            starts.sort(function(a, b) { return a.name.localeCompare(b.name); });
+            rest.sort(function(a, b) { return a.name.localeCompare(b.name); });
+            return starts.concat(rest).slice(0, 12);
+        }
+
+        function renderSuggestionList(cards) {
+            var ul = document.getElementById('card-search-suggestions');
+            var inp = document.getElementById('search-input');
+            if (!ul || !inp) return;
+            ul.innerHTML = '';
+            if (!cards.length) {
+                hideSearchSuggestions();
+                return;
+            }
+            var idx;
+            for (idx = 0; idx < cards.length; idx++) {
+                (function(card) {
+                    var li = document.createElement('li');
+                    li.setAttribute('role', 'none');
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.setAttribute('role', 'option');
+                    btn.textContent = card.name;
+                    btn.addEventListener('mousedown', function(ev) {
+                        ev.preventDefault();
+                        selectSearchSuggestion(card);
+                    });
+                    li.appendChild(btn);
+                    ul.appendChild(li);
+                })(cards[idx]);
+            }
+            ul.classList.add('is-open');
+            ul.hidden = false;
+            inp.setAttribute('aria-expanded', 'true');
+        }
+
+        function scheduleSearchSuggestions() {
+            if (searchSuggestTimer) clearTimeout(searchSuggestTimer);
+            searchSuggestTimer = setTimeout(function() {
+                searchSuggestTimer = null;
+                updateSearchSuggestions();
+            }, searchSuggestDebounceMs);
+        }
+
+        function updateSearchSuggestions() {
+            var inp = document.getElementById('search-input');
+            var resultsContainer = document.getElementById('card-search-results');
+            if (!inp) return;
+            var q = inp.value;
+            if (resultsContainer) resultsContainer.innerHTML = '';
+            if (!q.trim()) {
+                hideSearchSuggestions();
+                return;
+            }
+            if (!currentCubeData || !currentCubeData.card_performances) {
+                hideSearchSuggestions();
+                return;
+            }
+            renderSuggestionList(getSearchSuggestions(q));
+        }
+
+        function selectSearchSuggestion(card) {
+            var inp = document.getElementById('search-input');
+            if (inp) inp.value = card.name;
+            hideSearchSuggestions();
+            renderCardSearchStats(card);
+        }
+
+        function findClosestCardMatch(query) {
+            var q = query.trim().toLowerCase();
+            if (!q || !currentCubeData || !currentCubeData.card_performances) return null;
+            var arr = currentCubeData.card_performances;
+            var i;
+            var nl;
+            for (i = 0; i < arr.length; i++) {
+                if (arr[i].name.toLowerCase() === q) return arr[i];
+            }
+            for (i = 0; i < arr.length; i++) {
+                nl = arr[i].name.toLowerCase();
+                if (nl.indexOf(q) === 0) return arr[i];
+            }
+            for (i = 0; i < arr.length; i++) {
+                nl = arr[i].name.toLowerCase();
+                if (nl.indexOf(q) !== -1) return arr[i];
+            }
+            return null;
+        }
+
+        function commitCardSearch() {
             var searchInput = document.getElementById('search-input');
             var resultsContainer = document.getElementById('card-search-results');
-            var searchTerm = searchInput.value.trim().toLowerCase();
-            
+            if (!searchInput || !resultsContainer) return;
+            hideSearchSuggestions();
+            var searchTerm = searchInput.value.trim();
             if (!searchTerm) {
                 resultsContainer.innerHTML = '';
                 return;
             }
-            
             if (!currentCubeData || !currentCubeData.card_performances) {
-                resultsContainer.innerHTML = '<div class="search-error">Please select a cube first</div>';
+                resultsContainer.innerHTML = '<div class="search-error">Select a cube first.</div>';
                 return;
             }
-            
-            var card = null;
-            for (var i = 0; i < currentCubeData.card_performances.length; i++) {
-                var c = currentCubeData.card_performances[i];
-                if (c.name.toLowerCase().indexOf(searchTerm) !== -1) {
-                    card = c;
-                    break;
-                }
-            }
-            
+            var card = findClosestCardMatch(searchTerm);
             if (!card) {
-                resultsContainer.innerHTML = '<div class="search-error">Card not found. Try a different name or partial match.</div>';
+                resultsContainer.innerHTML = '<div class="search-error">No matching card found. Try a different name or choose a suggestion from the list.</div>';
                 return;
             }
-            
+            renderCardSearchStats(card);
+        }
+
+        function renderCardSearchStats(card) {
+            var resultsContainer = document.getElementById('card-search-results');
+            if (!resultsContainer) return;
             var winRate = (card.win_rate * 100).toFixed(1);
             var totalGames = card.wins + card.losses;
             var deltaSign = card.performance_delta > 0 ? '+' : '';
-            
             resultsContainer.innerHTML = '<div class="card-result">' +
                 '<div class="card-name">' + CW.cardNameHtml(card.name, card.image_url) + '</div>' +
                 '<div class="card-stats">' +
-                '<div class="stat-row"><span>Win Rate:</span><strong>' + winRate + '%</strong></div>' +
-                '<div class="stat-row"><span>Total Games:</span><strong>' + totalGames + '</strong></div>' +
-                '<div class="stat-row"><span>Wins:</span><strong>' + card.wins + '</strong></div>' +
-                '<div class="stat-row"><span>Losses:</span><strong>' + card.losses + '</strong></div>' +
-                '<div class="stat-row"><span>Performance Delta:</span><strong>' + deltaSign + (card.performance_delta * 100).toFixed(1) + '%</strong></div>' +
-                '<div class="stat-row"><span>Appearances:</span><strong>' + card.appearances + '</strong></div>' +
+                '<div class="stat-row"><span>Win rate</span><strong>' + winRate + '%</strong></div>' +
+                '<div class="stat-row"><span>Total games</span><strong>' + totalGames + '</strong></div>' +
+                '<div class="stat-row"><span>Wins</span><strong>' + card.wins + '</strong></div>' +
+                '<div class="stat-row"><span>Losses</span><strong>' + card.losses + '</strong></div>' +
+                '<div class="stat-row"><span>Performance delta</span><strong>' + deltaSign + (card.performance_delta * 100).toFixed(1) + '%</strong></div>' +
+                '<div class="stat-row"><span>Appearances</span><strong>' + card.appearances + '</strong></div>' +
                 '</div></div>';
-        }
-        
-        function scheduleSearchCard() {
-            if (searchCardTimer) clearTimeout(searchCardTimer);
-            searchCardTimer = setTimeout(function() {
-                searchCardTimer = null;
-                searchCard();
-            }, searchCardDebounceMs);
         }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
+            bindCubeSelectChangeOnce();
             loadCubeList();
+            updateCubeDependentLinks();
+
+            var navDd = document.querySelector('.nav-dropdown');
+            var navTrigger = document.getElementById('nav-dashboard-trigger');
+            if (navDd && navTrigger) {
+                navDd.addEventListener('focusin', function() {
+                    navTrigger.setAttribute('aria-expanded', 'true');
+                });
+                navDd.addEventListener('focusout', function() {
+                    navTrigger.setAttribute('aria-expanded', 'false');
+                });
+            }
             
             var searchInput = document.getElementById('search-input');
             if (searchInput) {
-                searchInput.addEventListener('input', scheduleSearchCard);
+                searchInput.addEventListener('input', scheduleSearchSuggestions);
                 searchInput.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter') {
-                        if (searchCardTimer) clearTimeout(searchCardTimer);
-                        searchCardTimer = null;
-                        searchCard();
+                        if (searchSuggestTimer) clearTimeout(searchSuggestTimer);
+                        searchSuggestTimer = null;
+                        commitCardSearch();
+                    } else if (e.key === 'Escape') {
+                        hideSearchSuggestions();
                     }
                 });
             }
+
+            var searchBtn = document.getElementById('search-button');
+            if (searchBtn) {
+                searchBtn.addEventListener('click', function() {
+                    commitCardSearch();
+                });
+            }
+
+            document.addEventListener('mousedown', function(ev) {
+                var wrap = document.querySelector('.card-search-field-wrap');
+                if (wrap && !wrap.contains(ev.target)) hideSearchSuggestions();
+            });
 
             var resizeDashCharts = function() {
                 ['performance-chart', 'color-chart'].forEach(function(cid) {
@@ -906,6 +1076,16 @@
             };
             window.addEventListener('resize', resizeDashCharts);
             window.addEventListener('orientationchange', resizeDashCharts);
+
+            window.addEventListener('pageshow', function(ev) {
+                if (!ev.persisted) return;
+                var sel = document.getElementById('cube-select');
+                if (!sel || !window.CWPaths || !CWPaths.preferredCubeId || !CWPaths.setCubeSelectValue) return;
+                var id = CWPaths.preferredCubeId();
+                if (id && sel.options.length > 1 && CWPaths.setCubeSelectValue(sel, id)) {
+                    loadDashboard();
+                }
+            });
         });
     </script>
     <!-- Buy me a coffee widget, removed until everything is set up/there are real costs -->

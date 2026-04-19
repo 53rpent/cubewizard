@@ -4,10 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Add a Cube | CubeWizard</title>
-    <link rel="icon" type="image/png" href="CubeWizard.png">
+    <link rel="icon" type="image/png" href="/CubeWizard.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/site-header.css" />
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
       * {
@@ -27,73 +28,10 @@
         padding-bottom: env(safe-area-inset-bottom);
       }
 
-      .header {
-        background: #faf8f6;
-        border-bottom: 1px solid #e8e0dc;
-        padding: 1rem 1.5rem;
-      }
-
-      .header-inner {
-        max-width: 1200px;
-        margin: 0 auto;
-      }
-
-      .header-brand {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        justify-content: flex-start;
-      }
-
-      .header-logo {
-        width: 56px;
-        height: 56px;
-        object-fit: contain;
-        flex-shrink: 0;
-      }
-
-      .header-wordmark {
-        font-family: "Brookshire", serif;
-        color: #523f38;
-        font-size: clamp(1.75rem, 4vw, 2.25rem);
-        line-height: 1.1;
-        font-weight: 400;
-      }
-
-      .header .breadcrumb {
-        margin-top: 0.65rem;
-        font-size: 0.9rem;
-        color: #7a6a62;
-      }
-
-      .header .breadcrumb a {
-        color: #667eea;
-        text-decoration: none;
-      }
-
-      .header .breadcrumb a:hover {
-        text-decoration: underline;
-      }
-
       .container {
         max-width: 600px;
         margin: 2rem auto;
         padding: 0 1rem;
-      }
-
-      .back-button {
-        display: inline-block;
-        background: #667eea;
-        color: white;
-        padding: 0.75rem 1.5rem;
-        text-decoration: none;
-        border-radius: 4px;
-        margin-bottom: 2rem;
-        transition: background 0.2s ease;
-      }
-
-      .back-button:hover {
-        background: #5a6fd8;
       }
 
       .add-cube-card {
@@ -273,41 +211,7 @@
         border: 1px solid #f5c6cb;
       }
 
-      .footer {
-        background: white;
-        border-top: 1px solid #eee;
-        padding: 2rem;
-        margin-top: 4rem;
-        text-align: center;
-        color: #666;
-      }
-
-      .footer p {
-        margin-bottom: 0.5rem;
-      }
-
-      .footer a {
-        color: #667eea;
-        text-decoration: none;
-      }
-
-      .footer a:hover {
-        text-decoration: underline;
-      }
-
-      .footer .timestamp {
-        font-size: 0.875rem;
-        color: #999;
-      }
-
       @media (max-width: 768px) {
-        .header {
-          padding: 0.75rem 1rem;
-        }
-        .header-logo {
-          width: 48px;
-          height: 48px;
-        }
         .container {
           margin: 1rem auto;
           padding: 0 0.85rem;
@@ -315,35 +219,38 @@
         .add-cube-card {
           padding: 1.25rem;
         }
-        .back-button {
-          min-height: 44px;
-          display: inline-flex;
-          align-items: center;
-          box-sizing: border-box;
-        }
-        .footer {
-          padding: 1.5rem 1rem;
-          margin-top: 2.5rem;
-        }
       }
     </style>
   </head>
   <body>
     <div class="header">
       <div class="header-inner">
-        <div class="header-brand">
-          <img src="CubeWizard.png" alt="" class="header-logo" width="56" height="56">
-          <span class="header-wordmark">CubeWizard</span>
+        <div class="header-brand-stack">
+          <a href="/" class="header-brand-link" title="CubeWizard home">
+            <img src="/CubeWizard.png" alt="" class="header-logo" width="56" height="56" />
+            <div class="header-brand-text">
+              <span class="header-wordmark">CubeWizard</span>
+              <span class="header-subtitle">Add cube</span>
+            </div>
+          </a>
         </div>
-        <div class="breadcrumb">
-          <a href="index.html">&larr; Back to Dashboard</a> &gt; Add a Cube
-        </div>
+        <nav class="header-nav" aria-label="Primary">
+          <div class="nav-dropdown">
+            <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
+            <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
+              <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck view</a></li>
+              <li role="none"><a role="menuitem" href="#" data-analysis-type="performance" class="js-analysis-link">Performance vs popularity</a></li>
+              <li role="none"><a role="menuitem" href="#" data-analysis-type="color" class="js-analysis-link">Color performance</a></li>
+              <li role="none"><a role="menuitem" href="#" data-analysis-type="synergies" class="js-analysis-link">Card synergies</a></li>
+            </ul>
+          </div>
+          <a href="/submit">Submit deck</a>
+          <a href="/addcube" aria-current="page">Add cube</a>
+        </nav>
       </div>
     </div>
 
     <div class="container">
-      <a href="index.html" class="back-button">&larr; Back to Dashboard</a>
-
       <div class="add-cube-card">
         <h2>Add a Cube</h2>
         <p class="subtitle">Register a new CubeCobra cube so players can submit decks for it.</p>
@@ -383,10 +290,13 @@
     </div>
 
     <div class="footer">
-      <p>Questions? Suggestions? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
-      <p class="timestamp">Last updated: <span id="timestamp"></span></p>
+      <p>Questions or feedback? Contact <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+      <p class="footer-version" id="cw-footer-version-line" hidden><span id="cw-footer-version"></span></p>
     </div>
 
+    <script src="/site-footer.js"></script>
+    <script src="/cw-paths.js"></script>
+    <script src="/site-nav.js"></script>
     <script>
       var validated = false;
       var validatedId = "";

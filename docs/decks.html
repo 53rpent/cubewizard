@@ -4,11 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Decks | CubeWizard</title>
-  <link rel="icon" type="image/png" href="CubeWizard.png">
+  <link rel="icon" type="image/png" href="/CubeWizard.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="card-tooltip.css">
+  <link rel="stylesheet" href="/site-header.css">
+  <link rel="stylesheet" href="/card-tooltip.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     .visually-hidden {
@@ -30,40 +31,6 @@
       padding-right: max(0px, env(safe-area-inset-right));
       padding-bottom: env(safe-area-inset-bottom);
     }
-
-    .header {
-      background: #faf8f6;
-      border-bottom: 1px solid #e8e0dc;
-      padding: 1rem 1.5rem;
-    }
-    .header-inner { max-width: 1200px; margin: 0 auto; }
-    .header-brand {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      justify-content: flex-start;
-    }
-    .header-logo {
-      width: 56px;
-      height: 56px;
-      object-fit: contain;
-      flex-shrink: 0;
-    }
-    .header-wordmark {
-      font-family: "Brookshire", serif;
-      color: #523f38;
-      font-size: clamp(1.75rem, 4vw, 2.25rem);
-      line-height: 1.1;
-      font-weight: 400;
-    }
-
-    .breadcrumb {
-      background: white;
-      padding: 1rem 1rem;
-      border-bottom: 1px solid #eee;
-    }
-    .breadcrumb a { color: #667eea; text-decoration: none; }
-    .breadcrumb a:hover { text-decoration: underline; }
 
     .container {
       max-width: 1200px;
@@ -336,48 +303,54 @@
     }
     .curve-list li:last-child { border-bottom: none; }
 
-    .footer {
-      background: white;
-      border-top: 1px solid #eee;
-      padding: 2rem;
-      margin-top: 4rem;
-      text-align: center;
-      color: #666;
-    }
-    .footer a { color: #667eea; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
-
     @media (max-width: 768px) {
-      .header { padding: 0.75rem 1rem; }
-      .header-logo { width: 48px; height: 48px; }
       .container { margin: 1rem auto; padding: 0 0.85rem; }
       .description, .data-container { padding: 1.25rem; }
       .description p { font-size: 1rem; }
-      .footer { padding: 1.5rem 1rem; margin-top: 2.5rem; }
     }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="header-inner">
-      <div class="header-brand">
-        <img src="CubeWizard.png" alt="" class="header-logo" width="56" height="56">
-        <span class="header-wordmark">CubeWizard</span>
+      <div class="header-brand-stack">
+        <a href="/" class="header-brand-link" title="CubeWizard home">
+          <img src="/CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+          <div class="header-brand-text">
+            <span class="header-wordmark">CubeWizard</span>
+            <span class="header-subtitle">Decks</span>
+          </div>
+        </a>
+        <div class="header-cube-wrap">
+          <label class="visually-hidden" for="cube-select">Cube</label>
+          <select id="cube-select" aria-label="Select cube">
+            <option value="">Choose a cube...</option>
+          </select>
+        </div>
       </div>
+      <nav class="header-nav" aria-label="Primary">
+        <div class="nav-dropdown">
+          <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
+          <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
+            <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck view</a></li>
+            <li role="none"><a role="menuitem" href="#" data-analysis-type="performance" class="js-analysis-link">Performance vs popularity</a></li>
+            <li role="none"><a role="menuitem" href="#" data-analysis-type="color" class="js-analysis-link">Color performance</a></li>
+            <li role="none"><a role="menuitem" href="#" data-analysis-type="synergies" class="js-analysis-link">Card synergies</a></li>
+          </ul>
+        </div>
+        <a href="/submit">Submit deck</a>
+        <a href="/addcube">Add cube</a>
+      </nav>
     </div>
-  </div>
-
-  <div class="breadcrumb">
-    <a href="index.html">&larr; Back to Dashboard</a>
   </div>
 
   <div class="container">
     <div class="description">
       <h2>Deck-by-Deck View</h2>
-      <p id="decks-subtitle">Loading…</p>
+      <p id="decks-subtitle">Loading...</p>
     </div>
 
-    <div id="loading" class="loading">Loading decks…</div>
+    <div id="loading" class="loading">Loading decks...</div>
     <div id="error" class="error" style="display:none;"></div>
 
     <div id="decks-main" class="data-container" style="display:none;">
@@ -416,7 +389,7 @@
       </div>
       <div id="modal-body" class="modal-body">
         <div id="deck-dynamic-root">
-          <div class="loading">Loading deck…</div>
+          <div class="loading">Loading deck...</div>
         </div>
         <div id="deck-edit-panel" class="deck-edit-panel" style="display:none;">
           <p class="subtle" style="margin-bottom:0.5rem;">One card per line. Repeat a name for multiple copies. Names are looked up on Scryfall (fuzzy match).</p>
@@ -437,10 +410,14 @@
   </div>
 
   <div class="footer">
-    <p>Questions? Suggestions? Want to see the raw data? Contact me at <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+    <p>Questions or feedback? Contact <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+    <p class="footer-version" id="cw-footer-version-line" hidden><span id="cw-footer-version"></span></p>
   </div>
 
-  <script src="card-tooltip.js"></script>
+  <script src="/site-footer.js"></script>
+  <script src="/cw-paths.js"></script>
+  <script src="/site-nav.js"></script>
+  <script src="/card-tooltip.js"></script>
   <script>
     function $(id) { return document.getElementById(id); }
 
@@ -451,6 +428,13 @@
     var currentCubeId = '';
 
     function getCubeFromUrl() {
+      if (window.CWPaths && CWPaths.preferredCubeId) {
+        return CWPaths.preferredCubeId();
+      }
+      if (window.CWPaths) {
+        var parsed = CWPaths.parsePathname(window.location.pathname);
+        if (parsed.view === 'decks' && parsed.cubeId) return parsed.cubeId;
+      }
       var params = new URLSearchParams(window.location.search);
       return params.get('cube') || '';
     }
@@ -576,7 +560,7 @@
       }
       var btn = $('deck-edit-save');
       btn.disabled = true;
-      $('deck-edit-message').textContent = 'Saving (Scryfall lookups — may take a few seconds)…';
+      $('deck-edit-message').textContent = 'Saving (Scryfall lookups; may take a few seconds)...';
       $('deck-edit-message').className = 'deck-edit-message';
       fetch('/api/deck/' + encodeURIComponent(deckEditContext.deckId) + '/cards', {
         method: 'PUT',
@@ -733,7 +717,7 @@
       $('modal-meta').textContent = '';
       $('deck-edit-panel').style.display = 'none';
       $('deck-dynamic-root').style.display = 'block';
-      $('deck-dynamic-root').innerHTML = '<div class="loading">Loading deck…</div>';
+      $('deck-dynamic-root').innerHTML = '<div class="loading">Loading deck...</div>';
       $('modal-edit-cards-btn').style.display = 'none';
       openModal();
 
@@ -822,43 +806,117 @@
     });
     $('deck-edit-save').addEventListener('click', saveDeckCardEdits);
 
-    // Init — cube comes from ?cube= or dashboard selection (localStorage), like analysis.html
-    (function init() {
-      currentCubeId = getCubeFromUrl() || localStorage.getItem('selectedCubeId') || '';
-      if (currentCubeId) {
-        localStorage.setItem('selectedCubeId', currentCubeId);
-        if (!getCubeFromUrl()) {
-          window.history.replaceState({}, '', 'decks.html?cube=' + encodeURIComponent(currentCubeId));
+    function subtitleForCube(cubeKey, cubes) {
+      var label = cubeKey;
+      for (var i = 0; i < cubes.length; i++) {
+        if (cubes[i].cube_id === cubeKey) {
+          label = (cubes[i].cube_name || cubeKey) + ' (' + cubeKey + ')';
+          break;
         }
       }
+      return 'All decks submitted for ' + label + '.';
+    }
 
-      if (!currentCubeId) {
-        $('decks-subtitle').textContent =
-          'Choose a cube on the dashboard first, or open this page with ?cube=your_cube_id in the URL.';
-        $('loading').style.display = 'none';
-        showError('No cube selected.');
-        return;
+    (function init() {
+      try {
+        currentCubeId = getCubeFromUrl() || localStorage.getItem('selectedCubeId') || '';
+      } catch (e) {
+        currentCubeId = getCubeFromUrl() || '';
+      }
+      if (currentCubeId) {
+        try {
+          localStorage.setItem('selectedCubeId', currentCubeId);
+        } catch (e2) {}
+        try {
+          if (window.CWPaths && CWPaths.decksPathMatches) {
+            if (!CWPaths.decksPathMatches(currentCubeId)) {
+              window.history.replaceState({}, '', CWPaths.decks(currentCubeId));
+            }
+          }
+        } catch (e3) {}
       }
 
       fetch('/api/cubes')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          var cubes = data.cubes || [];
-          var label = currentCubeId;
-          for (var i = 0; i < cubes.length; i++) {
-            if (cubes[i].cube_id === currentCubeId) {
-              label = (cubes[i].cube_name || currentCubeId) + ' (' + currentCubeId + ')';
-              break;
-            }
+          var loc = window.CWPaths ? CWPaths.parsePathname(window.location.pathname) : {};
+          if (loc.cubeId) {
+            currentCubeId = loc.cubeId;
+            try {
+              localStorage.setItem('selectedCubeId', currentCubeId);
+            } catch (eSync) {}
           }
-          $('decks-subtitle').textContent = 'All decks submitted for ' + label + '.';
+          var cubes = data.cubes || [];
+          var sel = $('cube-select');
+          for (var i = 0; i < cubes.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = cubes[i].cube_id;
+            opt.textContent = cubes[i].cube_name + ' (' + cubes[i].total_decks + ' decks)';
+            sel.appendChild(opt);
+          }
+          if (currentCubeId && window.CWPaths && CWPaths.setCubeSelectValue(sel, currentCubeId)) {
+            /* header select matches current cube */
+          }
+
+          sel.addEventListener('change', function() {
+            var v = sel.value;
+            if (!v) return;
+            currentCubeId = v;
+            try {
+              localStorage.setItem('selectedCubeId', v);
+            } catch (e4) {}
+            try {
+              if (window.CWPaths) {
+                window.history.replaceState({}, '', CWPaths.decks(v));
+              }
+            } catch (e5) {}
+            if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
+            closeModal();
+            $('error').style.display = 'none';
+            $('error').textContent = '';
+            $('decks-subtitle').textContent = subtitleForCube(v, cubes);
+            loadDecks();
+          });
+
+          if (!currentCubeId) {
+            $('decks-subtitle').textContent = 'Select a cube in the header to view decks.';
+            $('loading').style.display = 'none';
+            showError('No cube selected.');
+            return;
+          }
+
+          $('decks-subtitle').textContent = subtitleForCube(currentCubeId, cubes);
           loadDecks();
         })
         .catch(function() {
+          if (!currentCubeId) {
+            $('decks-subtitle').textContent = 'Select a cube in the header to view decks.';
+            $('loading').style.display = 'none';
+            showError('No cube selected.');
+            return;
+          }
           $('decks-subtitle').textContent = 'All decks for cube ' + currentCubeId + '.';
           loadDecks();
         });
     })();
+
+    window.addEventListener('pageshow', function(ev) {
+      if (!ev.persisted) return;
+      if (!window.CWPaths || !CWPaths.preferredCubeId || !CWPaths.setCubeSelectValue) return;
+      var sel = document.getElementById('cube-select');
+      if (!sel || sel.options.length < 2) return;
+      var id = CWPaths.preferredCubeId();
+      if (!id || !CWPaths.setCubeSelectValue(sel, id)) return;
+      currentCubeId = id;
+      if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
+      if (typeof closeModal === 'function') closeModal();
+      var errEl = document.getElementById('error');
+      if (errEl) {
+        errEl.style.display = 'none';
+        errEl.textContent = '';
+      }
+      if (typeof loadDecks === 'function') loadDecks();
+    });
   </script>
 </body>
 </html>
