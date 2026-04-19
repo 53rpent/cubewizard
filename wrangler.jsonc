@@ -50,6 +50,10 @@
 				{
 					"binding": "DECK_IMAGES_BLOB",
 					"bucket_name": "cubewizard-deck-images"
+				},
+				{
+					"binding": "cubewizard_deck_images",
+					"bucket_name": "cubewizard-deck-images"
 				}
 			],
 			"d1_databases": [
@@ -76,6 +80,10 @@
 				},
 				{
 					"binding": "DECK_IMAGES_BLOB",
+					"bucket_name": "cubewizard-deck-images"
+				},
+				{
+					"binding": "cubewizard_deck_images",
 					"bucket_name": "cubewizard-deck-images"
 				}
 			],

@@ -558,7 +558,7 @@
                 <div class="card card-span-2">
                     <h3>Card Search</h3>
                     <div class="card-search-section">
-                        <input type="text" id="search-input" placeholder="Enter card name..." class="search-input">
+                        <input type="text" id="search-input" placeholder="Type to search by card name…" class="search-input" autocomplete="off" spellcheck="false">
                         <button onclick="searchCard()" class="search-button">Search</button>
                         <div id="card-search-results"></div>
                     </div>
@@ -644,6 +644,8 @@
                     loadCharts();
                     loadTrophyCase();
                     hideLoading();
+                    var si = document.getElementById('search-input');
+                    if (si && si.value.trim()) searchCard();
                 })
                 .catch(function(err) {
                     showError('Failed to load dashboard data: ' + err.message);
@@ -822,13 +824,16 @@
             }
         }
         
+        var searchCardDebounceMs = 150;
+        var searchCardTimer = null;
+
         function searchCard() {
             var searchInput = document.getElementById('search-input');
             var resultsContainer = document.getElementById('card-search-results');
             var searchTerm = searchInput.value.trim().toLowerCase();
             
             if (!searchTerm) {
-                resultsContainer.innerHTML = '<div class="search-error">Please enter a card name to search</div>';
+                resultsContainer.innerHTML = '';
                 return;
             }
             
@@ -867,14 +872,27 @@
                 '</div></div>';
         }
         
+        function scheduleSearchCard() {
+            if (searchCardTimer) clearTimeout(searchCardTimer);
+            searchCardTimer = setTimeout(function() {
+                searchCardTimer = null;
+                searchCard();
+            }, searchCardDebounceMs);
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadCubeList();
             
             var searchInput = document.getElementById('search-input');
             if (searchInput) {
-                searchInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') { searchCard(); }
+                searchInput.addEventListener('input', scheduleSearchCard);
+                searchInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        if (searchCardTimer) clearTimeout(searchCardTimer);
+                        searchCardTimer = null;
+                        searchCard();
+                    }
                 });
             }
 
