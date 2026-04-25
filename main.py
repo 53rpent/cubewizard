@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import shutil
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
@@ -524,7 +525,18 @@ class CubeWizard:
                     image_files.update(folder.glob(f"*{ext}"))
                     image_files.update(folder.glob(f"*{ext.upper()}"))
                 
-                image_files = list(image_files)  # Convert back to list for processing
+                # Convert back to list for processing
+                image_files = list(image_files)
+
+                # Avoid processing derivative files created during extraction (orientation/resize/thumb).
+                # These can be left behind if a prior run was interrupted, causing duplicates.
+                derived_stem_re = re.compile(r"(?:^|_)(oriented|resized|thumb)(?:$|_)", re.IGNORECASE)
+                non_derived = [p for p in image_files if not derived_stem_re.search(p.stem)]
+                if non_derived:
+                    image_files = non_derived
+
+                # Ensure stable processing order for repeatable runs/logs
+                image_files.sort(key=lambda p: p.name.lower())
                 
                 if not image_files:
                     error_msg = f"No image files found in {folder.name}"

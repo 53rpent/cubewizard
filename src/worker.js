@@ -71,14 +71,16 @@ export default {
       return handleAddCube(request, env);
     }
 
+    const legacyRedirect = legacyAnalysisToDataViewRedirect(url);
+    if (legacyRedirect) {
+      return legacyRedirect;
+    }
+
     // Pretty URLs → static HTML (see docs/cw-paths.js)
     const assetPath = mapPrettyUrlToAsset(url.pathname);
     if (assetPath) {
-      const assetUrl = new URL(request.url);
-      assetUrl.pathname = assetPath;
-      const assetReq = new Request(assetUrl.toString(), request);
       try {
-        return await env.ASSETS.fetch(assetReq);
+        return await serveMappedAssetWithoutExposingRedirect(env, request, assetPath);
       } catch {
         return jsonResponse({ error: "Not found" }, 404);
       }
@@ -93,6 +95,69 @@ export default {
   },
 };
 
+/**
+ * 301 from /{cube}/analysis/{performance|color|synergies} → /{cube}/cards|colors|synergies
+ * @returns {Response|null}
+ */
+/**
+ * Workers static assets may 307 to a canonical path (e.g. /analysis-card.html → /analysis-card),
+ * which drops /{cube}/cards from the browser URL and breaks client routing. Follow redirects
+ * inside the worker and return a final 200 so the browser keeps the pretty pathname.
+ */
+async function serveMappedAssetWithoutExposingRedirect(env, request, assetPath) {
+  var url = new URL(request.url);
+  url.pathname = assetPath;
+  var res = await env.ASSETS.fetch(new Request(url.toString(), request));
+  var followed = false;
+  var guard = 0;
+  while (guard < 8 && res.status >= 300 && res.status < 400) {
+    var loc = res.headers.get("Location");
+    if (!loc) break;
+    url = new URL(loc, url);
+    res = await env.ASSETS.fetch(new Request(url.toString(), request));
+    followed = true;
+    guard++;
+  }
+  if (res.status >= 300 && res.status < 400) {
+    return res;
+  }
+  if (res.status === 304) {
+    return res;
+  }
+  if (!res.ok) {
+    return res;
+  }
+  if (!followed) {
+    return res;
+  }
+  var body = await res.arrayBuffer();
+  var headers = new Headers();
+  var ct = res.headers.get("Content-Type");
+  if (ct) headers.set("Content-Type", ct);
+  var cc = res.headers.get("Cache-Control");
+  if (cc) headers.set("Cache-Control", cc);
+  var etag = res.headers.get("ETag");
+  if (etag) headers.set("ETag", etag);
+  return new Response(body, { status: 200, headers: headers });
+}
+
+function legacyAnalysisToDataViewRedirect(url) {
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const map = { performance: "cards", color: "colors", synergies: "synergies" };
+  const m = path.match(/^(.*)\/analysis\/(performance|color|synergies)$/i);
+  if (!m) return null;
+  const base = m[1];
+  const legacySeg = m[2].toLowerCase();
+  const view = map[legacySeg];
+  if (!view) return null;
+  const segs = base.split("/").filter(Boolean);
+  if (!segs.length) return null;
+  const cubeSeg = segs[segs.length - 1];
+  if (RESERVED_CUBE_IDS.has(cubeSeg.trim().toLowerCase())) return null;
+  const targetPath = base + "/" + view + url.search;
+  return Response.redirect(new URL(targetPath, url.origin), 301);
+}
+
 /** @returns {string|null} asset path under docs/, or null to fall through */
 function mapPrettyUrlToAsset(pathname) {
   if (/\.[a-z0-9]{1,6}$/i.test(pathname)) {
@@ -103,7 +168,18 @@ function mapPrettyUrlToAsset(pathname) {
   if (p === "/addcube" || p === "/add_cube") return "/add_cube.html";
   if (p === "/" || p === "") return "/index.html";
 
-  const RESERVED = new Set(["submit", "addcube", "add_cube", "api", "decks", "analysis"]);
+  const RESERVED = new Set([
+    "submit",
+    "addcube",
+    "add_cube",
+    "api",
+    "decks",
+    "analysis",
+    "resources",
+    "cards",
+    "colors",
+    "synergies",
+  ]);
 
   const one = p.match(/^\/([^/]+)$/);
   if (one) {
@@ -112,11 +188,14 @@ function mapPrettyUrlToAsset(pathname) {
     return null;
   }
 
-  const decks = p.match(/^\/([^/]+)\/decks$/);
-  if (decks && !RESERVED.has(decks[1].toLowerCase())) return "/decks.html";
-
-  const an = p.match(/^\/([^/]+)\/analysis\/(performance|color|synergies)$/);
-  if (an && !RESERVED.has(an[1].toLowerCase())) return "/analysis.html";
+  const dataPage = p.match(/^\/([^/]+)\/(decks|cards|colors|synergies)$/i);
+  if (dataPage && !RESERVED.has(dataPage[1].toLowerCase())) {
+    const view = dataPage[2].toLowerCase();
+    if (view === "decks") return "/decks.html";
+    if (view === "cards") return "/analysis-card.html";
+    if (view === "colors") return "/analysis-color.html";
+    if (view === "synergies") return "/analysis-synergy.html";
+  }
 
   return null;
 }
@@ -126,9 +205,16 @@ const RESERVED_CUBE_IDS = new Set([
   "submit",
   "addcube",
   "add_cube",
+  "resources",
   "api",
   "decks",
   "analysis",
+  "cards",
+  "colors",
+  "synergies",
+  "analysis-card",
+  "analysis-color",
+  "analysis-synergy",
 ]);
 
 function isReservedCubeId(cubeId) {
@@ -153,8 +239,11 @@ function handleGetVersion(env) {
 //  Analytics API handlers
 // ============================================================
 
-const BAYESIAN_SMOOTHING_STRENGTH = 5;
+// Laplace-style additive smoothing: add N synthetic samples at cube average.
+const LAPLACE_SMOOTHING_WEIGHT = 5;
 const SYNERGY_MIN_APPEARANCES = 3;
+/** Max pairs returned in `synergies` for the synergy table (sorted by co-appearances). */
+const SYNERGY_TABLE_RESPONSE_CAP = 1000;
 
 async function handleGetCubes(env) {
   const { results } = await env.cubewizard_db.prepare(
@@ -204,18 +293,27 @@ async function handleGetDashboard(cubeId, env) {
   var cardPerformances = computeCardPerformance(decks, cardsByDeck);
   attachPerformanceImages(cardPerformances, imageMap);
 
-  var synergies = computeSynergies(decks, cardsByDeck);
-  attachSynergyImages(synergies, imageMap);
+  var synergyRowsAll = computeSynergyRowsAll(decks, cardsByDeck);
+  attachSynergyImages(synergyRowsAll, imageMap);
+  var synergiesSortedByPlay = synergyRowsAll.slice().sort(function (a, b) {
+    return b.together_count - a.together_count;
+  });
+  var synergiesMostPlayed = synergiesSortedByPlay.slice(0, 8);
+  var synergies = synergiesSortedByPlay.slice(0, SYNERGY_TABLE_RESPONSE_CAP);
 
   var colorAnalysis = computeColorPerformance(decks, cardsByDeck);
+  var colorIdentityTable = computeColorIdentityTable(decks, cardsByDeck);
 
   var allDeckWinRates = [];
   var totalWins = 0;
   var totalLosses = 0;
   for (var di = 0; di < decks.length; di++) {
-    allDeckWinRates.push(decks[di].win_rate);
-    totalWins += decks[di].match_wins;
-    totalLosses += decks[di].match_losses;
+    var dk = decks[di];
+    var played = dk.match_wins + dk.match_losses;
+    if (played === 0) continue;
+    allDeckWinRates.push(dk.win_rate);
+    totalWins += dk.match_wins;
+    totalLosses += dk.match_losses;
   }
   var avgWinRate = mean(allDeckWinRates);
 
@@ -231,7 +329,9 @@ async function handleGetDashboard(cubeId, env) {
     },
     card_performances: cardPerformances,
     synergies: synergies,
+    synergies_most_played: synergiesMostPlayed,
     color_analysis: colorAnalysis,
+    color_identity_table: colorIdentityTable,
   });
 }
 
@@ -846,7 +946,9 @@ async function handlePutDeckCards(deckIdStr, request, env) {
 function computeCardPerformance(decks, cardsByDeck) {
   var allDeckWinRates = [];
   for (var i = 0; i < decks.length; i++) {
-    allDeckWinRates.push(decks[i].win_rate);
+    var d0 = decks[i];
+    if (d0.match_wins + d0.match_losses === 0) continue;
+    allDeckWinRates.push(d0.win_rate);
   }
   var cubeAvgWinRate = mean(allDeckWinRates);
 
@@ -854,6 +956,7 @@ function computeCardPerformance(decks, cardsByDeck) {
 
   for (var di = 0; di < decks.length; di++) {
     var deck = decks[di];
+    var deckGames = deck.match_wins + deck.match_losses;
     var cards = cardsByDeck[deck.deck_id] || [];
     for (var ci = 0; ci < cards.length; ci++) {
       var name = cards[ci].name;
@@ -863,7 +966,9 @@ function computeCardPerformance(decks, cardsByDeck) {
       cardStats[name].wins += deck.match_wins;
       cardStats[name].losses += deck.match_losses;
       cardStats[name].appearances += 1;
-      cardStats[name].deck_win_rates.push(deck.win_rate);
+      if (deckGames > 0) {
+        cardStats[name].deck_win_rates.push(deck.win_rate);
+      }
     }
   }
 
@@ -875,7 +980,7 @@ function computeCardPerformance(decks, cardsByDeck) {
     var totalGames = stats.wins + stats.losses;
     if (totalGames > 0) {
       var smoothed = stats.deck_win_rates.slice();
-      for (var si = 0; si < BAYESIAN_SMOOTHING_STRENGTH; si++) {
+      for (var si = 0; si < LAPLACE_SMOOTHING_WEIGHT; si++) {
         smoothed.push(cubeAvgWinRate);
       }
 
@@ -903,7 +1008,8 @@ function computeCardPerformance(decks, cardsByDeck) {
   return performances;
 }
 
-function computeSynergies(decks, cardsByDeck) {
+/** All qualifying card pairs with stats (unsorted). */
+function computeSynergyRowsAll(decks, cardsByDeck) {
   var cardPairs = {};
   var individual = {};
 
@@ -977,12 +1083,12 @@ function computeSynergies(decks, cardsByDeck) {
         synergy_bonus: round3(synergyBonus),
         together_wins: ps.together_wins,
         together_losses: ps.together_losses,
+        together_count: ps.together_count,
       });
     }
   }
 
-  synergies.sort(function(a, b) { return b.synergy_bonus - a.synergy_bonus; });
-  return synergies.slice(0, 20);
+  return synergies;
 }
 
 function computeColorPerformance(decks, cardsByDeck) {
@@ -997,10 +1103,9 @@ function computeColorPerformance(decks, cardsByDeck) {
     var dWins = deck.match_wins;
     var dLosses = deck.match_losses;
     var total = dWins + dLosses;
+    if (total === 0) continue;
     totalWins += dWins;
     totalLosses += dLosses;
-
-    if (total === 0) continue;
 
     var deckColors = {};
     var cards = cardsByDeck[deck.deck_id] || [];
@@ -1072,6 +1177,189 @@ function computeColorPerformance(decks, cardsByDeck) {
   return colorStats;
 }
 
+/**
+ * Deck color identity = union of WUBRG symbols on cards in the deck (same `colors` JSON as computeColorPerformance).
+ * Rows match the color data analysis table: mono / guild / shard-wedge / four-color "not" / five / all decks.
+ */
+function computeColorIdentityTable(decks, cardsByDeck) {
+  var WUBRG_ORDER = ["W", "U", "B", "R", "G"];
+  var WUBRG_INDEX = { W: 0, U: 1, B: 2, R: 3, G: 4 };
+
+  var MONO_LABEL = {
+    W: "Mono-White",
+    U: "Mono-Blue",
+    B: "Mono-Black",
+    R: "Mono-Red",
+    G: "Mono-Green",
+  };
+
+  var GUILD_ORDER = ["WU", "UB", "BR", "RG", "GW", "WB", "BG", "GU", "UR", "RW"];
+  var GUILD_LABEL = {
+    WU: "Azorius (WU)",
+    UB: "Dimir (UB)",
+    BR: "Rakdos (BR)",
+    RG: "Gruul (RG)",
+    GW: "Selesnya (GW)",
+    WB: "Orzhov (WB)",
+    BG: "Golgari (BG)",
+    GU: "Simic (GU)",
+    UR: "Izzet (UR)",
+    RW: "Boros (RW)",
+  };
+
+  var THREE_ORDER = ["WUR", "UBG", "WBR", "URG", "WBG", "WUB", "UBR", "BRG", "WRG", "WUG"];
+  var THREE_LABEL = {
+    WUR: "Jeskai (WUR)",
+    UBG: "Sultai (UBG)",
+    WBR: "Mardu (BRW)",
+    URG: "Temur (RGU)",
+    WBG: "Abzan (GWB)",
+    WUB: "Esper (WUB)",
+    UBR: "Grixis (UBR)",
+    BRG: "Jund (BRG)",
+    WRG: "Naya (RGW)",
+    WUG: "Bant (GWU)",
+  };
+
+  var FOUR_ORDER = ["WUBR", "UBRG", "WBRG", "WURG", "WUBG"];
+  var FOUR_LABEL = {
+    WUBR: "Not-Green (WUBR)",
+    UBRG: "Not-White (UBRG)",
+    WBRG: "Not-Blue (BRGW)",
+    WURG: "Not-Black (RGWU)",
+    WUBG: "Not-Red (GWUB)",
+  };
+
+  function sortIdentitySymbols(syms) {
+    var u = {};
+    for (var si = 0; si < syms.length; si++) {
+      if (WUBRG_INDEX.hasOwnProperty(syms[si])) u[syms[si]] = true;
+    }
+    var arr = Object.keys(u);
+    arr.sort(function (a, b) {
+      return WUBRG_INDEX[a] - WUBRG_INDEX[b];
+    });
+    return arr.join("");
+  }
+
+  function deckIdentityKey(deckId) {
+    var cards = cardsByDeck[deckId] || [];
+    var seen = {};
+    for (var ci = 0; ci < cards.length; ci++) {
+      var colorsRaw = cards[ci].colors;
+      if (!colorsRaw) continue;
+      try {
+        var colorsList = JSON.parse(colorsRaw);
+        if (Array.isArray(colorsList)) {
+          for (var cli = 0; cli < colorsList.length; cli++) {
+            var sym = colorsList[cli];
+            if (WUBRG_INDEX.hasOwnProperty(sym)) seen[sym] = true;
+          }
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    return sortIdentitySymbols(Object.keys(seen));
+  }
+
+  function bump(map, key, wins, games) {
+    if (!map[key]) map[key] = { wins: 0, games: 0 };
+    map[key].wins += wins;
+    map[key].games += games;
+  }
+
+  function sumByIdentityLength(map, len) {
+    var w = 0;
+    var g = 0;
+    var k;
+    for (k in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
+      if (k.length === len) {
+        w += map[k].wins;
+        g += map[k].games;
+      }
+    }
+    return { wins: w, games: g };
+  }
+
+  function cell(map, key) {
+    var x = map[key];
+    return x ? { wins: x.wins, games: x.games } : { wins: 0, games: 0 };
+  }
+
+  function pushRow(out, label, wins, games) {
+    out.push({
+      color: label,
+      wins: wins,
+      total_games: games,
+      win_rate: games > 0 ? round3(wins / games) : 0,
+    });
+  }
+
+  var agg = {};
+  var totalAllWins = 0;
+  var totalAllGames = 0;
+  var di;
+  for (di = 0; di < decks.length; di++) {
+    var deck = decks[di];
+    var dWins = deck.match_wins;
+    var dLosses = deck.match_losses;
+    var games = dWins + dLosses;
+    if (games === 0) continue;
+    totalAllWins += dWins;
+    totalAllGames += games;
+    var idKey = deckIdentityKey(deck.deck_id);
+    bump(agg, idKey, dWins, games);
+  }
+
+  var rows = [];
+  var s1 = sumByIdentityLength(agg, 1);
+  pushRow(rows, "Mono-color", s1.wins, s1.games);
+  var mi;
+  for (mi = 0; mi < WUBRG_ORDER.length; mi++) {
+    var m = WUBRG_ORDER[mi];
+    var mc = cell(agg, m);
+    pushRow(rows, MONO_LABEL[m], mc.wins, mc.games);
+  }
+
+  var s2 = sumByIdentityLength(agg, 2);
+  pushRow(rows, "Two-color", s2.wins, s2.games);
+  var gi;
+  for (gi = 0; gi < GUILD_ORDER.length; gi++) {
+    var gk = GUILD_ORDER[gi];
+    var gc = cell(agg, gk);
+    pushRow(rows, GUILD_LABEL[gk], gc.wins, gc.games);
+  }
+
+  var s3 = sumByIdentityLength(agg, 3);
+  pushRow(rows, "Three-color", s3.wins, s3.games);
+  var ti;
+  for (ti = 0; ti < THREE_ORDER.length; ti++) {
+    var tk = THREE_ORDER[ti];
+    var tc = cell(agg, tk);
+    pushRow(rows, THREE_LABEL[tk], tc.wins, tc.games);
+  }
+
+  var s4 = sumByIdentityLength(agg, 4);
+  pushRow(rows, "Four-color", s4.wins, s4.games);
+  var fi;
+  for (fi = 0; fi < FOUR_ORDER.length; fi++) {
+    var fk = FOUR_ORDER[fi];
+    var fc = cell(agg, fk);
+    pushRow(rows, FOUR_LABEL[fk], fc.wins, fc.games);
+  }
+
+  var s5 = sumByIdentityLength(agg, 5);
+  pushRow(rows, "Five-color", s5.wins, s5.games);
+  var wubrg = cell(agg, "WUBRG");
+  pushRow(rows, "All Colors (WUBRG)", wubrg.wins, wubrg.games);
+
+  pushRow(rows, "All Decks", totalAllWins, totalAllGames);
+
+  return rows;
+}
+
 // ============================================================
 //  Chart builders (Plotly JSON)
 // ============================================================
@@ -1126,7 +1414,7 @@ function buildPerformanceScatterChart(performances) {
       },
     ],
     layout: {
-      title: "Card Performance vs Popularity",
+      title: "Card data",
       xaxis: { title: "Appearances in Decks" },
       yaxis: { title: "Performance Delta (%)", tickformat: ".0%" },
       hovermode: "closest",
@@ -1179,7 +1467,7 @@ function buildColorBarChart(colorStats) {
       },
     ],
     layout: {
-      title: "Color Performance Analysis",
+      title: "Color data",
       xaxis: { title: "Magic Colors" },
       yaxis: { title: "Performance Delta", tickformat: "+.1%" },
       showlegend: false,

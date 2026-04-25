@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="/CubeWizard.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/site-header.css">
     <link rel="stylesheet" href="/card-tooltip.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -250,126 +250,6 @@
             .stat-value {
                 font-size: 1.65rem;
             }
-            .search-button {
-                min-height: 44px;
-            }
-            .card-stats {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .card-search-section {
-            padding: 1rem 0;
-        }
-
-        .card-search-field-wrap {
-            position: relative;
-            margin-bottom: 0.75rem;
-        }
-        
-        .search-input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid #e9ecef;
-            border-radius: 4px;
-            font-size: 1rem;
-            transition: border-color 0.2s ease;
-        }
-        
-        .search-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .card-search-suggestions {
-            display: none;
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 100%;
-            margin-top: 2px;
-            max-height: 240px;
-            overflow-y: auto;
-            background: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-            z-index: 50;
-            list-style: none;
-        }
-
-        .card-search-suggestions.is-open {
-            display: block;
-        }
-
-        .card-search-suggestions li button {
-            display: block;
-            width: 100%;
-            text-align: left;
-            padding: 0.5rem 0.75rem;
-            border: none;
-            background: transparent;
-            font: inherit;
-            font-size: 0.95rem;
-            cursor: pointer;
-            color: #333;
-        }
-
-        .card-search-suggestions li button:hover,
-        .card-search-suggestions li button:focus {
-            background: #f0f0ff;
-            outline: none;
-        }
-        
-        .search-button {
-            width: 100%;
-            padding: 0.75rem;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-        
-        .search-button:hover {
-            background: #5a6fd8;
-        }
-        
-        .card-result {
-            margin-top: 1rem;
-            padding: 1rem;
-            background: #f8f9fa;
-            border-radius: 4px;
-            border-left: 4px solid #667eea;
-        }
-        
-        .card-name {
-            font-weight: bold;
-            font-size: 1.1rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .card-stats {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-        }
-        
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-        }
-        
-        .search-error {
-            margin-top: 1rem;
-            padding: 0.75rem;
-            background: #f8d7da;
-            color: #721c24;
-            border-radius: 4px;
-            text-align: center;
         }
         
         .loading {
@@ -431,14 +311,15 @@
                 <div class="nav-dropdown">
                     <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
                     <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
-                        <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck view</a></li>
-                        <li role="none"><a role="menuitem" href="#" data-analysis-type="performance" class="js-analysis-link">Performance vs popularity</a></li>
-                        <li role="none"><a role="menuitem" href="#" data-analysis-type="color" class="js-analysis-link">Color performance</a></li>
-                        <li role="none"><a role="menuitem" href="#" data-analysis-type="synergies" class="js-analysis-link">Card synergies</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck data</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="cards">Card data</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="colors">Color data</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="synergies">Synergy data</a></li>
                     </ul>
                 </div>
                 <a href="/submit">Submit deck</a>
                 <a href="/addcube">Add cube</a>
+                <a href="/resources">Resources</a>
             </nav>
         </div>
     </div>
@@ -457,40 +338,24 @@
             <div class="dashboard-grid">
                 <div class="card card-with-action">
                     <div class="card-heading-row">
-                        <h3>Performance vs popularity</h3>
-                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="performance">Open detailed analysis</a>
+                        <h3>Performance vs. Popularity</h3>
+                        <a href="#" class="card-action-link js-data-view-link" data-data-view="cards">View more card data</a>
                     </div>
                     <div id="performance-chart" class="chart-container"></div>
                 </div>
                 
                 <div class="card card-with-action">
                     <div class="card-heading-row">
-                        <h3>Color performance</h3>
-                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="color">Open detailed analysis</a>
+                        <h3>Color Performance</h3>
+                        <a href="#" class="card-action-link js-data-view-link" data-data-view="colors">View more color data</a>
                     </div>
                     <div id="color-chart" class="chart-container"></div>
                 </div>
                 
                 <div class="card card-with-action">
                     <div class="card-heading-row">
-                        <h3>Top performing cards</h3>
-                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="performance">Open detailed analysis</a>
-                    </div>
-                    <div id="top-cards"></div>
-                </div>
-                
-                <div class="card card-with-action">
-                    <div class="card-heading-row">
-                        <h3>Underperforming cards</h3>
-                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="performance">Open detailed analysis</a>
-                    </div>
-                    <div id="bottom-cards"></div>
-                </div>
-                
-                <div class="card card-with-action">
-                    <div class="card-heading-row">
-                        <h3>Best synergies</h3>
-                        <a href="#" class="card-action-link js-analysis-link" data-analysis-type="synergies">Open detailed analysis</a>
+                        <h3>Most-played pairs</h3>
+                        <a href="#" class="card-action-link js-data-view-link" data-data-view="synergies">View more synergy data</a>
                     </div>
                     <div id="synergies"></div>
                 </div>
@@ -498,22 +363,10 @@
                 <div class="card card-with-action">
                     <div class="card-heading-row">
                         <h3>Trophy case</h3>
-                        <a href="#" class="card-action-link js-decks-link">View decks</a>
+                        <a href="#" class="card-action-link js-decks-link">View more deck data</a>
                     </div>
                     <p style="color:#666; font-size:0.9rem; margin:0.25rem 0 0.75rem 0;">Five most recent decks with no losses for this cube.</p>
                     <div id="trophy-case" class="trophy-case-wrap"></div>
-                </div>
-                
-                <div class="card card-span-2">
-                    <h3>Card search</h3>
-                    <div class="card-search-section">
-                        <div class="card-search-field-wrap">
-                            <input type="text" id="search-input" class="search-input" placeholder="Type a card name to see suggestions" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-controls="card-search-suggestions" aria-expanded="false" role="combobox">
-                            <ul id="card-search-suggestions" class="card-search-suggestions" role="listbox" hidden></ul>
-                        </div>
-                        <button type="button" id="search-button" class="search-button">Search</button>
-                        <div id="card-search-results"></div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -533,6 +386,7 @@
 
     <script src="/site-footer.js"></script>
     <script src="/cw-paths.js"></script>
+    <script src="/site-nav.js"></script>
     <script src="/card-tooltip.js"></script>
     <script>
         var currentCubeId = '';
@@ -605,7 +459,6 @@
                 currentCubeId = '';
                 currentCubeData = null;
                 updateCubeDependentLinks();
-                clearCardSearchUi();
                 hideLoading();
                 document.getElementById('error').style.display = 'none';
                 return;
@@ -617,14 +470,14 @@
             } catch (eLs) {}
             try {
                 if (window.CWPaths) {
-                    var dashPath = CWPaths.dashboard(cubeId);
-                    if (window.location.pathname !== dashPath) {
-                        history.replaceState({}, '', dashPath);
-                    }
+                    history.replaceState(
+                        {},
+                        "",
+                        CWPaths.mergeCurrentPathPrefixWith(CWPaths.dashboard(cubeId))
+                    );
                 }
             } catch (eHist) {}
             updateCubeDependentLinks();
-            clearCardSearchUi();
             showLoading();
             
             fetch('/api/dashboard/' + cubeId)
@@ -669,53 +522,23 @@
                 '<div class="stat-label">Average Win Rate</div></div>';
             document.getElementById('stats-overview').innerHTML = statsHtml;
             
-            // Top performing cards
-            var topCards = data.card_performances.filter(function(c) { return c.performance_delta > 0; }).slice(0, 5);
-            var topHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
-            for (var i = 0; i < topCards.length; i++) {
-                var c = topCards[i];
-                topHtml += '<tr><td>' + CW.cardNameHtml(c.name, c.image_url) + '</td><td>' + c.appearances + '</td>' +
-                    '<td>' + (c.win_rate * 100).toFixed(1) + '%</td>' +
-                    '<td class="positive">+' + (c.performance_delta * 100).toFixed(1) + '%</td></tr>';
-            }
-            topHtml += '</tbody></table></div>';
-            document.getElementById('top-cards').innerHTML = topHtml;
-            
-            // Underperforming cards
-            var bottomCards = data.card_performances
-                .filter(function(c) { return c.performance_delta < -0.05 && c.appearances >= 3; })
-                .sort(function(a, b) { return a.performance_delta - b.performance_delta; })
-                .slice(0, 5);
-            if (bottomCards.length > 0) {
-                var botHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card</th><th>Apps</th><th>Win Rate</th><th>Δ</th></tr></thead><tbody>';
-                for (var bi = 0; bi < bottomCards.length; bi++) {
-                    var bc = bottomCards[bi];
-                    botHtml += '<tr><td>' + CW.cardNameHtml(bc.name, bc.image_url) + '</td><td>' + bc.appearances + '</td>' +
-                        '<td>' + (bc.win_rate * 100).toFixed(1) + '%</td>' +
-                        '<td class="negative">' + (bc.performance_delta * 100).toFixed(1) + '%</td></tr>';
-                }
-                botHtml += '</tbody></table></div>';
-                document.getElementById('bottom-cards').innerHTML = botHtml;
-            } else {
-                document.getElementById('bottom-cards').innerHTML = '<p>No significantly underperforming cards found.</p>';
-            }
-            
-            // Synergies
-            var syns = data.synergies.slice(0, 8);
+            // Synergies: dashboard shows most co-appearing pairs (API field); detail page still uses full synergy ranking.
+            var syns = (data.synergies_most_played && data.synergies_most_played.length)
+                ? data.synergies_most_played
+                : (data.synergies || []).slice(0, 8);
             if (syns.length > 0) {
-                var synHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Together</th><th>Bonus</th></tr></thead><tbody>';
+                var synHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Decks</th><th>Win %</th></tr></thead><tbody>';
                 for (var si = 0; si < syns.length; si++) {
                     var s = syns[si];
-                    var bonusClass = s.synergy_bonus >= 0 ? 'positive' : 'negative';
-                    var bonusSign = s.synergy_bonus >= 0 ? '+' : '';
+                    var decksTogether = s.together_count != null ? s.together_count : '—';
                     synHtml += '<tr><td>' + CW.cardNameHtml(s.card1, s.card1_image_url) + '</td><td>' + CW.cardNameHtml(s.card2, s.card2_image_url) + '</td>' +
-                        '<td>' + (s.together_win_rate * 100).toFixed(1) + '%</td>' +
-                        '<td class="' + bonusClass + '">' + bonusSign + (s.synergy_bonus * 100).toFixed(1) + '%</td></tr>';
+                        '<td class="trophy-mono">' + decksTogether + '</td>' +
+                        '<td class="trophy-mono">' + (s.together_win_rate * 100).toFixed(1) + '%</td></tr>';
                 }
                 synHtml += '</tbody></table></div>';
                 document.getElementById('synergies').innerHTML = synHtml;
             } else {
-                document.getElementById('synergies').innerHTML = '<p>Not enough data for synergy analysis.</p>';
+                document.getElementById('synergies').innerHTML = '<p>Not enough data to list common card pairs yet.</p>';
             }
             
             document.getElementById('dashboard-content').style.display = 'block';
@@ -818,209 +641,9 @@
         }
 
         function updateCubeDependentLinks() {
-            var navDash = document.getElementById('nav-dashboard-trigger');
-            var brand = document.querySelector('.header-brand-link');
-            if (window.CWPaths) {
-                if (navDash) navDash.href = currentCubeId ? CWPaths.dashboard(currentCubeId) : CWPaths.home();
-                if (brand) brand.href = currentCubeId ? CWPaths.dashboard(currentCubeId) : CWPaths.home();
+            if (window.cubeWizardRefreshNavLinks) {
+                window.cubeWizardRefreshNavLinks();
             }
-            var analysisLinks = document.querySelectorAll('a.js-analysis-link[data-analysis-type]');
-            var i;
-            for (i = 0; i < analysisLinks.length; i++) {
-                var a = analysisLinks[i];
-                var t = a.getAttribute('data-analysis-type');
-                if (currentCubeId && window.CWPaths) {
-                    a.href = CWPaths.analysis(currentCubeId, t);
-                    a.classList.remove('is-disabled');
-                    a.removeAttribute('aria-disabled');
-                    a.tabIndex = 0;
-                } else {
-                    a.href = '#';
-                    a.classList.add('is-disabled');
-                    a.setAttribute('aria-disabled', 'true');
-                    a.tabIndex = -1;
-                }
-            }
-            var deckLinks = document.querySelectorAll('a.js-decks-link');
-            for (i = 0; i < deckLinks.length; i++) {
-                var d = deckLinks[i];
-                if (currentCubeId && window.CWPaths) {
-                    d.href = CWPaths.decks(currentCubeId);
-                    d.classList.remove('is-disabled');
-                    d.removeAttribute('aria-disabled');
-                    d.tabIndex = 0;
-                } else {
-                    d.href = '#';
-                    d.classList.add('is-disabled');
-                    d.setAttribute('aria-disabled', 'true');
-                    d.tabIndex = -1;
-                }
-            }
-        }
-
-        var searchSuggestDebounceMs = 150;
-        var searchSuggestTimer = null;
-
-        function clearCardSearchUi() {
-            var si = document.getElementById('search-input');
-            if (si) si.value = '';
-            var res = document.getElementById('card-search-results');
-            if (res) res.innerHTML = '';
-            hideSearchSuggestions();
-        }
-
-        function hideSearchSuggestions() {
-            var ul = document.getElementById('card-search-suggestions');
-            var inp = document.getElementById('search-input');
-            if (ul) {
-                ul.innerHTML = '';
-                ul.classList.remove('is-open');
-                ul.hidden = true;
-            }
-            if (inp) inp.setAttribute('aria-expanded', 'false');
-        }
-
-        function getSearchSuggestions(query) {
-            if (!currentCubeData || !currentCubeData.card_performances) return [];
-            var ql = query.trim().toLowerCase();
-            if (!ql) return [];
-            var perf = currentCubeData.card_performances;
-            var starts = [];
-            var rest = [];
-            var j;
-            for (j = 0; j < perf.length; j++) {
-                var n = perf[j].name;
-                var nl = n.toLowerCase();
-                if (nl.indexOf(ql) === -1) continue;
-                if (nl.indexOf(ql) === 0) starts.push(perf[j]);
-                else rest.push(perf[j]);
-            }
-            starts.sort(function(a, b) { return a.name.localeCompare(b.name); });
-            rest.sort(function(a, b) { return a.name.localeCompare(b.name); });
-            return starts.concat(rest).slice(0, 12);
-        }
-
-        function renderSuggestionList(cards) {
-            var ul = document.getElementById('card-search-suggestions');
-            var inp = document.getElementById('search-input');
-            if (!ul || !inp) return;
-            ul.innerHTML = '';
-            if (!cards.length) {
-                hideSearchSuggestions();
-                return;
-            }
-            var idx;
-            for (idx = 0; idx < cards.length; idx++) {
-                (function(card) {
-                    var li = document.createElement('li');
-                    li.setAttribute('role', 'none');
-                    var btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.setAttribute('role', 'option');
-                    btn.textContent = card.name;
-                    btn.addEventListener('mousedown', function(ev) {
-                        ev.preventDefault();
-                        selectSearchSuggestion(card);
-                    });
-                    li.appendChild(btn);
-                    ul.appendChild(li);
-                })(cards[idx]);
-            }
-            ul.classList.add('is-open');
-            ul.hidden = false;
-            inp.setAttribute('aria-expanded', 'true');
-        }
-
-        function scheduleSearchSuggestions() {
-            if (searchSuggestTimer) clearTimeout(searchSuggestTimer);
-            searchSuggestTimer = setTimeout(function() {
-                searchSuggestTimer = null;
-                updateSearchSuggestions();
-            }, searchSuggestDebounceMs);
-        }
-
-        function updateSearchSuggestions() {
-            var inp = document.getElementById('search-input');
-            var resultsContainer = document.getElementById('card-search-results');
-            if (!inp) return;
-            var q = inp.value;
-            if (resultsContainer) resultsContainer.innerHTML = '';
-            if (!q.trim()) {
-                hideSearchSuggestions();
-                return;
-            }
-            if (!currentCubeData || !currentCubeData.card_performances) {
-                hideSearchSuggestions();
-                return;
-            }
-            renderSuggestionList(getSearchSuggestions(q));
-        }
-
-        function selectSearchSuggestion(card) {
-            var inp = document.getElementById('search-input');
-            if (inp) inp.value = card.name;
-            hideSearchSuggestions();
-            renderCardSearchStats(card);
-        }
-
-        function findClosestCardMatch(query) {
-            var q = query.trim().toLowerCase();
-            if (!q || !currentCubeData || !currentCubeData.card_performances) return null;
-            var arr = currentCubeData.card_performances;
-            var i;
-            var nl;
-            for (i = 0; i < arr.length; i++) {
-                if (arr[i].name.toLowerCase() === q) return arr[i];
-            }
-            for (i = 0; i < arr.length; i++) {
-                nl = arr[i].name.toLowerCase();
-                if (nl.indexOf(q) === 0) return arr[i];
-            }
-            for (i = 0; i < arr.length; i++) {
-                nl = arr[i].name.toLowerCase();
-                if (nl.indexOf(q) !== -1) return arr[i];
-            }
-            return null;
-        }
-
-        function commitCardSearch() {
-            var searchInput = document.getElementById('search-input');
-            var resultsContainer = document.getElementById('card-search-results');
-            if (!searchInput || !resultsContainer) return;
-            hideSearchSuggestions();
-            var searchTerm = searchInput.value.trim();
-            if (!searchTerm) {
-                resultsContainer.innerHTML = '';
-                return;
-            }
-            if (!currentCubeData || !currentCubeData.card_performances) {
-                resultsContainer.innerHTML = '<div class="search-error">Select a cube first.</div>';
-                return;
-            }
-            var card = findClosestCardMatch(searchTerm);
-            if (!card) {
-                resultsContainer.innerHTML = '<div class="search-error">No matching card found. Try a different name or choose a suggestion from the list.</div>';
-                return;
-            }
-            renderCardSearchStats(card);
-        }
-
-        function renderCardSearchStats(card) {
-            var resultsContainer = document.getElementById('card-search-results');
-            if (!resultsContainer) return;
-            var winRate = (card.win_rate * 100).toFixed(1);
-            var totalGames = card.wins + card.losses;
-            var deltaSign = card.performance_delta > 0 ? '+' : '';
-            resultsContainer.innerHTML = '<div class="card-result">' +
-                '<div class="card-name">' + CW.cardNameHtml(card.name, card.image_url) + '</div>' +
-                '<div class="card-stats">' +
-                '<div class="stat-row"><span>Win rate</span><strong>' + winRate + '%</strong></div>' +
-                '<div class="stat-row"><span>Total games</span><strong>' + totalGames + '</strong></div>' +
-                '<div class="stat-row"><span>Wins</span><strong>' + card.wins + '</strong></div>' +
-                '<div class="stat-row"><span>Losses</span><strong>' + card.losses + '</strong></div>' +
-                '<div class="stat-row"><span>Performance delta</span><strong>' + deltaSign + (card.performance_delta * 100).toFixed(1) + '%</strong></div>' +
-                '<div class="stat-row"><span>Appearances</span><strong>' + card.appearances + '</strong></div>' +
-                '</div></div>';
         }
 
         // Initialize
@@ -1039,32 +662,6 @@
                     navTrigger.setAttribute('aria-expanded', 'false');
                 });
             }
-            
-            var searchInput = document.getElementById('search-input');
-            if (searchInput) {
-                searchInput.addEventListener('input', scheduleSearchSuggestions);
-                searchInput.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter') {
-                        if (searchSuggestTimer) clearTimeout(searchSuggestTimer);
-                        searchSuggestTimer = null;
-                        commitCardSearch();
-                    } else if (e.key === 'Escape') {
-                        hideSearchSuggestions();
-                    }
-                });
-            }
-
-            var searchBtn = document.getElementById('search-button');
-            if (searchBtn) {
-                searchBtn.addEventListener('click', function() {
-                    commitCardSearch();
-                });
-            }
-
-            document.addEventListener('mousedown', function(ev) {
-                var wrap = document.querySelector('.card-search-field-wrap');
-                if (wrap && !wrap.contains(ev.target)) hideSearchSuggestions();
-            });
 
             var resizeDashCharts = function() {
                 ['performance-chart', 'color-chart'].forEach(function(cid) {

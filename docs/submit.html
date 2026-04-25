@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="/CubeWizard.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Brookshire&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/site-header.css" />
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
@@ -215,14 +215,15 @@
           <div class="nav-dropdown">
             <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
             <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
-              <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck view</a></li>
-              <li role="none"><a role="menuitem" href="#" data-analysis-type="performance" class="js-analysis-link">Performance vs popularity</a></li>
-              <li role="none"><a role="menuitem" href="#" data-analysis-type="color" class="js-analysis-link">Color performance</a></li>
-              <li role="none"><a role="menuitem" href="#" data-analysis-type="synergies" class="js-analysis-link">Card synergies</a></li>
+              <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck data</a></li>
+              <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="cards">Card data</a></li>
+              <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="colors">Color data</a></li>
+              <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="synergies">Synergy data</a></li>
             </ul>
           </div>
           <a href="/submit" aria-current="page">Submit deck</a>
           <a href="/addcube">Add cube</a>
+          <a href="/resources">Resources</a>
         </nav>
       </div>
     </div>

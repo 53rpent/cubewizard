@@ -6,7 +6,7 @@ Uses Structured Outputs for reliable card name extraction.
 import base64
 import os
 import requests
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 from openai import OpenAI
 from PIL import Image
 from pydantic import BaseModel
@@ -46,18 +46,33 @@ class ExtractionResult:
 class ImageProcessor:
     """Processes cube deck images using OpenAI's Vision API with Structured Outputs to reliably extract card names."""
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        response_hook: Optional[Callable[[Any], None]] = None,
+    ):
         """
         Initialize the ImageProcessor.
         
         Args:
             api_key: OpenAI API key. If None, will try to get from environment.
+            response_hook: Optional callback invoked with each raw OpenAI response object
+                (e.g. after ``responses.parse``) for logging, testing, or token accounting.
         """
         if api_key:
             self.client = OpenAI(api_key=api_key)
         else:
             self.client = OpenAI()  # Will use OPENAI_API_KEY from environment
-    
+        self._response_hook = response_hook
+
+    def _notify_response(self, response: Any) -> None:
+        if not self._response_hook:
+            return
+        try:
+            self._response_hook(response)
+        except Exception:
+            pass
+
     def fetch_cubecobra_list(self, cube_id: str) -> Optional[List[str]]:
         """
         Fetch the card list from a CubeCobra cube.
@@ -228,6 +243,7 @@ class ImageProcessor:
                 text_format=OrientationResult,
                 max_output_tokens=2000
             )
+            self._notify_response(response)
             
             result = response.output_parsed
             
@@ -520,6 +536,7 @@ class ImageProcessor:
                 text_format=CardExtractionResult,
                 max_output_tokens=max_tokens
             )
+            self._notify_response(response)
 
             result = response.output_parsed
 

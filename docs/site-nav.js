@@ -1,5 +1,5 @@
 /**
- * Sets analysis and deck links in the shared header from URL or localStorage.
+ * Sets data-view and deck links in the shared header from URL or localStorage.
  * Requires cw-paths.js (CWPaths).
  */
 (function () {
@@ -25,6 +25,11 @@
     }
   }
 
+  function hrefForDataView(id, view) {
+    if (!window.CWPaths || !id) return "#";
+    return CWPaths.dataPath(id, view);
+  }
+
   function applyNavLinks() {
     if (!window.CWPaths) return;
     var id = cubeIdForNav();
@@ -33,12 +38,13 @@
     var homeOrDash = id ? CWPaths.dashboard(id) : CWPaths.home();
     if (dash) dash.href = homeOrDash;
     if (brand) brand.href = homeOrDash;
-    var links = document.querySelectorAll("a.js-analysis-link[data-analysis-type]");
-    for (var i = 0; i < links.length; i++) {
-      var a = links[i];
-      var t = a.getAttribute("data-analysis-type");
-      if (id) {
-        a.href = CWPaths.analysis(id, t);
+
+    var viewLinks = document.querySelectorAll("a.js-data-view-link[data-data-view]");
+    for (var i = 0; i < viewLinks.length; i++) {
+      var a = viewLinks[i];
+      var v = a.getAttribute("data-data-view");
+      if (id && v) {
+        a.href = hrefForDataView(id, v);
         a.classList.remove("is-disabled");
         a.removeAttribute("aria-disabled");
         a.removeAttribute("title");
@@ -51,6 +57,7 @@
         a.tabIndex = -1;
       }
     }
+
     var deckLinks = document.querySelectorAll("a.js-decks-link");
     for (var j = 0; j < deckLinks.length; j++) {
       var d = deckLinks[j];

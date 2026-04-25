@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synergy data - CubeWizard</title>
+    <link rel="icon" type="image/png" href="/CubeWizard.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/site-header.css">
+    <link rel="stylesheet" href="/card-tooltip.css">
+    <link rel="stylesheet" href="/analysis-shared.css">
+</head>
+<body>
+    <div class="header">
+        <div class="header-inner">
+            <div class="header-brand-stack">
+                <a href="/" class="header-brand-link" title="CubeWizard home">
+                    <img src="/CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+                    <div class="header-brand-text">
+                        <span class="header-wordmark">CubeWizard</span>
+                        <span class="header-subtitle">Synergy data</span>
+                    </div>
+                </a>
+                <div class="header-cube-wrap">
+                    <label class="visually-hidden" for="cube-select">Cube</label>
+                    <select id="cube-select" aria-label="Select cube">
+                        <option value="">Choose a cube...</option>
+                    </select>
+                </div>
+            </div>
+            <nav class="header-nav" aria-label="Primary">
+                <div class="nav-dropdown">
+                    <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
+                    <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
+                        <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck data</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="cards">Card data</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="colors">Color data</a></li>
+                        <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="synergies">Synergy data</a></li>
+                    </ul>
+                </div>
+                <a href="/submit">Submit deck</a>
+                <a href="/addcube">Add cube</a>
+                <a href="/resources">Resources</a>
+            </nav>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="description">
+            <h2 id="analysis-title">Synergy data</h2>
+            <p id="analysis-description"></p>
+        </div>
+
+        <div id="chart-section" class="chart-container" style="display: none;">
+            <div id="detailed-chart"></div>
+        </div>
+
+        <div id="synergy-filter-panel" class="data-container" style="display: none;">
+            <h3>Filter by card</h3>
+            <p class="subtle" style="margin-top: -0.5rem; margin-bottom: 0.75rem;">Show pairs where either column is this card (pick a name or search).</p>
+            <div class="card-search-section">
+                <div class="analysis-card-search-field-wrap synergy-filter-field-wrap">
+                    <input type="text" id="synergy-filter-input" class="search-input" placeholder="Type a card name to see suggestions" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-controls="synergy-filter-suggestions" aria-expanded="false" role="combobox">
+                    <ul id="synergy-filter-suggestions" class="card-search-suggestions" role="listbox" hidden></ul>
+                </div>
+                <button type="button" id="synergy-filter-button" class="search-button">Apply</button>
+                <div id="synergy-filter-message"></div>
+            </div>
+        </div>
+
+        <div id="data-section" class="data-container" style="display: none;">
+            <div id="detailed-data"></div>
+        </div>
+
+        <div id="loading" class="loading">
+            Loading detailed analysis...
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <div class="footer">
+        <p>Questions or feedback? Contact <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+        <p class="footer-version" id="cw-footer-version-line" hidden><span id="cw-footer-version"></span></p>
+    </div>
+
+    <script src="/site-footer.js"></script>
+    <script src="/cw-paths.js"></script>
+    <script src="/site-nav.js"></script>
+    <script src="/card-tooltip.js"></script>
+    <script src="/analysis-shared.js"></script>
+    <script>
+        CWDataPage.init({ dataView: "synergies" });
+    </script>
+</body>
+</html>

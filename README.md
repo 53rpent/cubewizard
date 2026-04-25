@@ -221,7 +221,13 @@ CubeWizard/
 │   └── redirect-worker.js       # Domain redirect worker
 ├── docs/                        # Static site assets (served by Worker)
 │   ├── index.html               # Main dashboard SPA
-│   ├── analysis.html            # Detailed analysis page
+│   ├── analysis-card.html       # Card data (/cube/cards)
+│   ├── analysis-color.html      # Color data (/cube/colors)
+│   ├── analysis-synergy.html    # Synergy data (/cube/synergies)
+│   ├── analysis-shared.css      # Shared layout for data pages + decks
+│   ├── analysis-shared.js       # Card/color/synergy data page boot (CWDataPage)
+│   ├── decks-main.js            # Deck list + modal for decks.html
+│   ├── decks.html               # Deck list (/cube/decks)
 │   ├── submit.html              # Deck submission form
 │   ├── add_cube.html            # Add new cube form
 │   └── CubeWizard.png           # Site logo
