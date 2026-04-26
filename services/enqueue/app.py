@@ -62,15 +62,26 @@ async def enqueue(
     fs = firestore.Client()
     job_ref = fs.collection(jobs_collection).document(req.upload_id)
 
-    @firestore.transactional
-    def _txn(tx: firestore.Transaction) -> None:
-        snap = job_ref.get(transaction=tx)
-        if snap.exists:
-            d = snap.to_dict() or {}
-            if d.get("status") == "done":
-                return
-        tx.set(
-            job_ref,
+    snap = job_ref.get()
+    if snap.exists:
+        d = snap.to_dict() or {}
+        if d.get("status") == "done":
+            # Idempotency: if already completed, don't regress status.
+            pass
+        else:
+            job_ref.set(
+                {
+                    "status": "queued",
+                    "r2_bucket": req.r2_bucket,
+                    "r2_prefix": req.r2_prefix,
+                    "submitted_at": req.submitted_at,
+                    "schema_version": req.schema_version,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+    else:
+        job_ref.set(
             {
                 "status": "queued",
                 "r2_bucket": req.r2_bucket,
@@ -81,8 +92,6 @@ async def enqueue(
             },
             merge=True,
         )
-
-    _txn(fs.transaction())
 
     # Enqueue Cloud Task (HTTP target).
     client = tasks_v2.CloudTasksClient()
