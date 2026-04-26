@@ -62,6 +62,7 @@ async def enqueue(
     fs = firestore.Client()
     job_ref = fs.collection(jobs_collection).document(req.upload_id)
 
+    @firestore.transactional
     def _txn(tx: firestore.Transaction) -> None:
         snap = job_ref.get(transaction=tx)
         if snap.exists:
@@ -81,7 +82,7 @@ async def enqueue(
             merge=True,
         )
 
-    fs.transaction(_txn)
+    _txn(fs.transaction())
 
     # Enqueue Cloud Task (HTTP target).
     client = tasks_v2.CloudTasksClient()
