@@ -90,6 +90,7 @@ You can tune rate limits later; start conservative if you want to avoid LLM rate
 - `CLOUD_TASKS_QUEUE=eval-queue`
 - `WORKER_URL=https://<cubewizard-worker-url>/tasks/eval`
 - `TASK_OIDC_SERVICE_ACCOUNT=cloudtasks-invoker-sa@cubewizard.iam.gserviceaccount.com`
+- `FIRESTORE_DATABASE_ID=cw-upload-status` (if you created a non-default Firestore database)
 - `FIRESTORE_COLLECTION=jobs` (optional)
 
 Runtime service account should have:
@@ -101,6 +102,7 @@ Runtime service account should have:
 - `R2_ENDPOINT_URL`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
+- (optional) `FIRESTORE_DATABASE_ID=cw-upload-status` (if you created a non-default Firestore database)
 - (optional) `FIRESTORE_COLLECTION=jobs`
 - (optional) `JOB_LEASE_MINUTES` (default `45`) — stale `running` jobs can be reclaimed after lease expiry
 - Any Cloudflare D1 vars you rely on (see `d1_writer.py`)

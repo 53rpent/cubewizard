@@ -74,6 +74,11 @@ def _download_prefix_to_dir(s3, bucket: str, prefix: str, dest: Path) -> Dict[st
     return out
 
 
+def _firestore_client() -> firestore.Client:
+    database = os.environ.get("FIRESTORE_DATABASE_ID") or "(default)"
+    return firestore.Client(database=database)
+
+
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
     return {"ok": "true"}
@@ -82,7 +87,7 @@ def healthz() -> Dict[str, str]:
 @app.post("/tasks/eval")
 async def run_task(req: TaskRequest) -> Dict[str, Any]:
     jobs_collection = os.environ.get("FIRESTORE_COLLECTION", "jobs")
-    fs = firestore.Client()
+    fs = _firestore_client()
     job_ref = fs.collection(jobs_collection).document(req.upload_id)
 
     lease_minutes = int(os.environ.get("JOB_LEASE_MINUTES", "45"))

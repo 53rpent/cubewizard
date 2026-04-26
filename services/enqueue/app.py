@@ -36,6 +36,12 @@ def _verify_shared_secret(x_shared_secret: Optional[str]) -> None:
     if not x_shared_secret or not hmac.compare_digest(x_shared_secret, expected):
         raise HTTPException(status_code=401, detail="unauthorized")
 
+def _firestore_client() -> firestore.Client:
+    # Firestore supports multiple databases. If you created a non-default database,
+    # set FIRESTORE_DATABASE_ID to that database name (e.g. "cw-upload-status").
+    database = os.environ.get("FIRESTORE_DATABASE_ID") or "(default)"
+    return firestore.Client(database=database)
+
 
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
@@ -59,7 +65,7 @@ async def enqueue(
     jobs_collection = os.environ.get("FIRESTORE_COLLECTION", "jobs")
 
     # Upsert Firestore status to queued (but don't overwrite done).
-    fs = firestore.Client()
+    fs = _firestore_client()
     job_ref = fs.collection(jobs_collection).document(req.upload_id)
 
     snap = job_ref.get()
