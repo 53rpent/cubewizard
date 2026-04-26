@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import hmac
-import hashlib
 import json
 import os
 from typing import Any, Dict, Optional
@@ -47,7 +46,7 @@ def healthz() -> Dict[str, str]:
 async def enqueue(
     req: EnqueueRequest,
     request: Request,
-    x_shared_secret: Optional[str] = Header(default=None, convert_underscores=False),
+    x_shared_secret: Optional[str] = Header(default=None, alias="X-Shared-Secret"),
 ) -> Dict[str, Any]:
     _verify_shared_secret(x_shared_secret)
 
@@ -78,26 +77,27 @@ async def enqueue(
                 "submitted_at": req.submitted_at,
                 "schema_version": req.schema_version,
                 "created_at": firestore.SERVER_TIMESTAMP,
-                "attempt_count": firestore.Increment(0),
             },
             merge=True,
         )
 
-    fs.transaction()( _txn )  # type: ignore[misc]
+    fs.transaction(_txn)
 
     # Enqueue Cloud Task (HTTP target).
     client = tasks_v2.CloudTasksClient()
     parent = client.queue_path(project, location, queue)
 
     payload = req.model_dump()
-    body = json.dumps(payload).encode("utf-8")
+    body_bytes = json.dumps(payload).encode("utf-8")
+    # Cloud Tasks requires the HTTP body to be base64-encoded.
+    body_b64 = base64.b64encode(body_bytes).decode("utf-8")
 
     task = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
             "url": worker_url,
             "headers": {"Content-Type": "application/json"},
-            "body": body,
+            "body": body_b64,
             "oidc_token": {
                 "service_account_email": oidc_sa,
                 # Cloud Run generally accepts audience as the target URL.

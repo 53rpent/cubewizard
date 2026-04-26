@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import boto3
 from botocore.config import Config as BotoConfig
-from fastapi import FastAPI, HTTPException, Request
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from google.cloud import firestore
 
 from main import CubeWizard
 
+
+load_dotenv()
 
 app = FastAPI(title="cubewizard-worker")
 
@@ -77,10 +80,12 @@ def healthz() -> Dict[str, str]:
 
 
 @app.post("/tasks/eval")
-async def run_task(req: TaskRequest, request: Request) -> Dict[str, Any]:
+async def run_task(req: TaskRequest) -> Dict[str, Any]:
     jobs_collection = os.environ.get("FIRESTORE_COLLECTION", "jobs")
     fs = firestore.Client()
     job_ref = fs.collection(jobs_collection).document(req.upload_id)
+
+    lease_minutes = int(os.environ.get("JOB_LEASE_MINUTES", "45"))
 
     # Idempotency / claim
     def _claim(tx: firestore.Transaction) -> Dict[str, Any]:
@@ -90,14 +95,21 @@ async def run_task(req: TaskRequest, request: Request) -> Dict[str, Any]:
             if d.get("status") == "done":
                 return {"already_done": True}
             if d.get("status") == "running":
-                # Another attempt may be running; let Tasks retry later.
-                return {"already_running": True}
+                lease_expires = d.get("lease_expires_at")
+                # If lease is missing or expired, allow reclaim.
+                if isinstance(lease_expires, datetime):
+                    if lease_expires.tzinfo is None:
+                        lease_expires = lease_expires.replace(tzinfo=timezone.utc)
+                    if lease_expires > datetime.now(timezone.utc):
+                        return {"already_running": True}
+        lease_until = datetime.now(timezone.utc) + timedelta(minutes=lease_minutes)
         tx.set(
             job_ref,
             {
                 "status": "running",
                 "started_at": firestore.SERVER_TIMESTAMP,
                 "attempt_count": firestore.Increment(1),
+                "lease_expires_at": lease_until,
                 "r2_bucket": req.r2_bucket,
                 "r2_prefix": req.r2_prefix,
                 "schema_version": req.schema_version,
@@ -106,7 +118,7 @@ async def run_task(req: TaskRequest, request: Request) -> Dict[str, Any]:
         )
         return {"claimed": True}
 
-    claim = fs.transaction()(_claim)  # type: ignore[misc]
+    claim = fs.transaction(_claim)
     if claim.get("already_done"):
         return {"ok": True, "upload_id": req.upload_id, "status": "done"}
     if claim.get("already_running"):
@@ -128,8 +140,7 @@ async def run_task(req: TaskRequest, request: Request) -> Dict[str, Any]:
             wizard = CubeWizard()
             result = wizard.process_submissions(str(submissions_dir))
 
-            fs.set(
-                job_ref,
+            job_ref.set(
                 {
                     "status": "done",
                     "finished_at": firestore.SERVER_TIMESTAMP,
@@ -142,8 +153,7 @@ async def run_task(req: TaskRequest, request: Request) -> Dict[str, Any]:
             return {"ok": True, "upload_id": req.upload_id, "result": result}
 
     except Exception as e:
-        fs.set(
-            job_ref,
+        job_ref.set(
             {
                 "status": "failed",
                 "finished_at": firestore.SERVER_TIMESTAMP,

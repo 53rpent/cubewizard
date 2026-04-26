@@ -96,9 +96,84 @@ export default {
 };
 
 /**
- * 301 from /{cube}/analysis/{performance|color|synergies} → /{cube}/cards|colors|synergies
- * @returns {Response|null}
+ * After a successful staging upload to R2, notify the GCP enqueue service so it can
+ * create a Cloud Task to process the submission.
+ *
+ * Configure via Wrangler secrets (recommended):
+ * - GCP_ENQUEUE_URL: https://<cubewizard-enqueue-host>/enqueue
+ * - ENQUEUE_SHARED_SECRET: must match Cloud Run `ENQUEUE_SHARED_SECRET`
+ *
+ * Optional:
+ * - R2_STAGING_BUCKET_NAME: defaults to "decklist-uploads" (must match the R2 bucket behind env.BUCKET)
  */
+async function enqueueGcpEvalJob(env, prefix) {
+  var baseUrlRaw = env.GCP_ENQUEUE_URL || env.ENQUEUE_URL || "";
+  var baseUrl = String(baseUrlRaw || "").trim();
+  if (!baseUrl) {
+    console.warn("GCP enqueue skipped: missing env.GCP_ENQUEUE_URL (or env.ENQUEUE_URL)");
+    return { ok: false, skipped: true, reason: "missing_url" };
+  }
+
+  var secretRaw = env.ENQUEUE_SHARED_SECRET || "";
+  var secret = String(secretRaw || "").trim();
+  if (!secret) {
+    console.warn("GCP enqueue skipped: missing env.ENQUEUE_SHARED_SECRET");
+    return { ok: false, skipped: true, reason: "missing_secret" };
+  }
+
+  var bucketRaw = env.R2_STAGING_BUCKET_NAME || "decklist-uploads";
+  var r2_bucket = String(bucketRaw || "").trim();
+  if (!r2_bucket) {
+    console.warn("GCP enqueue skipped: missing/empty env.R2_STAGING_BUCKET_NAME");
+    return { ok: false, skipped: true, reason: "missing_bucket" };
+  }
+
+  var upload_id = String(prefix || "").replace(/\/+$/, "");
+  var r2_prefix = upload_id + "/";
+
+  var trimmedBase = baseUrl.replace(/\/+$/, "");
+  var url =
+    trimmedBase.toLowerCase().endsWith("/enqueue")
+      ? trimmedBase
+      : trimmedBase + "/enqueue";
+
+  var controller = new AbortController();
+  var tid = setTimeout(function () {
+    controller.abort();
+  }, 15000);
+
+  try {
+    var resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shared-Secret": secret,
+      },
+      body: JSON.stringify({
+        upload_id: upload_id,
+        r2_bucket: r2_bucket,
+        r2_prefix: r2_prefix,
+        submitted_at: new Date().toISOString(),
+        schema_version: 1,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      var t = await resp.text();
+      console.error("GCP enqueue failed:", resp.status, t.slice(0, 500));
+      return { ok: false, skipped: false, status: resp.status };
+    }
+
+    return { ok: true, skipped: false, status: resp.status };
+  } catch (e) {
+    console.error("GCP enqueue error:", e);
+    return { ok: false, skipped: false };
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 /**
  * Workers static assets may 307 to a canonical path (e.g. /analysis-card.html → /analysis-card),
  * which drops /{cube}/cards from the browser URL and breaks client routing. Follow redirects
@@ -1618,10 +1693,17 @@ async function handleUpload(request, env) {
       httpMetadata: { contentType: "application/json" },
     });
 
+    // Best-effort: enqueue remote processing. Do not fail the user upload if GCP is down/misconfigured.
+    var enqueueResult = await enqueueGcpEvalJob(env, prefix);
+    if (!enqueueResult.ok && !enqueueResult.skipped) {
+      console.error("Upload succeeded but GCP enqueue failed:", enqueueResult);
+    }
+
     return jsonResponse({
       success: true,
       message: "Deck uploaded successfully!",
       key: prefix,
+      enqueue: enqueueResult,
     });
   } catch (err) {
     console.error("Upload error:", err);
