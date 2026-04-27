@@ -38,6 +38,11 @@ export default {
       return handleGetDecks(decksMatch[1], env, request);
     }
 
+    const processingDecksMatch = url.pathname.match(/^\/api\/processing-decks\/([^/]+)$/);
+    if (processingDecksMatch && request.method === "GET") {
+      return handleGetProcessingDecks(processingDecksMatch[1], env);
+    }
+
     const deckThumbMatch = url.pathname.match(/^\/api\/deck\/([^/]+)\/thumb$/);
     if (deckThumbMatch && request.method === "GET") {
       return handleGetDeckThumb(deckThumbMatch[1], env);
@@ -105,8 +110,274 @@ export default {
  *
  * Optional:
  * - R2_STAGING_BUCKET_NAME: defaults to "decklist-uploads" (must match the R2 bucket behind env.BUCKET)
+ *
+ * Deck processing status (`/api/processing-decks/:cubeId`) uses Firestore directly from the Worker.
+ * Configure:
+ * - GCP_FIRESTORE_SA_JSON: full service account JSON (private key) with Firestore read access
+ * - GCP_PROJECT_ID: optional if `project_id` is present in the JSON
+ * - FIRESTORE_DATABASE_ID: optional (defaults to "(default)"; use e.g. cw-upload-status)
+ * - FIRESTORE_COLLECTION: optional (defaults to jobs)
  */
-async function enqueueGcpEvalJob(env, prefix) {
+var __cwGcpAccessTokenCache = { token: "", expMs: 0 };
+
+function base64UrlEncodeBytes(buf) {
+  var bin = "";
+  var bytes = new Uint8Array(buf);
+  for (var i = 0; i < bytes.byteLength; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  var b64 = btoa(bin);
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlEncodeUtf8(s) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(s));
+}
+
+function pemToPkcs8ArrayBuffer(pem) {
+  var lines = String(pem || "")
+    .trim()
+    .split(/\r?\n/)
+    .filter(function (l) {
+      return l.indexOf("-----") !== 0;
+    });
+  var b64 = lines.join("");
+  var raw = atob(b64);
+  var buf = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+  return buf.buffer;
+}
+
+async function importRsaPrivateKeyFromPem(pem) {
+  return await crypto.subtle.importKey(
+    "pkcs8",
+    pemToPkcs8ArrayBuffer(pem),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+
+async function signJwtRs256(pem, claims) {
+  var header = { alg: "RS256", typ: "JWT" };
+  var h = base64UrlEncodeUtf8(JSON.stringify(header));
+  var p = base64UrlEncodeUtf8(JSON.stringify(claims));
+  var data = h + "." + p;
+  var key = await importRsaPrivateKeyFromPem(pem);
+  var sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(data)
+  );
+  return data + "." + base64UrlEncodeBytes(sig);
+}
+
+async function getGoogleAccessTokenFromServiceAccountJson(saJsonText) {
+  var now = Date.now();
+  if (__cwGcpAccessTokenCache.token && now < __cwGcpAccessTokenCache.expMs - 30000) {
+    return __cwGcpAccessTokenCache.token;
+  }
+
+  var sa = JSON.parse(saJsonText);
+  var email = sa.client_email;
+  var pk = sa.private_key;
+  if (!email || !pk) {
+    throw new Error("service account JSON missing client_email/private_key");
+  }
+
+  var iat = Math.floor(now / 1000);
+  var exp = iat + 3600;
+  var jwt = await signJwtRs256(pk, {
+    iss: email,
+    sub: email,
+    aud: "https://oauth2.googleapis.com/token",
+    iat: iat,
+    exp: exp,
+    scope: "https://www.googleapis.com/auth/datastore",
+  });
+
+  var resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt,
+    }),
+  });
+  var j = await resp.json().catch(function () {
+    return null;
+  });
+  if (!resp.ok || !j || !j.access_token) {
+    var msg = (j && (j.error_description || j.error)) || "token_exchange_failed";
+    throw new Error(String(msg));
+  }
+
+  var ttlMs = 55 * 60 * 1000;
+  __cwGcpAccessTokenCache.token = j.access_token;
+  __cwGcpAccessTokenCache.expMs = now + ttlMs;
+  return j.access_token;
+}
+
+function firestoreParentPath(projectId, databaseId, collectionId) {
+  var db = databaseId && String(databaseId).trim() ? String(databaseId).trim() : "(default)";
+  return (
+    "projects/" +
+    encodeURIComponent(projectId) +
+    "/databases/" +
+    encodeURIComponent(db) +
+    "/documents"
+  );
+}
+
+function firestoreStringValue(s) {
+  return { stringValue: String(s) };
+}
+
+function unwrapFirestoreValue(v) {
+  if (!v || typeof v !== "object") return null;
+  if ("stringValue" in v) return v.stringValue;
+  if ("integerValue" in v) return v.integerValue;
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("timestampValue" in v) return v.timestampValue;
+  if ("mapValue" in v && v.mapValue && v.mapValue.fields) return v.mapValue.fields;
+  if ("arrayValue" in v && v.arrayValue) return v.arrayValue.values || [];
+  return null;
+}
+
+function unwrapFirestoreDoc(doc) {
+  var fields = (doc && doc.fields) || {};
+  var out = {};
+  for (var k in fields) {
+    if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+    out[k] = unwrapFirestoreValue(fields[k]);
+  }
+  return out;
+}
+
+async function firestoreRunQuery(accessToken, parentPath, structuredQuery) {
+  var url = "https://firestore.googleapis.com/v1/" + parentPath + ":runQuery";
+  var resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ structuredQuery: structuredQuery }),
+  });
+  var text = await resp.text();
+  if (!resp.ok) {
+    throw new Error("firestore_runQuery_failed:" + resp.status + ":" + text.slice(0, 500));
+  }
+  return JSON.parse(text);
+}
+
+async function firestoreQueryJobsByCubeAndStatus(accessToken, parentPath, collectionId, cube, status) {
+  return await firestoreRunQuery(accessToken, parentPath, {
+    from: [{ collectionId: collectionId }],
+    where: {
+      compositeFilter: {
+        op: "AND",
+        filters: [
+          { fieldFilter: { field: { fieldPath: "cube_id" }, op: "EQUAL", value: firestoreStringValue(cube) } },
+          { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: firestoreStringValue(status) } },
+        ],
+      },
+    },
+    limit: 50,
+  });
+}
+
+async function handleGetProcessingDecks(cubeId, env) {
+  try {
+    var cube = String(cubeId || "").trim();
+    if (!cube) {
+      return jsonResponse({ error: "cube_id is required" }, 400);
+    }
+
+    var saJson = env.GCP_FIRESTORE_SA_JSON;
+    if (!saJson || typeof saJson !== "string" || !saJson.trim()) {
+      return jsonResponse({ jobs: [], disabled: true }, 200);
+    }
+
+    var sa = JSON.parse(saJson);
+    var projectId = (env.GCP_PROJECT_ID && String(env.GCP_PROJECT_ID).trim()) || sa.project_id;
+    if (!projectId) {
+      return jsonResponse({ error: "Missing GCP_PROJECT_ID" }, 500);
+    }
+
+    var databaseId = env.FIRESTORE_DATABASE_ID;
+    if (!databaseId || !String(databaseId).trim()) {
+      databaseId = "(default)";
+    } else {
+      databaseId = String(databaseId).trim();
+    }
+
+    var collectionId = env.FIRESTORE_COLLECTION;
+    if (!collectionId || !String(collectionId).trim()) {
+      collectionId = "jobs";
+    } else {
+      collectionId = String(collectionId).trim();
+    }
+
+    var token = await getGoogleAccessTokenFromServiceAccountJson(saJson);
+    var parentPath = firestoreParentPath(projectId, databaseId, collectionId);
+
+    var statuses = ["queued", "running", "failed"];
+    var merged = {};
+    for (var si = 0; si < statuses.length; si++) {
+      var rows = await firestoreQueryJobsByCubeAndStatus(
+        token,
+        parentPath,
+        collectionId,
+        cube,
+        statuses[si]
+      );
+      if (!Array.isArray(rows)) continue;
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (!row || !row.document) continue;
+        var name = row.document.name || "";
+        var id = name.split("/").pop() || "";
+        if (!id) continue;
+        merged[id] = row.document;
+      }
+    }
+
+    var jobs = [];
+    for (var k in merged) {
+      if (!Object.prototype.hasOwnProperty.call(merged, k)) continue;
+      var doc = merged[k];
+      var d = unwrapFirestoreDoc(doc);
+      var st = String(d.status || "");
+      var ui = "queued";
+      if (st === "running") ui = "processing";
+      else if (st === "failed") ui = "error";
+      jobs.push({
+        job_id: k,
+        upload_id: d.upload_id || "",
+        pilot_name: d.pilot_name || "",
+        status: ui,
+        firestore_status: st,
+        error: d.error || "",
+        submitted_at: d.submitted_at || null,
+      });
+    }
+
+    jobs.sort(function (a, b) {
+      var as = a.submitted_at ? String(a.submitted_at) : "";
+      var bs = b.submitted_at ? String(b.submitted_at) : "";
+      return bs.localeCompare(as);
+    });
+
+    return jsonResponse({ jobs: jobs }, 200);
+  } catch (e) {
+    console.error("processing-decks error:", e);
+    return jsonResponse({ error: "Failed to load processing status" }, 500);
+  }
+}
+
+async function enqueueGcpEvalJob(env, prefix, meta) {
   var baseUrlRaw = env.GCP_ENQUEUE_URL || env.ENQUEUE_URL || "";
   var baseUrl = String(baseUrlRaw || "").trim();
   if (!baseUrl) {
@@ -131,6 +402,9 @@ async function enqueueGcpEvalJob(env, prefix) {
   var upload_id = String(prefix || "").replace(/\/+$/, "");
   var r2_prefix = upload_id + "/";
 
+  var cube_id = meta && meta.cube_id ? String(meta.cube_id).trim() : "";
+  var pilot_name = meta && meta.pilot_name ? String(meta.pilot_name).trim() : "";
+
   var trimmedBase = baseUrl.replace(/\/+$/, "");
   var url =
     trimmedBase.toLowerCase().endsWith("/enqueue")
@@ -153,6 +427,8 @@ async function enqueueGcpEvalJob(env, prefix) {
         upload_id: upload_id,
         r2_bucket: r2_bucket,
         r2_prefix: r2_prefix,
+        cube_id: cube_id || undefined,
+        pilot_name: pilot_name || undefined,
         submitted_at: new Date().toISOString(),
         schema_version: 1,
       }),
@@ -1694,7 +1970,10 @@ async function handleUpload(request, env) {
     });
 
     // Best-effort: enqueue remote processing. Do not fail the user upload if GCP is down/misconfigured.
-    var enqueueResult = await enqueueGcpEvalJob(env, prefix);
+    var enqueueResult = await enqueueGcpEvalJob(env, prefix, {
+      cube_id: cubeId,
+      pilot_name: pilotName,
+    });
     if (!enqueueResult.ok && !enqueueResult.skipped) {
       console.error("Upload succeeded but GCP enqueue failed:", enqueueResult);
     }

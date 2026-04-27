@@ -10,7 +10,13 @@
     return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   }
 
+  function escapeHtmlText(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   var currentCubeId = "";
+  var processingPollTimer = null;
+  var processingFetchInFlight = false;
 
   function getCubeFromUrl() {
     if (window.CWPaths && CWPaths.preferredCubeId) {
@@ -44,6 +50,107 @@
 
   function setDecksMainVisible(on) {
     $("decks-main").style.display = on ? "block" : "none";
+  }
+
+  function stopProcessingStatusPoll() {
+    if (processingPollTimer) {
+      clearInterval(processingPollTimer);
+      processingPollTimer = null;
+    }
+    processingFetchInFlight = false;
+  }
+
+  function setProcessingStatusVisible(on) {
+    var card = $("processing-status-card");
+    if (!card) return;
+    if (on) card.removeAttribute("hidden");
+    else card.setAttribute("hidden", "hidden");
+  }
+
+  function renderProcessingJobs(jobs) {
+    var ul = $("processing-status-list");
+    if (!ul) return;
+    ul.innerHTML = "";
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i] || {};
+      var pilot = j.pilot_name ? String(j.pilot_name) : "";
+      if (!pilot && j.upload_id) {
+        var parts = String(j.upload_id).split("/");
+        pilot = parts.length ? parts[parts.length - 1] : String(j.upload_id);
+      }
+      if (!pilot) pilot = "Deck";
+
+      var st = String(j.status || "queued");
+      var badgeClass = "cw-processing-badge";
+      if (st === "processing") badgeClass += " processing";
+      if (st === "error") badgeClass += " error";
+
+      var label = st === "processing" ? "Processing" : st === "error" ? "Error" : "Queued";
+
+      var meta = "";
+      if (st === "error" && j.error) {
+        meta = '<div class="cw-processing-meta">' + escapeHtmlText(String(j.error)) + "</div>";
+      } else if (j.submitted_at) {
+        meta = '<div class="cw-processing-meta">' + escapeHtmlText(fmtDate(j.submitted_at)) + "</div>";
+      }
+
+      var li = document.createElement("li");
+      li.innerHTML =
+        '<div style="min-width:0;">' +
+        '<div class="cw-processing-pilot">' +
+        escapeHtmlText(pilot) +
+        "</div>" +
+        meta +
+        "</div>" +
+        '<span class="' +
+        badgeClass +
+        '">' +
+        escapeHtmlText(label) +
+        "</span>";
+      ul.appendChild(li);
+    }
+  }
+
+  function refreshProcessingStatus() {
+    if (!currentCubeId) return;
+    if (processingFetchInFlight) return;
+    processingFetchInFlight = true;
+    fetch("/api/processing-decks/" + encodeURIComponent(currentCubeId))
+      .then(function (r) {
+        return r.json().then(function (data) {
+          return { ok: r.ok, status: r.status, data: data };
+        });
+      })
+      .then(function (res) {
+        processingFetchInFlight = false;
+        var data = res.data || {};
+        if (!res.ok) {
+          setProcessingStatusVisible(false);
+          return;
+        }
+        if (data.disabled) {
+          setProcessingStatusVisible(false);
+          return;
+        }
+        var jobs = data.jobs || [];
+        if (!jobs.length) {
+          setProcessingStatusVisible(false);
+          return;
+        }
+        renderProcessingJobs(jobs);
+        setProcessingStatusVisible(true);
+      })
+      .catch(function () {
+        processingFetchInFlight = false;
+        setProcessingStatusVisible(false);
+      });
+  }
+
+  function startProcessingStatusPoll() {
+    stopProcessingStatusPoll();
+    if (!currentCubeId) return;
+    refreshProcessingStatus();
+    processingPollTimer = window.setInterval(refreshProcessingStatus, 4000);
   }
 
   function renderDeckRows(decks) {
@@ -100,10 +207,14 @@
     setLoading(true);
 
     if (!currentCubeId) {
+      stopProcessingStatusPoll();
+      setProcessingStatusVisible(false);
       setLoading(false);
       showError("No cube selected. Go back to the dashboard and select a cube first.");
       return;
     }
+
+    startProcessingStatusPoll();
 
     fetch("/api/decks/" + encodeURIComponent(currentCubeId))
       .then(function (r) {
@@ -117,7 +228,9 @@
         }
         var decks = data.decks || [];
         if (decks.length === 0) {
-          showError("No decks found for this cube yet.");
+          $("error").textContent = "No decks found for this cube yet.";
+          $("error").style.display = "block";
+          setDecksMainVisible(false);
           return;
         }
         renderDeckRows(decks);
@@ -512,6 +625,8 @@
         });
 
         if (!currentCubeId) {
+          stopProcessingStatusPoll();
+          setProcessingStatusVisible(false);
           $("decks-subtitle").textContent = "Select a cube in the header to view decks.";
           $("loading").style.display = "none";
           showError("No cube selected.");
@@ -523,6 +638,8 @@
       })
       .catch(function () {
         if (!currentCubeId) {
+          stopProcessingStatusPoll();
+          setProcessingStatusVisible(false);
           $("decks-subtitle").textContent = "Select a cube in the header to view decks.";
           $("loading").style.display = "none";
           showError("No cube selected.");

@@ -133,5 +133,19 @@ Recommended values:
 Optional Worker var/secret:
 - `R2_STAGING_BUCKET_NAME`: defaults to `decklist-uploads` (must match the R2 bucket behind the Worker `BUCKET` binding)
 
+Deck list “processing uploads” status (`/api/processing-decks/:cubeId`) reads the same Firestore `jobs`
+collection the enqueue/worker services write. Configure the Worker with a dedicated read-only service account:
+
+- `GCP_FIRESTORE_SA_JSON` (Wrangler secret): full service account JSON with `roles/datastore.user` (read-only is fine)
+- `GCP_PROJECT_ID` (optional if `project_id` exists in the JSON)
+- `FIRESTORE_DATABASE_ID` (optional; should match enqueue/worker, e.g. `cw-upload-status`)
+- `FIRESTORE_COLLECTION` (optional; defaults to `jobs`)
+
+Firestore may prompt you to create a composite index the first time the Worker runs the `cube_id + status`
+queries; click the console link from the error log if you see one.
+
+The worker marks jobs as `done` in Firestore for idempotency (Cloud Tasks is at-least-once). The status UI
+filters out `done` jobs, and you can use Firestore TTL / periodic cleanup if you want to prune old job docs.
+
 Then deploy the Worker as you normally do (`wrangler deploy --env prod`, etc.).
 

@@ -631,3 +631,88 @@ body {
 .curve-list li:last-child {
     border-bottom: none;
 }
+
+/* Decks page: in-flight upload / eval jobs */
+.cw-processing-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    border: 1px solid #eef0ff;
+}
+
+.cw-processing-card-header {
+    margin-bottom: 0.75rem;
+}
+
+.cw-processing-card-title {
+    font-weight: 700;
+    color: #333;
+    font-size: 1.05rem;
+}
+
+.cw-processing-card-subtle {
+    color: #777;
+    font-size: 0.9rem;
+    margin-top: 0.15rem;
+}
+
+.cw-processing-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.cw-processing-list li {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0;
+    border-top: 1px solid #f0f0f0;
+}
+
+.cw-processing-list li:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.cw-processing-pilot {
+    font-weight: 600;
+    color: #333;
+    min-width: 0;
+    word-break: break-word;
+}
+
+.cw-processing-meta {
+    color: #888;
+    font-size: 0.85rem;
+    margin-top: 0.15rem;
+}
+
+.cw-processing-badge {
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid #e6e6e6;
+    background: #fafafa;
+    color: #555;
+    white-space: nowrap;
+}
+
+.cw-processing-badge.processing {
+    border-color: #cfe8ff;
+    background: #f3f8ff;
+    color: #1b6cff;
+}
+
+.cw-processing-badge.error {
+    border-color: #ffd6d6;
+    background: #fff5f5;
+    color: #c0392b;
+}

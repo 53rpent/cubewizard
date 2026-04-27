@@ -34,6 +34,8 @@ class EnqueueRequest(BaseModel):
     upload_id: str = Field(..., min_length=1)
     r2_bucket: str = Field(..., min_length=1)
     r2_prefix: str = Field(..., min_length=1)
+    cube_id: Optional[str] = None
+    pilot_name: Optional[str] = None
     submitted_at: Optional[str] = None
     schema_version: int = 1
 
@@ -90,37 +92,29 @@ async def enqueue(
     job_ref = fs.collection(jobs_collection).document(_job_doc_id(req.upload_id))
 
     snap = job_ref.get()
+    fields: Dict[str, Any] = {
+        "upload_id": req.upload_id,
+        "status": "queued",
+        "r2_bucket": req.r2_bucket,
+        "r2_prefix": req.r2_prefix,
+        "submitted_at": req.submitted_at,
+        "schema_version": req.schema_version,
+        "created_at": firestore.SERVER_TIMESTAMP,
+    }
+    if req.cube_id is not None:
+        fields["cube_id"] = req.cube_id
+    if req.pilot_name is not None:
+        fields["pilot_name"] = req.pilot_name
+
     if snap.exists:
         d = snap.to_dict() or {}
         if d.get("status") == "done":
             # Idempotency: if already completed, don't regress status.
             pass
         else:
-            job_ref.set(
-                {
-                    "upload_id": req.upload_id,
-                    "status": "queued",
-                    "r2_bucket": req.r2_bucket,
-                    "r2_prefix": req.r2_prefix,
-                    "submitted_at": req.submitted_at,
-                    "schema_version": req.schema_version,
-                    "created_at": firestore.SERVER_TIMESTAMP,
-                },
-                merge=True,
-            )
+            job_ref.set(fields, merge=True)
     else:
-        job_ref.set(
-            {
-                "upload_id": req.upload_id,
-                "status": "queued",
-                "r2_bucket": req.r2_bucket,
-                "r2_prefix": req.r2_prefix,
-                "submitted_at": req.submitted_at,
-                "schema_version": req.schema_version,
-                "created_at": firestore.SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        job_ref.set(fields, merge=True)
 
     # Enqueue Cloud Task (HTTP target).
     client = tasks_v2.CloudTasksClient()

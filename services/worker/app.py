@@ -30,6 +30,8 @@ class TaskRequest(BaseModel):
     upload_id: str = Field(..., min_length=1)
     r2_bucket: str = Field(..., min_length=1)
     r2_prefix: str = Field(..., min_length=1)
+    cube_id: Optional[str] = None
+    pilot_name: Optional[str] = None
     submitted_at: Optional[str] = None
     schema_version: int = 1
 
@@ -233,20 +235,22 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
                     if lease_expires > datetime.now(timezone.utc):
                         return {"already_running": True}
         lease_until = datetime.now(timezone.utc) + timedelta(minutes=lease_minutes)
-        tx.set(
-            job_ref,
-            {
-                "upload_id": req.upload_id,
-                "status": "running",
-                "started_at": firestore.SERVER_TIMESTAMP,
-                "attempt_count": firestore.Increment(1),
-                "lease_expires_at": lease_until,
-                "r2_bucket": req.r2_bucket,
-                "r2_prefix": req.r2_prefix,
-                "schema_version": req.schema_version,
-            },
-            merge=True,
-        )
+        fields: Dict[str, Any] = {
+            "upload_id": req.upload_id,
+            "status": "running",
+            "started_at": firestore.SERVER_TIMESTAMP,
+            "attempt_count": firestore.Increment(1),
+            "lease_expires_at": lease_until,
+            "r2_bucket": req.r2_bucket,
+            "r2_prefix": req.r2_prefix,
+            "schema_version": req.schema_version,
+        }
+        if req.cube_id is not None:
+            fields["cube_id"] = req.cube_id
+        if req.pilot_name is not None:
+            fields["pilot_name"] = req.pilot_name
+
+        tx.set(job_ref, fields, merge=True)
         return {"claimed": True}
 
     claim = _claim(fs.transaction())
