@@ -12,9 +12,11 @@ from pydantic import BaseModel, Field
 from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core import exceptions as gcp_exceptions
+import logging
 
 
 app = FastAPI(title="cubewizard-enqueue")
+log = logging.getLogger("cubewizard.enqueue")
 
 
 class EnqueueRequest(BaseModel):
@@ -126,9 +128,13 @@ async def enqueue(
     try:
         created = client.create_task(request={"parent": parent, "task": task})
     except gcp_exceptions.GoogleAPICallError as exc:
-        # Surface the real root cause (permissions, queue not found, invalid args, etc.).
-        # Cloud Run logs will include full exception; we return a concise message to callers.
         msg = getattr(exc, "message", None) or str(exc)
+        log.exception("Cloud Tasks create_task failed (GoogleAPICallError): %s", msg)
+        raise HTTPException(status_code=502, detail=f"cloudtasks create_task failed: {msg}") from exc
+    except Exception as exc:
+        # grpc._channel._InactiveRpcError sometimes bypasses GoogleAPICallError wrapping.
+        msg = str(exc)
+        log.exception("Cloud Tasks create_task failed (unknown exception): %s", msg)
         raise HTTPException(status_code=502, detail=f"cloudtasks create_task failed: {msg}") from exc
 
     return {"enqueued": True, "task_name": created.name, "upload_id": req.upload_id}
