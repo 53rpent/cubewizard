@@ -5,6 +5,7 @@ import tempfile
 import base64
 import csv
 import json
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -131,22 +132,66 @@ def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
     # Ensure the image is named deck_image.<ext> (not strictly required, but matches pull_from_r2.py).
     image_files = sorted(
         [p for p in submission_folder.rglob("image.*") if p.is_file()],
-        key=lambda p: p.name.lower(),
+        key=lambda p: str(p).lower(),
     )
     if not image_files:
         raise FileNotFoundError(f"No image.* found in {submission_folder}")
     src = image_files[0]
     ext = src.suffix or ".jpg"
     dest = submission_folder / f"deck_image{ext}"
-    if src != dest:
-        # Replace if exists from a prior attempt.
-        try:
-            if dest.exists():
+    if src == dest:
+        pass
+    else:
+        # Ensure only one image is present for process_submissions().
+        # Put the canonical image at the submission root and delete any other image.* files.
+        if dest.exists():
+            try:
                 dest.unlink()
-        except Exception:
-            pass
-        # Copy into submission root (in case src is in a nested folder).
-        dest.write_bytes(src.read_bytes())
+            except Exception:
+                pass
+
+        # If the source is already in the submission root, rename/move it.
+        if src.parent == submission_folder:
+            src.rename(dest)
+        else:
+            dest.write_bytes(src.read_bytes())
+
+        # Remove other image.* files to avoid double-processing.
+        for p in image_files:
+            if p == src:
+                continue
+            try:
+                p.unlink()
+            except Exception:
+                pass
+
+        # If we copied from a nested folder, also delete that source file.
+        if src.parent != submission_folder:
+            try:
+                src.unlink()
+            except Exception:
+                pass
+
+    # If the download prefix was too broad, artifacts may exist in nested directories.
+    # To ensure process_submissions doesn't double-process, remove any subdirectories
+    # under the submission root now that we've materialized the canonical files.
+    for child in list(submission_folder.iterdir()):
+        if child.is_dir():
+            try:
+                shutil.rmtree(child)
+            except Exception:
+                pass
+
+    # Also remove any stray image files at the submission root besides deck_image.*.
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".tiff"}
+    for child in list(submission_folder.iterdir()):
+        if not child.is_file():
+            continue
+        if child.suffix.lower() in image_exts and not child.name.lower().startswith("deck_image."):
+            try:
+                child.unlink()
+            except Exception:
+                pass
 
     # Also ensure metadata.json exists at submission root for debugging/inspection.
     if meta_path.parent != submission_folder:
@@ -208,7 +253,9 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
     if claim.get("already_done"):
         return {"ok": True, "upload_id": req.upload_id, "status": "done"}
     if claim.get("already_running"):
-        raise HTTPException(status_code=409, detail="job already running")
+        # Cloud Tasks retries on non-2xx. Since processing is already in progress,
+        # acknowledge the task to avoid duplicate attempts.
+        return {"ok": True, "upload_id": req.upload_id, "status": "running"}
 
     # Do work in a temp dir (Cloud Run writable).
     try:
