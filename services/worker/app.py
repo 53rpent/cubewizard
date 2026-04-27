@@ -93,7 +93,13 @@ def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
     """
     meta_path = submission_folder / "metadata.json"
     if not meta_path.is_file():
-        raise FileNotFoundError(f"metadata.json not found in {submission_folder}")
+        # Sometimes the R2 prefix sent to the worker is too broad (e.g. only cube_id),
+        # causing downloaded files to land in subfolders under submission_folder.
+        # Find the first metadata.json under this submission and use it.
+        meta_candidates = sorted(submission_folder.rglob("metadata.json"))
+        if not meta_candidates:
+            raise FileNotFoundError(f"metadata.json not found in {submission_folder}")
+        meta_path = meta_candidates[0]
 
     with open(meta_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
@@ -124,7 +130,7 @@ def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
 
     # Ensure the image is named deck_image.<ext> (not strictly required, but matches pull_from_r2.py).
     image_files = sorted(
-        [p for p in submission_folder.iterdir() if p.is_file() and p.name.startswith("image.")],
+        [p for p in submission_folder.rglob("image.*") if p.is_file()],
         key=lambda p: p.name.lower(),
     )
     if not image_files:
@@ -139,7 +145,17 @@ def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
                 dest.unlink()
         except Exception:
             pass
-        src.rename(dest)
+        # Copy into submission root (in case src is in a nested folder).
+        dest.write_bytes(src.read_bytes())
+
+    # Also ensure metadata.json exists at submission root for debugging/inspection.
+    if meta_path.parent != submission_folder:
+        root_meta = submission_folder / "metadata.json"
+        if not root_meta.exists():
+            try:
+                root_meta.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            except Exception:
+                pass
 
 
 @app.get("/healthz")
@@ -203,7 +219,8 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
             submissions_dir.mkdir(parents=True, exist_ok=True)
 
             # Download staged upload into a single submission folder.
-            submission_folder = submissions_dir / f"submission_{req.upload_id}"
+            safe_upload_id = str(req.upload_id).replace("/", "_").replace("\\", "_").replace(" ", "_")
+            submission_folder = submissions_dir / f"submission_{safe_upload_id}"
             downloaded = _download_prefix_to_dir(s3, req.r2_bucket, req.r2_prefix, submission_folder)
             _materialize_submission_csv_and_image(submission_folder)
 
