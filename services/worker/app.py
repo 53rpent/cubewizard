@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -78,6 +79,11 @@ def _firestore_client() -> firestore.Client:
     database = os.environ.get("FIRESTORE_DATABASE_ID") or "(default)"
     return firestore.Client(database=database)
 
+def _job_doc_id(upload_id: str) -> str:
+    raw = (upload_id or "").encode("utf-8")
+    token = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+    return f"u_{token}"
+
 
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
@@ -88,7 +94,7 @@ def healthz() -> Dict[str, str]:
 async def run_task(req: TaskRequest) -> Dict[str, Any]:
     jobs_collection = os.environ.get("FIRESTORE_COLLECTION", "jobs")
     fs = _firestore_client()
-    job_ref = fs.collection(jobs_collection).document(req.upload_id)
+    job_ref = fs.collection(jobs_collection).document(_job_doc_id(req.upload_id))
 
     lease_minutes = int(os.environ.get("JOB_LEASE_MINUTES", "45"))
 
@@ -112,6 +118,7 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
         tx.set(
             job_ref,
             {
+                "upload_id": req.upload_id,
                 "status": "running",
                 "started_at": firestore.SERVER_TIMESTAMP,
                 "attempt_count": firestore.Increment(1),

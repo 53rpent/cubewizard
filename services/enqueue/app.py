@@ -56,6 +56,13 @@ def _firestore_client() -> firestore.Client:
     database = os.environ.get("FIRESTORE_DATABASE_ID") or "(default)"
     return firestore.Client(database=database)
 
+def _job_doc_id(upload_id: str) -> str:
+    # Firestore document IDs cannot contain "/" (it is treated as a path separator).
+    # Encode the upload_id into a URL-safe token so it can be used as a doc id.
+    raw = (upload_id or "").encode("utf-8")
+    token = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+    return f"u_{token}"
+
 
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
@@ -80,7 +87,7 @@ async def enqueue(
 
     # Upsert Firestore status to queued (but don't overwrite done).
     fs = _firestore_client()
-    job_ref = fs.collection(jobs_collection).document(req.upload_id)
+    job_ref = fs.collection(jobs_collection).document(_job_doc_id(req.upload_id))
 
     snap = job_ref.get()
     if snap.exists:
@@ -91,6 +98,7 @@ async def enqueue(
         else:
             job_ref.set(
                 {
+                    "upload_id": req.upload_id,
                     "status": "queued",
                     "r2_bucket": req.r2_bucket,
                     "r2_prefix": req.r2_prefix,
@@ -103,6 +111,7 @@ async def enqueue(
     else:
         job_ref.set(
             {
+                "upload_id": req.upload_id,
                 "status": "queued",
                 "r2_bucket": req.r2_bucket,
                 "r2_prefix": req.r2_prefix,
