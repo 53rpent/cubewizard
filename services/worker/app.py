@@ -93,6 +93,7 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
     lease_minutes = int(os.environ.get("JOB_LEASE_MINUTES", "45"))
 
     # Idempotency / claim
+    @firestore.transactional
     def _claim(tx: firestore.Transaction) -> Dict[str, Any]:
         snap = job_ref.get(transaction=tx)
         if snap.exists:
@@ -123,7 +124,7 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
         )
         return {"claimed": True}
 
-    claim = fs.transaction(_claim)
+    claim = _claim(fs.transaction())
     if claim.get("already_done"):
         return {"ok": True, "upload_id": req.upload_id, "status": "done"}
     if claim.get("already_running"):
