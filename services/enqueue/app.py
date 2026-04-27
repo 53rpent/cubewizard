@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from google.cloud import firestore
@@ -17,6 +18,16 @@ import logging
 
 app = FastAPI(title="cubewizard-enqueue")
 log = logging.getLogger("cubewizard.enqueue")
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    # Ensure callers always get a JSON body rather than plain-text 500s.
+    log.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"internal error: {type(exc).__name__}: {str(exc)}"},
+    )
 
 
 class EnqueueRequest(BaseModel):
