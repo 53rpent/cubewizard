@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import tempfile
 import base64
+import csv
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -84,6 +86,61 @@ def _job_doc_id(upload_id: str) -> str:
     token = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
     return f"u_{token}"
 
+def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
+    """
+    Convert the R2 upload format (metadata.json + image.*) into the local folder
+    structure that CubeWizard.process_submissions expects (pilot_data.csv + deck_image.*).
+    """
+    meta_path = submission_folder / "metadata.json"
+    if not meta_path.is_file():
+        raise FileNotFoundError(f"metadata.json not found in {submission_folder}")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    # Write pilot_data.csv in the format main.py expects.
+    csv_path = submission_folder / "pilot_data.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "pilot_name",
+                "match_wins",
+                "match_losses",
+                "match_draws",
+                "cube_id",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "pilot_name": metadata.get("pilot_name", "Unknown"),
+                "match_wins": metadata.get("match_wins", metadata.get("wins", 0)),
+                "match_losses": metadata.get("match_losses", metadata.get("losses", 0)),
+                "match_draws": metadata.get("match_draws", metadata.get("draws", 0)),
+                "cube_id": metadata.get("cube_id", ""),
+            }
+        )
+
+    # Ensure the image is named deck_image.<ext> (not strictly required, but matches pull_from_r2.py).
+    image_files = sorted(
+        [p for p in submission_folder.iterdir() if p.is_file() and p.name.startswith("image.")],
+        key=lambda p: p.name.lower(),
+    )
+    if not image_files:
+        raise FileNotFoundError(f"No image.* found in {submission_folder}")
+    src = image_files[0]
+    ext = src.suffix or ".jpg"
+    dest = submission_folder / f"deck_image{ext}"
+    if src != dest:
+        # Replace if exists from a prior attempt.
+        try:
+            if dest.exists():
+                dest.unlink()
+        except Exception:
+            pass
+        src.rename(dest)
+
 
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
@@ -148,6 +205,7 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
             # Download staged upload into a single submission folder.
             submission_folder = submissions_dir / f"submission_{req.upload_id}"
             downloaded = _download_prefix_to_dir(s3, req.r2_bucket, req.r2_prefix, submission_folder)
+            _materialize_submission_csv_and_image(submission_folder)
 
             # Run existing pipeline: process_submissions expects a directory of submission folders.
             wizard = CubeWizard()
