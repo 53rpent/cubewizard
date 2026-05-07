@@ -1,0 +1,224 @@
+/**
+ * Pilot name search (resources-pilot-search.html). Requires cw-paths.js.
+ */
+(function () {
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function escapeHtmlAttr(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+
+  function escapeHtmlText(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function fmtDate(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleString();
+  }
+
+  function showError(msg) {
+    clearSummary();
+    $("pilot-error").textContent = msg;
+    $("pilot-error").style.display = "block";
+    $("pilot-results").style.display = "none";
+    $("pilot-results-hint").hidden = true;
+  }
+
+  function clearError() {
+    $("pilot-error").textContent = "";
+    $("pilot-error").style.display = "none";
+  }
+
+  function clearSummary() {
+    var wrap = $("pilot-summary");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    wrap.hidden = true;
+  }
+
+  function summaryItem(label, value) {
+    return (
+      '<div class="pilot-summary-item">' +
+      '<span class="pilot-summary-label">' +
+      label +
+      "</span>" +
+      '<span class="pilot-summary-value">' +
+      value +
+      "</span>" +
+      "</div>"
+    );
+  }
+
+  function renderSummary(decks) {
+    var wrap = $("pilot-summary");
+    if (!wrap) return;
+    var n = decks.length;
+    var tw = 0;
+    var tl = 0;
+    var td = 0;
+    for (var i = 0; i < n; i++) {
+      tw += Number(decks[i].match_wins) || 0;
+      tl += Number(decks[i].match_losses) || 0;
+      td += Number(decks[i].match_draws) || 0;
+    }
+    var denom = tw + tl;
+    var winStr = denom > 0 ? ((tw / denom) * 100).toFixed(1) + "%" : "\u2014";
+    wrap.innerHTML =
+      summaryItem("Decks", String(n)) +
+      summaryItem("Total W", String(tw)) +
+      summaryItem("Total L", String(tl)) +
+      summaryItem("Total D", String(td)) +
+      summaryItem("Win %", winStr);
+    wrap.hidden = false;
+  }
+
+  function setLoading(on) {
+    $("pilot-loading").hidden = !on;
+  }
+
+  function deckUrlForRow(cubeId, deckId) {
+    if (!cubeId || !deckId) return "/";
+    if (window.CWPaths && CWPaths.decks) {
+      return CWPaths.decks(cubeId) + "?deck=" + encodeURIComponent(deckId);
+    }
+    return "/" + encodeURIComponent(cubeId) + "/decks?deck=" + encodeURIComponent(deckId);
+  }
+
+  function renderRows(decks) {
+    var tbody = $("pilot-tbody");
+    tbody.innerHTML = "";
+    for (var i = 0; i < decks.length; i++) {
+      var d = decks[i];
+      var tr = document.createElement("tr");
+      tr.dataset.deckId = d.deck_id;
+      tr.dataset.cubeId = d.cube_id || "";
+
+      var winPct = d.win_rate != null ? (Number(d.win_rate) * 100).toFixed(1) + "%" : "";
+
+      var thumbSrc = d.deck_thumb_url || d.deck_photo_url;
+      var photoCell = thumbSrc
+        ? '<td class="deck-table-photo-cell"><img class="deck-table-photo" src="' +
+          escapeHtmlAttr(thumbSrc) +
+          '" alt="" loading="lazy" decoding="async" /></td>'
+        : "<td class=\"deck-table-photo-cell\">\u2014</td>";
+
+      tr.innerHTML =
+        photoCell +
+        "<td>" +
+        escapeHtmlText(d.cube_id || "") +
+        "</td>" +
+        "<td>" +
+        escapeHtmlText(d.pilot_name || "") +
+        "</td>" +
+        '<td class="mono">' +
+        (d.match_wins ?? "") +
+        "</td>" +
+        '<td class="mono">' +
+        (d.match_losses ?? "") +
+        "</td>" +
+        '<td class="mono">' +
+        (d.match_draws ?? 0) +
+        "</td>" +
+        '<td class="mono">' +
+        winPct +
+        "</td>" +
+        '<td class="mono">' +
+        (d.total_cards ?? "") +
+        "</td>" +
+        "<td>" +
+        escapeHtmlText(fmtDate(d.created)) +
+        "</td>";
+
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", function () {
+        var url = deckUrlForRow(this.dataset.cubeId, this.dataset.deckId);
+        window.location.href = url;
+      });
+      tbody.appendChild(tr);
+    }
+  }
+
+  function runSearchFromForm() {
+    var input = $("pilot-q");
+    var q = (input && input.value ? String(input.value) : "").trim();
+    if (q.length < 2) {
+      showError("Enter at least 2 characters.");
+      return;
+    }
+    clearError();
+    clearSummary();
+    setLoading(true);
+    $("pilot-results").style.display = "none";
+    $("pilot-results-hint").hidden = true;
+
+    fetch("/api/decks/by-pilot?q=" + encodeURIComponent(q))
+      .then(function (r) {
+        return r.json().then(function (data) {
+          return { ok: r.ok, status: r.status, data: data };
+        });
+      })
+      .then(function (res) {
+        setLoading(false);
+        var data = res.data || {};
+        if (!res.ok) {
+          showError((data && data.error) ? data.error : "Search failed (HTTP " + res.status + ").");
+          return;
+        }
+        if (data.error) {
+          showError(data.error);
+          return;
+        }
+        var decks = data.decks || [];
+        var hint = $("pilot-results-hint");
+        if (decks.length === 0) {
+          clearSummary();
+          hint.textContent = "No decks matched \u201c" + String(data.query || q) + "\u201d.";
+          hint.hidden = false;
+          $("pilot-results").style.display = "none";
+          return;
+        }
+        hint.textContent =
+          decks.length +
+          (decks.length >= 200 ? " decks (showing first 200). " : " deck(s). ") +
+          "Search: \u201c" +
+          String(data.query || q) +
+          "\u201d.";
+        hint.hidden = false;
+        renderSummary(decks);
+        renderRows(decks);
+        $("pilot-results").style.display = "block";
+      })
+      .catch(function (err) {
+        setLoading(false);
+        showError("Search failed. Please try again.");
+        console.error(err);
+      });
+  }
+
+  function init() {
+    var form = $("pilot-search-form");
+    if (!form) return;
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      runSearchFromForm();
+    });
+
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var q0 = (params.get("q") || "").trim();
+      if (q0.length >= 2 && $("pilot-q")) {
+        $("pilot-q").value = q0;
+        runSearchFromForm();
+      }
+    } catch (e1) {
+      /* ignore */
+    }
+  }
+
+  window.CubeWizardPilotSearch = { init: init };
+})();

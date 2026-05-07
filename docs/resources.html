@@ -79,7 +79,13 @@
           </div>
           <a href="/submit">Submit deck</a>
           <a href="/addcube">Add cube</a>
-          <a href="/resources" aria-current="page">Resources</a>
+          <div class="nav-dropdown">
+            <a href="/resources" class="nav-dropdown-trigger" id="nav-resources-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-resources-menu">Resources</a>
+            <ul class="nav-dropdown-menu" id="nav-resources-menu" role="menu" aria-labelledby="nav-resources-trigger">
+              <li role="none"><a role="menuitem" href="/resources" aria-current="page">Overview</a></li>
+              <li role="none"><a role="menuitem" href="/resources/pilot-search">Search by pilot</a></li>
+            </ul>
+          </div>
         </nav>
       </div>
     </div>
@@ -143,6 +149,14 @@
         <ul>
           <li><strong>Small samples</strong>: With few decks, card and synergy deltas can swing heavily. The dashboard shows a “Small dataset” banner under 30 decks.</li>
           <li><strong>OCR misses</strong>: If a card isn’t extracted or cannot be found in Scryfall, it won’t contribute to per-card analytics.</li>
+        </ul>
+
+        <h3>Tools</h3>
+        <ul>
+          <li>
+            <a href="/resources/pilot-search">Search decks by pilot name</a>
+            &mdash; list every stored deck whose pilot name matches your search (across all cubes), in the same table style as deck data. Click a row to open that deck on the cube&rsquo;s deck page.
+          </li>
         </ul>
       </div>
     </div>

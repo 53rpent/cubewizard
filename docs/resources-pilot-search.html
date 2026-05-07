@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search by pilot | CubeWizard</title>
+  <link rel="icon" type="image/png" href="/CubeWizard.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/site-header.css">
+  <link rel="stylesheet" href="/analysis-shared.css">
+  <style>
+    .pilot-search-tools { margin-top: 0.5rem; }
+    .pilot-search-tools a { color: #667eea; }
+    .pilot-search-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+      margin-top: 1rem;
+    }
+    .pilot-search-field { flex: 1 1 220px; min-width: 0; }
+    .pilot-search-field label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      color: #444;
+    }
+    .pilot-search-field input {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+    .pilot-search-form button {
+      padding: 0.55rem 1.1rem;
+      border-radius: 6px;
+      border: none;
+      background: #667eea;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .pilot-search-form button:hover { background: #5a6fd6; }
+    .pilot-results-hint { margin-top: 0.75rem; color: #666; font-size: 0.95rem; }
+    .pilot-table-note { margin-bottom: 0.75rem; color: #666; font-size: 0.95rem; }
+    .table-wrap.pilot-table-wrap { margin-top: 0.5rem; }
+    .pilot-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.5rem;
+      margin-bottom: 1rem;
+      padding: 1rem 1.25rem;
+      background: #f8f9fa;
+      border: 1px solid #eee;
+      border-radius: 8px;
+    }
+    .pilot-summary-item {
+      min-width: 5.5rem;
+    }
+    .pilot-summary-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+      margin-bottom: 0.2rem;
+    }
+    .pilot-summary-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #333;
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+  </style>
+</head>
+<body class="decks-page">
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-brand-stack">
+        <a href="/" class="header-brand-link" title="CubeWizard home">
+          <img src="/CubeWizard.png" alt="" class="header-logo" width="56" height="56">
+          <div class="header-brand-text">
+            <span class="header-wordmark">CubeWizard</span>
+            <span class="header-subtitle">Pilot search</span>
+          </div>
+        </a>
+      </div>
+      <nav class="header-nav" aria-label="Primary">
+        <div class="nav-dropdown">
+          <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
+          <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
+            <li role="none"><a role="menuitem" href="#" class="js-decks-link">Deck data</a></li>
+            <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="cards">Card data</a></li>
+            <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="colors">Color data</a></li>
+            <li role="none"><a role="menuitem" href="#" class="js-data-view-link" data-data-view="synergies">Synergy data</a></li>
+          </ul>
+        </div>
+        <a href="/submit">Submit deck</a>
+        <a href="/addcube">Add cube</a>
+        <div class="nav-dropdown">
+          <a href="/resources" class="nav-dropdown-trigger" id="nav-resources-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-resources-menu">Resources</a>
+          <ul class="nav-dropdown-menu" id="nav-resources-menu" role="menu" aria-labelledby="nav-resources-trigger">
+            <li role="none"><a role="menuitem" href="/resources">Overview</a></li>
+            <li role="none"><a role="menuitem" href="/resources/pilot-search" aria-current="page">Search by pilot</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="description">
+      <h2>Search by pilot</h2>
+      <p>Find every stored deck whose pilot name contains your search text (case-insensitive), across all cubes.</p>
+      <p class="pilot-search-tools"><a href="/resources">&larr; Back to Resources</a></p>
+
+      <form id="pilot-search-form" class="pilot-search-form" method="get" action="/resources/pilot-search" role="search">
+        <div class="pilot-search-field">
+          <label for="pilot-q">Pilot name</label>
+          <input type="search" id="pilot-q" name="q" autocomplete="off" placeholder="e.g. Alex" maxlength="100" required minlength="2">
+        </div>
+        <button type="submit">Search</button>
+      </form>
+      <p id="pilot-results-hint" class="pilot-results-hint" hidden></p>
+    </div>
+
+    <div id="pilot-loading" class="loading" hidden>Searching&hellip;</div>
+    <div id="pilot-error" class="error" style="display:none;"></div>
+
+    <div id="pilot-results" class="data-container" style="display:none;">
+      <div id="pilot-summary" class="pilot-summary" hidden></div>
+      <p class="pilot-table-note">Click a row to open that deck on the cube&rsquo;s deck data page.</p>
+      <div class="table-wrap pilot-table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Photo</th>
+              <th>Cube</th>
+              <th>Pilot</th>
+              <th class="mono">W</th>
+              <th class="mono">L</th>
+              <th class="mono">D</th>
+              <th class="mono">Win%</th>
+              <th class="mono">Cards</th>
+              <th>Uploaded</th>
+            </tr>
+          </thead>
+          <tbody id="pilot-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Questions or feedback? Contact <a href="mailto:amatveyenko@outlook.com">amatveyenko@outlook.com</a></p>
+    <p class="footer-version" id="cw-footer-version-line" hidden><span id="cw-footer-version"></span></p>
+  </div>
+
+  <script src="/site-footer.js"></script>
+  <script src="/cw-paths.js"></script>
+  <script src="/site-nav.js"></script>
+  <script src="/resources-pilot-search.js"></script>
+  <script>
+    CubeWizardPilotSearch.init();
+  </script>
+</body>
+</html>

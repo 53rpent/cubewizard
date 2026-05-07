@@ -153,6 +153,29 @@ Both stg and prod share the same D1 database. The Worker binds two R2 buckets: *
 npx wrangler r2 bucket create cubewizard-deck-images
 ```
 
+### Staging GCP processing pipeline (Cloud Run)
+
+Your Cloudflare Worker `stg` environment can be wired to **staging GCP resources** (Cloud Run + Cloud Tasks + Firestore upload status) while still writing decks to the **shared** D1 database.
+
+- GCP setup commands: `GCP_STAGING.md`
+- GCP deployment docs: `GCP_DEPLOYMENT.md`
+
+Required GitHub Actions secrets for Cloud Run enqueue (must match Wrangler `ENQUEUE_SHARED_SECRET` per env):
+
+- **`ENQUEUE_SHARED_SECRET_PROD`** — prod workflow (push to `main`); pair with `wrangler secret put ENQUEUE_SHARED_SECRET --env prod`
+- **`ENQUEUE_SHARED_SECRET_STG`** — stg workflow (manual dispatch); pair with `wrangler secret put ENQUEUE_SHARED_SECRET --env stg`
+
+Required Cloudflare Worker `stg` secrets (Wrangler):
+
+```bash
+wrangler secret put GCP_ENQUEUE_URL --env stg
+wrangler secret put ENQUEUE_SHARED_SECRET --env stg
+
+# For /api/processing-decks/:cubeId status in stg
+wrangler secret put GCP_FIRESTORE_SA_JSON --env stg
+wrangler secret put FIRESTORE_DATABASE_ID --env stg
+```
+
 Apply D1 schema additions for deck image keys (run once against remote D1):
 
 ```bash

@@ -1,5 +1,7 @@
 name: Deploy Cloud Run services
 
+# Requires Actions secret ENQUEUE_SHARED_SECRET_PROD (same as Wrangler ENQUEUE_SHARED_SECRET --env prod).
+
 on:
   push:
     branches: [ "main" ]
@@ -20,6 +22,12 @@ env:
   # If you choose different emails, update these strings to match.
   ENQUEUE_RUNTIME_SA: enqueue-sa@cubewizard.iam.gserviceaccount.com
   WORKER_RUNTIME_SA: worker-sa@cubewizard.iam.gserviceaccount.com
+
+  # Prod queue + Firestore upload-status (must match GCP console / docs)
+  CLOUD_TASKS_QUEUE: eval-queue
+  FIRESTORE_DATABASE_ID: cw-upload-status
+  FIRESTORE_COLLECTION: jobs
+  TASK_OIDC_SERVICE_ACCOUNT: cloudtasks-invoker-sa@cubewizard.iam.gserviceaccount.com
 
 jobs:
   deploy:
@@ -42,6 +50,7 @@ jobs:
           # TODO: set these GitHub repository secrets:
           #   GCP_WORKLOAD_IDENTITY_PROVIDER: projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
           #   GCP_SERVICE_ACCOUNT_EMAIL: <github-deployer-sa>@cubewizard.iam.gserviceaccount.com
+          #   ENQUEUE_SHARED_SECRET_PROD: must match Wrangler ENQUEUE_SHARED_SECRET for --env prod
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
@@ -71,15 +80,6 @@ jobs:
           docker push "${WORKER_IMAGE}:${GITHUB_SHA}"
           docker push "${WORKER_IMAGE}:latest"
 
-      - name: Deploy enqueue service
-        run: |
-          gcloud run deploy "${ENQUEUE_SERVICE}" \
-            --project "${PROJECT_ID}" \
-            --region "${REGION}" \
-            --image "${ENQUEUE_IMAGE}:${GITHUB_SHA}" \
-            --service-account "${ENQUEUE_RUNTIME_SA}" \
-            --allow-unauthenticated
-
       - name: Deploy worker service
         run: |
           gcloud run deploy "${WORKER_SERVICE}" \
@@ -90,5 +90,26 @@ jobs:
             --no-allow-unauthenticated \
             --concurrency 1 \
             --timeout 1800 \
-            --max-instances 5
+            --max-instances 5 \
+            --update-env-vars "FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
+
+      - name: Get worker URL
+        id: worker_url
+        run: |
+          URL="$(gcloud run services describe "${WORKER_SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy enqueue service
+        run: |
+          if [ -z "${{ secrets.ENQUEUE_SHARED_SECRET_PROD }}" ]; then
+            echo "Missing GitHub Actions secret: ENQUEUE_SHARED_SECRET_PROD" >&2
+            exit 1
+          fi
+          gcloud run deploy "${ENQUEUE_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --image "${ENQUEUE_IMAGE}:${GITHUB_SHA}" \
+            --service-account "${ENQUEUE_RUNTIME_SA}" \
+            --allow-unauthenticated \
+            --set-env-vars "ENQUEUE_SHARED_SECRET=${{ secrets.ENQUEUE_SHARED_SECRET_PROD }},GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
 

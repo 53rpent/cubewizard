@@ -153,6 +153,23 @@
     processingPollTimer = window.setInterval(refreshProcessingStatus, 4000);
   }
 
+  function maybeOpenDeckFromQuery() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var deckId = (params.get("deck") || "").trim();
+      if (!deckId) return;
+      openDeck(deckId);
+      params.delete("deck");
+      var qs = params.toString();
+      var path = window.location.pathname;
+      var tail = qs ? "?" + qs : "";
+      var hash = window.location.hash || "";
+      window.history.replaceState({}, "", path + tail + hash);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   function renderDeckRows(decks) {
     var tbody = $("decks-tbody");
     tbody.innerHTML = "";
@@ -235,6 +252,7 @@
         }
         renderDeckRows(decks);
         setDecksMainVisible(true);
+        maybeOpenDeckFromQuery();
       })
       .catch(function (err) {
         setLoading(false);

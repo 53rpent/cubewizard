@@ -33,6 +33,10 @@ export default {
       return handleGetTrophyDecks(trophyDecksMatch[1], env, request);
     }
 
+    if (url.pathname === "/api/decks/by-pilot" && request.method === "GET") {
+      return handleGetDecksByPilot(url, env, request);
+    }
+
     const decksMatch = url.pathname.match(/^\/api\/decks\/([^/]+)$/);
     if (decksMatch && request.method === "GET") {
       return handleGetDecks(decksMatch[1], env, request);
@@ -517,6 +521,7 @@ function mapPrettyUrlToAsset(pathname) {
   const p = pathname.replace(/\/+$/, "") || "/";
   if (p === "/submit") return "/submit.html";
   if (p === "/addcube" || p === "/add_cube") return "/add_cube.html";
+  if (p === "/resources/pilot-search") return "/resources-pilot-search.html";
   if (p === "/" || p === "") return "/index.html";
 
   const RESERVED = new Set([
@@ -874,6 +879,48 @@ async function handleGetDecks(cubeId, env, request) {
   }
 
   return jsonResponse({ decks: results });
+}
+
+/**
+ * Case-insensitive substring match on pilot_name across all cubes (D1).
+ * Query: q (min 2 chars, max 100). Limit 200 rows, newest first.
+ */
+async function handleGetDecksByPilot(url, env, request) {
+  var qRaw = url.searchParams.get("q");
+  var q = qRaw != null ? String(qRaw).trim() : "";
+  if (q.length < 2) {
+    return jsonResponse({ error: "Search must be at least 2 characters." }, 400);
+  }
+  if (q.length > 100) {
+    return jsonResponse({ error: "Search is too long (max 100 characters)." }, 400);
+  }
+  var needle = q.toLowerCase();
+
+  const { results } = await env.cubewizard_db.prepare(
+    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+      " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
+      " oriented_thumb_r2_key" +
+      " FROM decks WHERE instr(lower(COALESCE(pilot_name, '')), ?) > 0" +
+      " ORDER BY created DESC LIMIT 200"
+  )
+    .bind(needle)
+    .all();
+
+  for (var i = 0; i < results.length; i++) {
+    var d = results[i];
+    d.deck_photo_url = buildBlobImageUrl(
+      request,
+      env,
+      d.deck_id,
+      d.oriented_image_r2_key,
+      "photo"
+    );
+    d.deck_thumb_url = d.oriented_thumb_r2_key
+      ? buildBlobImageUrl(request, env, d.deck_id, d.oriented_thumb_r2_key, "thumb")
+      : d.deck_photo_url;
+  }
+
+  return jsonResponse({ decks: results, query: q });
 }
 
 async function handleGetTrophyDecks(cubeId, env, request) {

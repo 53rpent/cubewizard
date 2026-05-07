@@ -42,7 +42,13 @@
                 </div>
                 <a href="/submit">Submit deck</a>
                 <a href="/addcube">Add cube</a>
-                <a href="/resources">Resources</a>
+                <div class="nav-dropdown">
+                    <a href="/resources" class="nav-dropdown-trigger" id="nav-resources-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-resources-menu">Resources</a>
+                    <ul class="nav-dropdown-menu" id="nav-resources-menu" role="menu" aria-labelledby="nav-resources-trigger">
+                        <li role="none"><a role="menuitem" href="/resources">Overview</a></li>
+                        <li role="none"><a role="menuitem" href="/resources/pilot-search">Search by pilot</a></li>
+                    </ul>
+                </div>
             </nav>
         </div>
     </div>

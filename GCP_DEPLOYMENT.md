@@ -35,11 +35,28 @@ In GitHub → Settings → Secrets and variables → Actions, add:
   - format: `projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`
 - `GCP_SERVICE_ACCOUNT_EMAIL`
   - format: `<github-deployer>@cubewizard.iam.gserviceaccount.com`
+- `ENQUEUE_SHARED_SECRET_PROD`
+  - must match Wrangler `wrangler secret put ENQUEUE_SHARED_SECRET --env prod`
 
-After this, pushes to `main` will deploy automatically via `.github/workflows/deploy-cloud-run.yml`.
+Also for staging deploys (workflow dispatch):
+- `ENQUEUE_SHARED_SECRET_STG` (same value you set in Wrangler for `--env stg`)
 
-### Post-deploy manual configuration (per service)
-Cloud Run deployment does not automatically set your application secrets. Configure these in the Cloud Run console (or add to the workflow later):
+After secrets are set, pushes to `main` deploy prod via `.github/workflows/deploy-cloud-run.yml`.
+
+### Staging deployment
+
+Staging resources are deployed via workflow dispatch using:
+- `.github/workflows/deploy-cloud-run-stg.yml`
+
+Staging GCP bootstrap commands (queue / service accounts / Firestore db id) live in:
+- `GCP_STAGING.md`
+
+### GitHub Actions and Cloud Run env
+
+The prod workflow sets **`cubewizard-enqueue`** environment from `ENQUEUE_SHARED_SECRET_PROD` and fixed values (queue, Firestore DB id, worker URL, OIDC SA). It **updates** **`cubewizard-worker`** Firestore-related env vars only (`--update-env-vars`) so existing secrets (OpenAI, R2, D1) stay on the service between deploys.
+
+### Post-deploy manual configuration (worker secrets)
+Worker still needs secrets that are not stored in GitHub (unless you add them yourself). Configure these in the Cloud Run console (Secret Manager recommended):
 
 ### Runtime service accounts (recommended)
 Create/confirm these service accounts (your chosen names):
@@ -84,26 +101,33 @@ gcloud tasks queues create eval-queue \
 You can tune rate limits later; start conservative if you want to avoid LLM rate-limit storms.
 
 #### `cubewizard-enqueue` env vars / secrets
-- `ENQUEUE_SHARED_SECRET` (Secret Manager recommended)
+
+For **prod**, GitHub Actions (`.github/workflows/deploy-cloud-run.yml`) sets these on each deploy from `ENQUEUE_SHARED_SECRET_PROD` plus the values below. For **stg**, see `.github/workflows/deploy-cloud-run-stg.yml` and `ENQUEUE_SHARED_SECRET_STG`.
+
+Reference list (must stay consistent with the workflows):
+
+- `ENQUEUE_SHARED_SECRET`
 - `GCP_PROJECT_ID=cubewizard`
 - `GCP_LOCATION=us-east1`
-- `CLOUD_TASKS_QUEUE=eval-queue`
-- `WORKER_URL=https://<cubewizard-worker-url>/tasks/eval`
-- `TASK_OIDC_SERVICE_ACCOUNT=cloudtasks-invoker-sa@cubewizard.iam.gserviceaccount.com`
-- `FIRESTORE_DATABASE_ID=cw-upload-status` (if you created a non-default Firestore database)
-- `FIRESTORE_COLLECTION=jobs` (optional)
+- `CLOUD_TASKS_QUEUE=eval-queue` (prod) or `eval-queue-stg` (stg)
+- `WORKER_URL=https://<cubewizard-worker-url>/tasks/eval` (resolved at deploy time)
+- `TASK_OIDC_SERVICE_ACCOUNT=cloudtasks-invoker-sa@...` (prod) or `cloudtasks-invoker-sa-stg@...` (stg)
+- `FIRESTORE_DATABASE_ID=cw-upload-status` (prod) or `cw-upload-status-stg` (stg)
+- `FIRESTORE_COLLECTION=jobs`
 
 Runtime service account should have:
 - Cloud Tasks Enqueuer
 - Firestore write access
 
 #### `cubewizard-worker` env vars / secrets
+
+GitHub Actions **updates** `FIRESTORE_DATABASE_ID` and `FIRESTORE_COLLECTION` on each deploy; set the rest in the Cloud Run console (or Secret Manager) and they persist across deploys:
+
 - `OPENAI_API_KEY`
 - `R2_ENDPOINT_URL`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
-- (optional) `FIRESTORE_DATABASE_ID=cw-upload-status` (if you created a non-default Firestore database)
-- (optional) `FIRESTORE_COLLECTION=jobs`
+- `FIRESTORE_DATABASE_ID` / `FIRESTORE_COLLECTION` (also applied by CI; matches prod `cw-upload-status` / stg `cw-upload-status-stg`)
 - (optional) `JOB_LEASE_MINUTES` (default `45`) — stale `running` jobs can be reclaimed after lease expiry
 - Any Cloudflare D1 vars you rely on (see `d1_writer.py`)
 

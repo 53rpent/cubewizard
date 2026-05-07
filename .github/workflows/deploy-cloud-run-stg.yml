@@ -1,0 +1,83 @@
+name: Deploy Cloud Run services (stg)
+
+# Requires Actions secret ENQUEUE_SHARED_SECRET_STG (same as Wrangler ENQUEUE_SHARED_SECRET --env stg).
+
+on:
+  workflow_dispatch: {}
+
+env:
+  PROJECT_ID: cubewizard
+  REGION: us-east1
+
+  ENQUEUE_SERVICE: cubewizard-enqueue-stg
+  WORKER_SERVICE: cubewizard-worker-stg
+
+  # Reuse the same Artifact Registry images; only the service names + env differ.
+  ENQUEUE_IMAGE: us-east1-docker.pkg.dev/cubewizard/cubewizard/enqueue
+  WORKER_IMAGE: us-east1-docker.pkg.dev/cubewizard/cubewizard/worker
+
+  # Runtime service accounts (create these once in GCP IAM).
+  ENQUEUE_RUNTIME_SA: enqueue-sa-stg@cubewizard.iam.gserviceaccount.com
+  WORKER_RUNTIME_SA: worker-sa-stg@cubewizard.iam.gserviceaccount.com
+
+  # Staging queue + Firestore status DB
+  CLOUD_TASKS_QUEUE: eval-queue-stg
+  FIRESTORE_DATABASE_ID: cw-upload-status-stg
+  FIRESTORE_COLLECTION: jobs
+
+  # Cloud Tasks OIDC invoker identity (must have run.invoker on the worker service)
+  TASK_OIDC_SERVICE_ACCOUNT: cloudtasks-invoker-sa-stg@cubewizard.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy worker service (stg)
+        run: |
+          gcloud run deploy "${WORKER_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --image "${WORKER_IMAGE}:latest" \
+            --service-account "${WORKER_RUNTIME_SA}" \
+            --no-allow-unauthenticated \
+            --concurrency 1 \
+            --timeout 1800 \
+            --max-instances 5 \
+            --update-env-vars "FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
+
+      - name: Get worker URL (stg)
+        id: worker_url
+        run: |
+          URL="$(gcloud run services describe "${WORKER_SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy enqueue service (stg)
+        run: |
+          if [ -z "${{ secrets.ENQUEUE_SHARED_SECRET_STG }}" ]; then
+            echo "Missing GitHub Actions secret: ENQUEUE_SHARED_SECRET_STG" >&2
+            exit 1
+          fi
+          gcloud run deploy "${ENQUEUE_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --image "${ENQUEUE_IMAGE}:latest" \
+            --service-account "${ENQUEUE_RUNTIME_SA}" \
+            --allow-unauthenticated \
+            --set-env-vars "ENQUEUE_SHARED_SECRET=${{ secrets.ENQUEUE_SHARED_SECRET_STG }},GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
+
