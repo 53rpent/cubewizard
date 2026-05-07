@@ -160,10 +160,12 @@ Your Cloudflare Worker `stg` environment can be wired to **staging GCP resources
 - GCP setup commands: `GCP_STAGING.md`
 - GCP deployment docs: `GCP_DEPLOYMENT.md`
 
-Required GitHub Actions secrets for Cloud Run enqueue (must match Wrangler `ENQUEUE_SHARED_SECRET` per env):
+Required GitHub Actions secrets for GCP deploy (**OIDC only**; enqueue shared secret is not in GitHub):
 
-- **`ENQUEUE_SHARED_SECRET_PROD`** — prod workflow (push to `main`); pair with `wrangler secret put ENQUEUE_SHARED_SECRET --env prod`
-- **`ENQUEUE_SHARED_SECRET_STG`** — stg workflow (manual dispatch); pair with `wrangler secret put ENQUEUE_SHARED_SECRET --env stg`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_SERVICE_ACCOUNT_EMAIL`
+
+Store enqueue shared secrets in **Google Secret Manager** (`enqueue-shared-secret-prod` / `enqueue-shared-secret-stg`); **`GCP_DEPLOYMENT.md`** section 4 has `gcloud` commands. **`Wrangler`** must use the **same plaintext** (`ENQUEUE_SHARED_SECRET`) per environment.
 
 Required Cloudflare Worker `stg` secrets (Wrangler):
 

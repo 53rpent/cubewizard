@@ -70,6 +70,8 @@ gcloud projects add-iam-policy-binding cubewizard \
   --role="roles/datastore.user"
 ```
 
+Grant **`enqueue-sa-stg`** **`secretAccessor`** on Secret Manager **`enqueue-shared-secret-stg`** as in **`GCP_DEPLOYMENT.md`** section 4 (required for enqueue to read `ENQUEUE_SHARED_SECRET`).
+
 Later (after you deploy `cubewizard-worker-stg`), grant Cloud Tasks invoker SA permission to call it:
 
 ```bash
@@ -110,7 +112,7 @@ You will set these on the **stg** services (either via GitHub Actions, or in the
 
 ### `cubewizard-enqueue-stg`
 
-- `ENQUEUE_SHARED_SECRET` = (stg secret; different from prod)
+Deployed via GitHub Actions; **`ENQUEUE_SHARED_SECRET`** is bound from Secret Manager **`enqueue-shared-secret-stg:latest`** (`GCP_DEPLOYMENT.md` §4). **Non-secret** env vars managed by Actions include:
 - `GCP_PROJECT_ID=cubewizard`
 - `GCP_LOCATION=us-east1`
 - `CLOUD_TASKS_QUEUE=eval-queue-stg`

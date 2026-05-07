@@ -1,6 +1,6 @@
 name: Deploy Cloud Run services (stg)
 
-# Requires Actions secret ENQUEUE_SHARED_SECRET_STG (same as Wrangler ENQUEUE_SHARED_SECRET --env stg).
+# `ENQUEUE_SHARED_SECRET` on enqueue-stg is bound from Secret Manager (see GCP_DEPLOYMENT.md / GCP_STAGING.md).
 
 on:
   workflow_dispatch: {}
@@ -19,6 +19,8 @@ env:
   # Runtime service accounts (create these once in GCP IAM).
   ENQUEUE_RUNTIME_SA: enqueue-sa-stg@cubewizard.iam.gserviceaccount.com
   WORKER_RUNTIME_SA: worker-sa-stg@cubewizard.iam.gserviceaccount.com
+
+  ENQUEUE_SECRET_RESOURCE: enqueue-shared-secret-stg
 
   # Staging queue + Firestore status DB
   CLOUD_TASKS_QUEUE: eval-queue-stg
@@ -67,17 +69,27 @@ jobs:
           URL="$(gcloud run services describe "${WORKER_SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
+      - name: Clear existing ENQUEUE_SHARED_SECRET binding (migrate to Secret Manager)
+        continue-on-error: true
+        run: |
+          gcloud run services update "${ENQUEUE_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --remove-env-vars=ENQUEUE_SHARED_SECRET \
+            --quiet || true
+          gcloud run services update "${ENQUEUE_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --remove-secrets=ENQUEUE_SHARED_SECRET \
+            --quiet || true
+
       - name: Deploy enqueue service (stg)
         run: |
-          if [ -z "${{ secrets.ENQUEUE_SHARED_SECRET_STG }}" ]; then
-            echo "Missing GitHub Actions secret: ENQUEUE_SHARED_SECRET_STG" >&2
-            exit 1
-          fi
           gcloud run deploy "${ENQUEUE_SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
             --image "${ENQUEUE_IMAGE}:latest" \
             --service-account "${ENQUEUE_RUNTIME_SA}" \
             --allow-unauthenticated \
-            --set-env-vars "ENQUEUE_SHARED_SECRET=${{ secrets.ENQUEUE_SHARED_SECRET_STG }},GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
-
+            --update-env-vars "GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}" \
+            --update-secrets "ENQUEUE_SHARED_SECRET=${ENQUEUE_SECRET_RESOURCE}:latest"

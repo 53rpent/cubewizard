@@ -1,6 +1,6 @@
 name: Deploy Cloud Run services
 
-# Requires Actions secret ENQUEUE_SHARED_SECRET_PROD (same as Wrangler ENQUEUE_SHARED_SECRET --env prod).
+# `ENQUEUE_SHARED_SECRET` on enqueue is bound from Secret Manager (see GCP_DEPLOYMENT.md).
 
 on:
   push:
@@ -22,6 +22,9 @@ env:
   # If you choose different emails, update these strings to match.
   ENQUEUE_RUNTIME_SA: enqueue-sa@cubewizard.iam.gserviceaccount.com
   WORKER_RUNTIME_SA: worker-sa@cubewizard.iam.gserviceaccount.com
+
+  # Secret Manager secret id (not the secret value). Runtime SA must have secretAccessor on it.
+  ENQUEUE_SECRET_RESOURCE: enqueue-shared-secret-prod
 
   # Prod queue + Firestore upload-status (must match GCP console / docs)
   CLOUD_TASKS_QUEUE: eval-queue
@@ -50,7 +53,6 @@ jobs:
           # TODO: set these GitHub repository secrets:
           #   GCP_WORKLOAD_IDENTITY_PROVIDER: projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
           #   GCP_SERVICE_ACCOUNT_EMAIL: <github-deployer-sa>@cubewizard.iam.gserviceaccount.com
-          #   ENQUEUE_SHARED_SECRET_PROD: must match Wrangler ENQUEUE_SHARED_SECRET for --env prod
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
@@ -99,17 +101,29 @@ jobs:
           URL="$(gcloud run services describe "${WORKER_SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
+      # Cloud Run cannot flip ENQUEUE_SHARED_SECRET between plaintext env and Secret Manager in one update.
+      # Best-effort clear of either binding before deploy (no-op if already absent).
+      - name: Clear existing ENQUEUE_SHARED_SECRET binding (migrate to Secret Manager)
+        continue-on-error: true
+        run: |
+          gcloud run services update "${ENQUEUE_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --remove-env-vars=ENQUEUE_SHARED_SECRET \
+            --quiet || true
+          gcloud run services update "${ENQUEUE_SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --remove-secrets=ENQUEUE_SHARED_SECRET \
+            --quiet || true
+
       - name: Deploy enqueue service
         run: |
-          if [ -z "${{ secrets.ENQUEUE_SHARED_SECRET_PROD }}" ]; then
-            echo "Missing GitHub Actions secret: ENQUEUE_SHARED_SECRET_PROD" >&2
-            exit 1
-          fi
           gcloud run deploy "${ENQUEUE_SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
             --image "${ENQUEUE_IMAGE}:${GITHUB_SHA}" \
             --service-account "${ENQUEUE_RUNTIME_SA}" \
             --allow-unauthenticated \
-            --set-env-vars "ENQUEUE_SHARED_SECRET=${{ secrets.ENQUEUE_SHARED_SECRET_PROD }},GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
-
+            --update-env-vars "GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}" \
+            --update-secrets "ENQUEUE_SHARED_SECRET=${ENQUEUE_SECRET_RESOURCE}:latest"
