@@ -24,7 +24,7 @@ env:
   WORKER_RUNTIME_SA: worker-sa@cubewizard.iam.gserviceaccount.com
 
   # Secret Manager secret id (not the secret value). Runtime SA must have secretAccessor on it.
-  ENQUEUE_SECRET_RESOURCE: enqueue-shared-secret-prod
+  ENQUEUE_SECRET_RESOURCE: ENQUEUE_SHARED_SECRET_PROD
 
   # Prod queue + Firestore upload-status (must match GCP console / docs)
   CLOUD_TASKS_QUEUE: eval-queue

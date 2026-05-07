@@ -114,6 +114,21 @@ Worker still needs secrets that are not stored in GitHub (unless you add them yo
 - **Enqueue deploy fails because of `[ENQUEUE_SHARED_SECRET]` env type**: workflows run best-effort `gcloud run services update ... --remove-env-vars` and `--remove-secrets` for `ENQUEUE_SHARED_SECRET` before deploy. If migration still fails, run those manually once, then rerun the workflow.
 - **Deploy cannot read Secret Manager**: ensure `enqueue-shared-secret-prod|stg` exists and **`enqueue-sa` / `enqueue-sa-stg`** has **`secretAccessor`** on that secret (see section 4). Add the same binding for **`github-deployer`** if the deploy step itself is denied access.
 
+  Example error (`enqueue-shared-secret-prod`):
+
+  > Permission denied on secret ... for Revision service account **enqueue-sa@...**
+
+  Fix (bind at the **secret** resource):
+
+  ```bash
+  gcloud secrets add-iam-policy-binding enqueue-shared-secret-prod \
+    --project=cubewizard \
+    --member="serviceAccount:enqueue-sa@cubewizard.iam.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+  ```
+
+  For staging enqueue, use **`enqueue-shared-secret-stg`** and **`enqueue-sa-stg@...`**.
+
 ### Runtime service accounts (recommended)
 Create/confirm these service accounts (your chosen names):
 
