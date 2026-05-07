@@ -604,6 +604,7 @@ const SYNERGY_TABLE_RESPONSE_CAP = 1000;
 async function handleGetCubes(env) {
   const { results } = await env.cubewizard_db.prepare(
     "SELECT c.cube_id, c.total_decks, c.created, c.last_updated," +
+    " c.auto_sync_hedron_network," +
     " COALESCE(m.cube_name, c.cube_id) AS cube_name," +
     " COALESCE(m.description, '') AS description" +
     " FROM cubes c" +
@@ -2097,6 +2098,11 @@ async function handleAddCube(request, env) {
     var cubeId = body.cube_id?.trim();
     var cubeName = body.cube_name?.trim();
     var description = body.description?.trim() || "";
+    var autoSyncHedronRaw = body.auto_sync_hedron_network;
+    var autoSyncHedron =
+      autoSyncHedronRaw !== false &&
+      autoSyncHedronRaw !== 0 &&
+      autoSyncHedronRaw !== "false";
 
     var errors = [];
     if (!cubeId) errors.push("Cube ID is required");
@@ -2124,8 +2130,9 @@ async function handleAddCube(request, env) {
 
     await env.cubewizard_db.batch([
       env.cubewizard_db.prepare(
-        "INSERT INTO cubes (cube_id, created, last_updated, total_decks) VALUES (?, ?, ?, 0)"
-      ).bind(cubeId, now, now),
+        "INSERT INTO cubes (cube_id, created, last_updated, total_decks, auto_sync_hedron_network) " +
+          "VALUES (?, ?, ?, 0, ?)"
+      ).bind(cubeId, now, now, autoSyncHedron ? 1 : 0),
       env.cubewizard_db.prepare(
         "INSERT INTO cube_mapping (cube_id, cube_name, description) VALUES (?, ?, ?)"
       ).bind(cubeId, cubeName, description),
@@ -2137,6 +2144,7 @@ async function handleAddCube(request, env) {
       cube_id: cubeId,
       cube_name: cubeName,
       description: description,
+      auto_sync_hedron_network: autoSyncHedron,
       requested_at: now,
     };
 

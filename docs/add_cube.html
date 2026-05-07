@@ -92,6 +92,30 @@
         min-height: 88px;
       }
 
+      .form-group .checkbox-label {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        font-weight: 600;
+        cursor: pointer;
+        line-height: 1.4;
+      }
+
+      .form-group .checkbox-label input[type="checkbox"] {
+        width: 1.1rem;
+        height: 1.1rem;
+        min-height: 1.1rem;
+        margin-top: 0.15rem;
+        flex-shrink: 0;
+        accent-color: #667eea;
+        cursor: pointer;
+      }
+
+      .form-group .checkbox-label input[type="checkbox"]:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+      }
+
       .input-row {
         display: flex;
         flex-wrap: wrap;
@@ -287,6 +311,20 @@
             <textarea id="description" name="description" placeholder="e.g. Vintage powered cube" disabled></textarea>
           </div>
 
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                id="auto_sync_hedron_network"
+                name="auto_sync_hedron_network"
+                checked
+                disabled
+              />
+              <span>Automatically Sync Hedron Network Data</span>
+            </label>
+            <span class="hint">When enabled, cube data can be kept in sync with the Hedron network.</span>
+          </div>
+
           <div class="cf-turnstile" data-sitekey="0x4AAAAAACupg3Eg8RlFC61P" data-theme="light"></div>
 
           <button type="submit" class="submit-btn" id="submit-btn" disabled>Add Cube</button>
@@ -311,6 +349,7 @@
       var cubeIdInput = document.getElementById("cube_id");
       var cubeNameInput = document.getElementById("cube_name");
       var descInput = document.getElementById("description");
+      var autoSyncHedronInput = document.getElementById("auto_sync_hedron_network");
       var validateBtn = document.getElementById("validate-btn");
       var submitBtn = document.getElementById("submit-btn");
       var validationEl = document.getElementById("validation-result");
@@ -325,6 +364,8 @@
           cubeNameInput.disabled = true;
           descInput.value = "";
           descInput.disabled = true;
+          autoSyncHedronInput.checked = true;
+          autoSyncHedronInput.disabled = true;
           submitBtn.disabled = true;
           validationEl.className = "validation-result";
           validationEl.style.display = "none";
@@ -370,6 +411,7 @@
               cubeNameInput.disabled = false;
               cubeNameInput.value = data.name;
               descInput.disabled = false;
+              autoSyncHedronInput.disabled = false;
               submitBtn.disabled = false;
             } else {
               validated = false;
@@ -403,6 +445,7 @@
           cube_id: cubeIdInput.value.trim(),
           cube_name: cubeNameInput.value.trim(),
           description: descInput.value.trim(),
+          auto_sync_hedron_network: autoSyncHedronInput.checked,
           "cf-turnstile-response": document.querySelector('[name="cf-turnstile-response"]')?.value || ""
         };
 
@@ -422,6 +465,8 @@
               validatedId = "";
               cubeNameInput.disabled = true;
               descInput.disabled = true;
+              autoSyncHedronInput.checked = true;
+              autoSyncHedronInput.disabled = true;
               validationEl.className = "validation-result";
               validationEl.style.display = "none";
               if (window.turnstile) turnstile.reset();

@@ -131,7 +131,7 @@ def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
             }
         )
 
-    # Ensure the image is named deck_image.<ext> (not strictly required, but matches pull_from_r2.py).
+    # Ensure the image is named deck_image.<ext> for process_submissions().
     image_files = sorted(
         [p for p in submission_folder.rglob("image.*") if p.is_file()],
         key=lambda p: str(p).lower(),

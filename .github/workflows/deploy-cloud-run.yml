@@ -127,3 +127,15 @@ jobs:
             --allow-unauthenticated \
             --update-env-vars "GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}" \
             --update-secrets "ENQUEUE_SHARED_SECRET=${ENQUEUE_SECRET_RESOURCE}:latest"
+
+      - name: Deploy Cloudflare Worker (production)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: "deploy --env prod --config wrangler.jsonc --var CWW_DEPLOY_VERSION:${{ github.sha }}"
+
+      - name: Deploy Cloudflare redirect worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: "deploy --config wrangler-redirect.jsonc"
