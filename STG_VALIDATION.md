@@ -8,7 +8,7 @@ This is a practical end-to-end checklist to confirm your **Cloudflare Worker `st
   - `cubewizard-enqueue-stg`
   - `cubewizard-worker-stg`
 - Staging Cloud Tasks queue exists: `eval-queue-stg`
-- Staging Firestore DB id exists: `cw-upload-status-stg`
+- Staging Firestore DB id exists: `cw-upload-status-stg`, **regional** in **`us-east1`**
 - Cloudflare Worker `stg` secrets set:
   - `GCP_ENQUEUE_URL` → stg enqueue base URL
   - `ENQUEUE_SHARED_SECRET` → stg secret (must match enqueue)

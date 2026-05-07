@@ -17,6 +17,7 @@ Shared across environments (by design):
 - **Region** (Cloud Run + Cloud Tasks): `us-east1`
 - **Queue**: `eval-queue-stg`
 - **Firestore status DB id**: `cw-upload-status-stg`
+- **Firestore status DB location**: regional **`us-east1`** (same region as Cloud Run / Cloud Tasks; not **`nam5`**)
 - **Firestore collection**: `jobs`
 
 ---
@@ -68,9 +69,23 @@ gcloud projects add-iam-policy-binding cubewizard \
 gcloud projects add-iam-policy-binding cubewizard \
   --member="serviceAccount:worker-sa-stg@cubewizard.iam.gserviceaccount.com" \
   --role="roles/datastore.user"
+
+# Enqueue attaches OIDC to tasks as cloudtasks-invoker-sa-stg — requires actAs on that SA:
+# - the enqueue runtime SA (who calls create_task)
+gcloud iam service-accounts add-iam-policy-binding cloudtasks-invoker-sa-stg@cubewizard.iam.gserviceaccount.com \
+  --project=cubewizard \
+  --member="serviceAccount:enqueue-sa-stg@cubewizard.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
+
+# - the Cloud Tasks service agent (actually mints the OIDC token)
+PROJECT_NUMBER="$(gcloud projects describe cubewizard --format='value(projectNumber)')"
+gcloud iam service-accounts add-iam-policy-binding cloudtasks-invoker-sa-stg@cubewizard.iam.gserviceaccount.com \
+  --project=cubewizard \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-cloudtasks.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
 ```
 
-Grant **`enqueue-sa-stg`** **`secretAccessor`** on Secret Manager **`enqueue-shared-secret-stg`** as in **`GCP_DEPLOYMENT.md`** section 4 (required for enqueue to read `ENQUEUE_SHARED_SECRET`).
+Grant **`enqueue-sa-stg`** **`secretAccessor`** on Secret Manager **`ENQUEUE_SHARED_SECRET_STG`** as in **`GCP_DEPLOYMENT.md`** section 4 (required for enqueue to read `ENQUEUE_SHARED_SECRET`).
 
 Later (after you deploy `cubewizard-worker-stg`), grant Cloud Tasks invoker SA permission to call it:
 
@@ -88,18 +103,15 @@ gcloud run services add-iam-policy-binding cubewizard-worker-stg \
 
 This keeps **stg** job status isolated from **prod** job status. It does *not* affect the shared Cloudflare D1 deck DB.
 
-Pick a Firestore location that matches your existing setup:
-- If your existing Firestore is multi-region (common): `nam5`
-- If your existing Firestore is regional: use that region (example: `us-east1`)
+Create **`cw-upload-status-stg`** as a **regional** Firestore database in **`us-east1`** so latency and placement stay aligned with Cloud Run and Cloud Tasks. Do **not** use multi-region **`nam5`** here unless you deliberately want a separate multi-region status store.
 
 Create the database id:
 
 ```bash
-# Example: multi-region North America (recommended default)
 gcloud firestore databases create \
   --project=cubewizard \
   --database=cw-upload-status-stg \
-  --location=nam5
+  --location=us-east1
 ```
 
 If you already created the database id, this will fail; that’s fine.
@@ -112,7 +124,7 @@ You will set these on the **stg** services (either via GitHub Actions, or in the
 
 ### `cubewizard-enqueue-stg`
 
-Deployed via GitHub Actions; **`ENQUEUE_SHARED_SECRET`** is bound from Secret Manager **`enqueue-shared-secret-stg:latest`** (`GCP_DEPLOYMENT.md` §4). **Non-secret** env vars managed by Actions include:
+Deployed via GitHub Actions; **`ENQUEUE_SHARED_SECRET`** is bound from Secret Manager **`ENQUEUE_SHARED_SECRET_STG:latest`** (`GCP_DEPLOYMENT.md` §4). **Non-secret** env vars managed by Actions include:
 - `GCP_PROJECT_ID=cubewizard`
 - `GCP_LOCATION=us-east1`
 - `CLOUD_TASKS_QUEUE=eval-queue-stg`
@@ -122,6 +134,8 @@ Deployed via GitHub Actions; **`ENQUEUE_SHARED_SECRET`** is bound from Secret Ma
 - `FIRESTORE_COLLECTION=jobs`
 
 ### `cubewizard-worker-stg`
+
+`.github/workflows/deploy-cloud-run-stg.yml` only **updates** `FIRESTORE_DATABASE_ID` and `FIRESTORE_COLLECTION` on each deploy. It does **not** inject R2, OpenAI, or D1 — so a new staging worker revision has none of those until you add them (**same bucket/credentials as prod** is typical, since uploads use **`decklist-uploads`**):
 
 - `OPENAI_API_KEY` (can be separate from prod)
 - `R2_ENDPOINT_URL`
