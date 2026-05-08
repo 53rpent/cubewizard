@@ -73,10 +73,9 @@
 					"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
 					"remote": true
 				}
-			],
-			// "triggers": {
-			// 	"crons": ["0 7 * * *"]
-			// }
+			]
+			// Re-enable daily Hedron sync (comma above becomes `],` again):
+			// , "triggers": { "crons": ["0 7 * * *"] }
 		},
 		"prod": {
 			"name": "cubewizard-prod",
@@ -109,10 +108,8 @@
 					"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
 					"remote": true
 				}
-			],
-			// "triggers": {
-			// 	"crons": ["0 7 * * *"]
-			// }
+			]
+			// , "triggers": { "crons": ["0 7 * * *"] }
 		}
 	}
 }
