@@ -67,6 +67,11 @@ export default {
       return handleGetDeck(deckMatch[1], env, request);
     }
 
+    const hedronSyncMatch = url.pathname.match(/^\/api\/hedron-sync\/([^/]+)$/);
+    if (hedronSyncMatch && request.method === "POST") {
+      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx);
+    }
+
     // --- Existing endpoints ---
     if (url.pathname === "/api/upload" && request.method === "POST") {
       return handleUpload(request, env);
@@ -1284,6 +1289,22 @@ async function handleGetDeck(deckId, env, request) {
     cards: cards,
     card_names_ordered: card_names_ordered,
   });
+}
+
+async function handleTriggerHedronSync(cubeId, env, ctx) {
+  try {
+    var id = String(cubeId || "").trim();
+    if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
+    ctx.waitUntil(
+      syncHedronCube(env, id).catch(function (e) {
+        console.error("hedron manual sync", id, e);
+      })
+    );
+    return jsonResponse({ ok: true }, 200);
+  } catch (e) {
+    console.error("hedron manual sync handler", e);
+    return jsonResponse({ error: "Failed to start Hedron sync" }, 500);
+  }
 }
 
 function scryfallCardToDeckRow(card) {
