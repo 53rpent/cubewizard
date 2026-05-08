@@ -83,6 +83,16 @@ CREATE TABLE IF NOT EXISTS hedron_synced_decks (
     FOREIGN KEY (cube_id) REFERENCES cubes (cube_id)
 );
 
+-- Hedron Network sync cursor (resume pagination across many invocations)
+CREATE TABLE IF NOT EXISTS hedron_sync_state (
+    cube_id TEXT PRIMARY KEY,
+    next_key TEXT,
+    done INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL,
+    last_error TEXT,
+    FOREIGN KEY (cube_id) REFERENCES cubes (cube_id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_decks_cube_id ON decks(cube_id);
 CREATE INDEX IF NOT EXISTS idx_decks_pilot_name ON decks(pilot_name);
@@ -90,3 +100,4 @@ CREATE INDEX IF NOT EXISTS idx_decks_processing_timestamp ON decks(processing_ti
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_name ON deck_cards(name);
 CREATE INDEX IF NOT EXISTS idx_hedron_synced_decks_cube_id ON hedron_synced_decks(cube_id);
+CREATE INDEX IF NOT EXISTS idx_hedron_sync_state_done ON hedron_sync_state(done);

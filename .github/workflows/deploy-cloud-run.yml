@@ -82,6 +82,8 @@ jobs:
           docker push "${WORKER_IMAGE}:${GITHUB_SHA}"
           docker push "${WORKER_IMAGE}:latest"
 
+      # Deploy worker before enqueue: new enqueue may emit URL-source tasks (`image_url`);
+      # the worker must accept those payloads before enqueue is updated.
       - name: Deploy worker service
         run: |
           gcloud run deploy "${WORKER_SERVICE}" \

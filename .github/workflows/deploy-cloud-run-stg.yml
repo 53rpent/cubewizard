@@ -52,6 +52,7 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      # Deploy worker before enqueue: enqueue may emit URL-source tasks (`image_url`).
       - name: Deploy worker service (stg)
         run: |
           gcloud run deploy "${WORKER_SERVICE}" \
