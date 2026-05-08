@@ -50,7 +50,9 @@
 			"vars": {
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "staging",
-				"CWW_DEPLOY_VERSION": ""
+				"CWW_DEPLOY_VERSION": "",
+				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
+				"FIRESTORE_COLLECTION": "jobs"
 			},
 			"r2_buckets": [
 				{
@@ -85,7 +87,9 @@
 			"vars": {
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "production",
-				"CWW_DEPLOY_VERSION": ""
+				"CWW_DEPLOY_VERSION": "",
+				"FIRESTORE_DATABASE_ID": "cw-upload-status",
+				"FIRESTORE_COLLECTION": "jobs"
 			},
 			"r2_buckets": [
 				{

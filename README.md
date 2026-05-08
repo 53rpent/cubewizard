@@ -120,9 +120,8 @@ Required Cloudflare Worker `stg` secrets (Wrangler):
 wrangler secret put GCP_ENQUEUE_URL --env stg
 wrangler secret put ENQUEUE_SHARED_SECRET --env stg
 
-# For /api/processing-decks/:cubeId status in stg
+# For /api/processing-decks/:cubeId — reads Firestore upload-status DB (see wrangler.jsonc FIRESTORE_* vars per env).
 wrangler secret put GCP_FIRESTORE_SA_JSON --env stg
-wrangler secret put FIRESTORE_DATABASE_ID --env stg
 ```
 
 Apply D1 migrations as needed (repository ships SQL under `migrations/`):

@@ -238,8 +238,7 @@ collection the enqueue/worker services write. Configure the Worker with a dedica
 
 - `GCP_FIRESTORE_SA_JSON` (Wrangler secret): full service account JSON with `roles/datastore.user` (read-only is fine)
 - `GCP_PROJECT_ID` (optional if `project_id` exists in the JSON)
-- `FIRESTORE_DATABASE_ID` (optional; should match enqueue/worker, e.g. `cw-upload-status`)
-- `FIRESTORE_COLLECTION` (optional; defaults to `jobs`)
+- `FIRESTORE_DATABASE_ID` / `FIRESTORE_COLLECTION`: set in **[`wrangler.jsonc`](wrangler.jsonc)** under `env.stg.vars` / `env.prod.vars` (`cw-upload-status-stg` vs `cw-upload-status`) so `/api/processing-decks` hits the same Firestore DB as enqueue/worker. Do **not** add a Wrangler **secret** with the same name unless you intend to override; Worker secrets take precedence over `vars`.
 
 Firestore may prompt you to create a composite index the first time the Worker runs the `cube_id + status`
 queries; click the console link from the error log if you see one.

@@ -13,7 +13,7 @@ This is a practical end-to-end checklist to confirm your **Cloudflare Worker `st
   - `GCP_ENQUEUE_URL` → stg enqueue base URL
   - `ENQUEUE_SHARED_SECRET` → stg secret (must match enqueue)
   - `GCP_FIRESTORE_SA_JSON` → SA JSON with Firestore read access
-  - `FIRESTORE_DATABASE_ID=cw-upload-status-stg`
+  - Firestore database id **`cw-upload-status-stg`** is set in **`wrangler.jsonc`** (`env.stg.vars.FIRESTORE_DATABASE_ID`), not only via secrets — avoids the Worker defaulting to **`(default)`** when the secret is missing.
 
 ---
 
@@ -75,6 +75,10 @@ curl -sS "https://cubewizard-stg.amatveyenko.workers.dev/api/processing-decks/<c
 ```
 
 Expected: JSON `{ "jobs": [...] }` including queued/running/failed jobs from **stg** only.
+
+### Troubleshooting: Worker shows wrong or empty jobs
+
+If you previously ran `wrangler secret put FIRESTORE_DATABASE_ID --env stg`, that **overrides** [`wrangler.jsonc`](wrangler.jsonc) `vars`. Remove the secret (`wrangler secret delete FIRESTORE_DATABASE_ID --env stg`) or set it explicitly to `cw-upload-status-stg`. Without any binding, the Worker falls back to Firestore database **`(default)`**, which is not where staging jobs live.
 
 ---
 
