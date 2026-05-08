@@ -548,11 +548,15 @@ async function syncHedronCube(env, cubeId) {
     }
 
     // Import as many missing decks as we can from this page, bounded by max decks per tick.
+    // Skip UUIDs we've already attempted this page in this tick so a failing enqueue cannot
+    // starve progress by making findFirstMissingDeckJobInPage return the same deck repeatedly.
+    var skipDeckUuidsThisPage = new Set();
     while (imported < HEDRON_SYNC_MAX_DECKS_PER_TICK) {
-      var job = await findFirstMissingDeckJobInPage(env, page);
+      var job = await findFirstMissingDeckJobInPage(env, page, skipDeckUuidsThisPage);
       if (!job) break;
-      await syncOneHedronDeckJob(env, id, job);
-      imported++;
+      var syncedOk = await syncOneHedronDeckJob(env, id, job);
+      skipDeckUuidsThisPage.add(job.deckImageUuid);
+      if (syncedOk) imported++;
       // Cursor stays on this same page; the next loop iteration will find the next missing deck.
       await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
     }
@@ -626,7 +630,7 @@ async function hedronDeckUuidExists(env, deckImageUuid) {
   return !!dup;
 }
 
-async function findFirstMissingDeckJobInPage(env, json) {
+async function findFirstMissingDeckJobInPage(env, json, skipDeckUuids) {
   for (var di = 0; di < json.drafts.length; di++) {
     var draft = json.drafts[di];
     var players = draft.players || [];
@@ -641,6 +645,8 @@ async function findFirstMissingDeckJobInPage(env, json) {
       var segs = deckPath.split("/").filter(Boolean);
       var deckImageUuid = segs[segs.length - 1];
       if (!deckImageUuid) continue;
+
+      if (skipDeckUuids && skipDeckUuids.has(deckImageUuid)) continue;
 
       if (await hedronDeckUuidExists(env, deckImageUuid)) {
         continue;
@@ -688,9 +694,10 @@ async function hedronPageHasMissingDeck(env, cubeId, nextKey) {
   return !!job;
 }
 
+/** @returns {Promise<boolean>} true if the deck was enqueued and recorded in hedron_synced_decks */
 async function syncOneHedronDeckJob(env, cubeId, job) {
   try {
-    if (await hedronDeckUuidExists(env, job.deckImageUuid)) return;
+    if (await hedronDeckUuidExists(env, job.deckImageUuid)) return false;
 
     var imgUrl =
       job.deckPath.indexOf("http") === 0 ? job.deckPath : HEDRON_ORIGIN + job.deckPath;
@@ -710,18 +717,30 @@ async function syncOneHedronDeckJob(env, cubeId, job) {
 
     if (!enqueueResult.ok && !enqueueResult.skipped) {
       console.error("hedron enqueue failed", cubeId, job.deckImageUuid, enqueueResult);
-      return;
+      return false;
     }
 
     var syncedAt = new Date().toISOString();
-    await env.cubewizard_db
+    var runResult = await env.cubewizard_db
       .prepare(
         "INSERT OR IGNORE INTO hedron_synced_decks (deck_image_uuid, cube_id, draft_id, player_id, r2_prefix, synced_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
       .bind(job.deckImageUuid, cubeId, job.draftId, job.playerId, "", syncedAt)
       .run();
+
+    var written = 0;
+    if (runResult && runResult.meta) {
+      written =
+        runResult.meta.rows_written != null
+          ? runResult.meta.rows_written
+          : runResult.meta.changes != null
+            ? runResult.meta.changes
+            : 0;
+    }
+    return written > 0;
   } catch (e) {
     console.error("hedron syncOneHedronDeckJob", cubeId, job && job.deckImageUuid, e);
+    return false;
   }
 }
 

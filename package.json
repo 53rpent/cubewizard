@@ -1,4 +1,5 @@
 {
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "openssl": "^2.0.0"
   }

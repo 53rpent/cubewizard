@@ -242,3 +242,9 @@ Optional Worker var **`DECK_IMAGE_PUBLIC_BASE_URL`**: set to your public R2 cust
 - **R2 Credential Errors**: Verify `[r2]` section in `config.ini` has correct endpoint, key ID, and secret
 - **D1 Write Failures**: Ensure `npx wrangler` is available and authenticated (`npx wrangler whoami`)
 - **Wrangler Auth**: Run `npx wrangler login` if D1 commands return authorization errors
+
+## License
+
+CubeWizard is free software: you may redistribute and/or modify it under the terms of the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.html) as published by the Free Software Foundation, either **version 3** of the License or **(at your option) any later version**. See [LICENSE](LICENSE) for the full license text.
+
+Copyright © 2026 CubeWizard contributors.
