@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import boto3
+import requests
 from botocore.config import Config as BotoConfig
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import FastAPI
+from pydantic import BaseModel, Field, model_validator
 
 from google.cloud import firestore
 
@@ -26,14 +27,32 @@ load_dotenv()
 app = FastAPI(title="cubewizard-worker")
 
 
+HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+
 class TaskRequest(BaseModel):
     upload_id: str = Field(..., min_length=1)
-    r2_bucket: str = Field(..., min_length=1)
-    r2_prefix: str = Field(..., min_length=1)
     cube_id: Optional[str] = None
     pilot_name: Optional[str] = None
     submitted_at: Optional[str] = None
     schema_version: int = 1
+
+    r2_bucket: Optional[str] = None
+    r2_prefix: Optional[str] = None
+
+    image_url: Optional[str] = None
+    image_source: Optional[str] = None
+    match_wins: Optional[int] = None
+    match_losses: Optional[int] = None
+    match_draws: Optional[int] = None
+
+    @model_validator(mode="after")
+    def _need_one_source(self) -> "TaskRequest":
+        has_r2 = bool(self.r2_bucket and self.r2_prefix)
+        has_url = bool(self.image_url)
+        if not (has_r2 or has_url):
+            raise ValueError("must include r2_bucket and r2_prefix, or image_url")
+        return self
 
 
 def _required_env(name: str) -> str:
@@ -88,6 +107,101 @@ def _job_doc_id(upload_id: str) -> str:
     raw = (upload_id or "").encode("utf-8")
     token = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
     return f"u_{token}"
+
+
+def _content_type_to_ext(content_type: str) -> str:
+    ct = (content_type or "").split(";")[0].strip().lower()
+    ext_map = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/heic": "heic",
+        "image/heif": "heif",
+    }
+    return ext_map.get(ct, "jpg")
+
+
+def _materialize_from_url(submission_folder: Path, req: TaskRequest) -> int:
+    """
+    Download deck image from req.image_url and write pilot_data.csv for process_submissions().
+    Returns total bytes downloaded.
+    """
+    if not req.image_url:
+        raise ValueError("image_url is required for URL-source jobs")
+
+    submission_folder.mkdir(parents=True, exist_ok=True)
+    headers = {"User-Agent": "CubeWizard-Worker/1.0"}
+
+    with requests.get(
+        req.image_url,
+        headers=headers,
+        stream=True,
+        timeout=(15, 120),
+    ) as resp:
+        resp.raise_for_status()
+        content_type = resp.headers.get("Content-Type") or "image/jpeg"
+        ext = _content_type_to_ext(content_type)
+        deck_path = submission_folder / f"deck_image.{ext}"
+
+        total = 0
+        chunk_size = 1024 * 1024
+        with open(deck_path, "wb") as out:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > HEDRON_MAX_IMAGE_BYTES:
+                    raise ValueError(
+                        f"image exceeds max size ({HEDRON_MAX_IMAGE_BYTES} bytes)"
+                    )
+                out.write(chunk)
+
+    if not deck_path.is_file() or deck_path.stat().st_size == 0:
+        raise ValueError("downloaded image is empty")
+
+    csv_path = submission_folder / "pilot_data.csv"
+    wins = 0 if req.match_wins is None else int(req.match_wins)
+    losses = 0 if req.match_losses is None else int(req.match_losses)
+    draws = 0 if req.match_draws is None else int(req.match_draws)
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "pilot_name",
+                "match_wins",
+                "match_losses",
+                "match_draws",
+                "cube_id",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "pilot_name": req.pilot_name or "Unknown",
+                "match_wins": wins,
+                "match_losses": losses,
+                "match_draws": draws,
+                "cube_id": req.cube_id or "",
+            }
+        )
+
+    meta_debug = {
+        "cube_id": req.cube_id,
+        "pilot_name": req.pilot_name,
+        "match_wins": wins,
+        "match_losses": losses,
+        "match_draws": draws,
+        "image_url": req.image_url,
+        "image_source": req.image_source,
+        "upload_id": req.upload_id,
+    }
+    (submission_folder / "metadata.json").write_text(
+        json.dumps(meta_debug, indent=2),
+        encoding="utf-8",
+    )
+
+    return total
+
 
 def _materialize_submission_csv_and_image(submission_folder: Path) -> None:
     """
@@ -241,10 +355,16 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
             "started_at": firestore.SERVER_TIMESTAMP,
             "attempt_count": firestore.Increment(1),
             "lease_expires_at": lease_until,
-            "r2_bucket": req.r2_bucket,
-            "r2_prefix": req.r2_prefix,
             "schema_version": req.schema_version,
         }
+        if req.r2_bucket is not None:
+            fields["r2_bucket"] = req.r2_bucket
+        if req.r2_prefix is not None:
+            fields["r2_prefix"] = req.r2_prefix
+        if req.image_url is not None:
+            fields["image_url"] = req.image_url
+        if req.image_source is not None:
+            fields["image_source"] = req.image_source
         if req.cube_id is not None:
             fields["cube_id"] = req.cube_id
         if req.pilot_name is not None:
@@ -263,19 +383,25 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
 
     # Do work in a temp dir (Cloud Run writable).
     try:
-        s3 = _r2_client()
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             submissions_dir = base / "submissions"
             submissions_dir.mkdir(parents=True, exist_ok=True)
 
-            # Download staged upload into a single submission folder.
             safe_upload_id = str(req.upload_id).replace("/", "_").replace("\\", "_").replace(" ", "_")
             submission_folder = submissions_dir / f"submission_{safe_upload_id}"
-            downloaded = _download_prefix_to_dir(s3, req.r2_bucket, req.r2_prefix, submission_folder)
-            _materialize_submission_csv_and_image(submission_folder)
 
-            # Run existing pipeline: process_submissions expects a directory of submission folders.
+            if req.image_url:
+                _materialize_from_url(submission_folder, req)
+                downloaded_count = 1
+            else:
+                s3 = _r2_client()
+                downloaded = _download_prefix_to_dir(
+                    s3, req.r2_bucket or "", req.r2_prefix or "", submission_folder
+                )
+                downloaded_count = len(downloaded)
+                _materialize_submission_csv_and_image(submission_folder)
+
             wizard = CubeWizard()
             result = wizard.process_submissions(str(submissions_dir))
 
@@ -284,7 +410,7 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
                     "status": "done",
                     "finished_at": firestore.SERVER_TIMESTAMP,
                     "result": result,
-                    "downloaded_count": len(downloaded),
+                    "downloaded_count": downloaded_count,
                 },
                 merge=True,
             )

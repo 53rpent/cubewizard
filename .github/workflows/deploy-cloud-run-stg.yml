@@ -10,6 +10,7 @@ on:
 env:
   PROJECT_ID: cubewizard
   REGION: us-east1
+  AR_REPO: cubewizard
 
   ENQUEUE_SERVICE: cubewizard-enqueue-stg
   WORKER_SERVICE: cubewizard-worker-stg
@@ -52,12 +53,36 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push enqueue image (stg)
+        run: |
+          docker build \
+            -f services/enqueue/Dockerfile \
+            -t "${ENQUEUE_IMAGE}:${GITHUB_SHA}" \
+            -t "${ENQUEUE_IMAGE}:latest" \
+            .
+          docker push "${ENQUEUE_IMAGE}:${GITHUB_SHA}"
+          docker push "${ENQUEUE_IMAGE}:latest"
+
+      - name: Build & push worker image (stg)
+        run: |
+          docker build \
+            -f services/worker/Dockerfile \
+            -t "${WORKER_IMAGE}:${GITHUB_SHA}" \
+            -t "${WORKER_IMAGE}:latest" \
+            .
+          docker push "${WORKER_IMAGE}:${GITHUB_SHA}"
+          docker push "${WORKER_IMAGE}:latest"
+
+      # Deploy worker before enqueue: enqueue may emit URL-source tasks (`image_url`).
       - name: Deploy worker service (stg)
         run: |
           gcloud run deploy "${WORKER_SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
-            --image "${WORKER_IMAGE}:latest" \
+            --image "${WORKER_IMAGE}:${GITHUB_SHA}" \
             --service-account "${WORKER_RUNTIME_SA}" \
             --no-allow-unauthenticated \
             --concurrency 1 \
@@ -90,7 +115,7 @@ jobs:
           gcloud run deploy "${ENQUEUE_SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
-            --image "${ENQUEUE_IMAGE}:latest" \
+            --image "${ENQUEUE_IMAGE}:${GITHUB_SHA}" \
             --service-account "${ENQUEUE_RUNTIME_SA}" \
             --allow-unauthenticated \
             --update-env-vars "GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION=${REGION},CLOUD_TASKS_QUEUE=${CLOUD_TASKS_QUEUE},WORKER_URL=${{ steps.worker_url.outputs.url }}/tasks/eval,TASK_OIDC_SERVICE_ACCOUNT=${TASK_OIDC_SERVICE_ACCOUNT},FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}" \

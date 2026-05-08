@@ -17,6 +17,62 @@
   var currentCubeId = "";
   var processingPollTimer = null;
   var processingFetchInFlight = false;
+  var hedronSyncInFlight = false;
+
+  function setHedronSyncUiState() {
+    var btn = $("hedron-sync-btn");
+    var msg = $("hedron-sync-msg");
+    if (!btn) return;
+    btn.disabled = !currentCubeId || hedronSyncInFlight;
+    if (msg && !currentCubeId) {
+      msg.textContent = "";
+    }
+  }
+
+  function setHedronSyncMessage(text, kind) {
+    var msg = $("hedron-sync-msg");
+    if (!msg) return;
+    msg.textContent = text || "";
+    msg.style.color = kind === "error" ? "#c0392b" : kind === "ok" ? "#1e7e34" : "";
+  }
+
+  function triggerHedronSync() {
+    if (!currentCubeId) return;
+    if (hedronSyncInFlight) return;
+    hedronSyncInFlight = true;
+    setHedronSyncMessage("Starting Hedron sync…", "");
+    setHedronSyncUiState();
+    fetch("/api/hedron-sync/" + encodeURIComponent(currentCubeId), { method: "POST" })
+      .then(function (r) {
+        return r
+          .json()
+          .catch(function () {
+            return {};
+          })
+          .then(function (data) {
+            return { ok: r.ok, status: r.status, data: data };
+          });
+      })
+      .then(function (res) {
+        hedronSyncInFlight = false;
+        setHedronSyncUiState();
+        if (!res.ok) {
+          var err =
+            res && res.data && res.data.error
+              ? String(res.data.error)
+              : "Failed to start Hedron sync (HTTP " + res.status + ")";
+          setHedronSyncMessage(err, "error");
+          return;
+        }
+        setHedronSyncMessage("Hedron sync started. New decks will appear as they process.", "ok");
+        refreshProcessingStatus();
+      })
+      .catch(function () {
+        hedronSyncInFlight = false;
+        setHedronSyncUiState();
+        setHedronSyncMessage("Network error starting Hedron sync.", "error");
+      });
+  }
 
   function getCubeFromUrl() {
     if (window.CWPaths && CWPaths.preferredCubeId) {
@@ -577,6 +633,7 @@
     } catch (e) {
       currentCubeId = getCubeFromUrl() || "";
     }
+    setHedronSyncUiState();
     if (currentCubeId) {
       try {
         localStorage.setItem("selectedCubeId", currentCubeId);
@@ -622,6 +679,8 @@
           var v = sel.value;
           if (!v) return;
           currentCubeId = v;
+          setHedronSyncMessage("", "");
+          setHedronSyncUiState();
           try {
             localStorage.setItem("selectedCubeId", v);
           } catch (e4) {}
@@ -645,6 +704,7 @@
         if (!currentCubeId) {
           stopProcessingStatusPoll();
           setProcessingStatusVisible(false);
+          setHedronSyncUiState();
           $("decks-subtitle").textContent = "Select a cube in the header to view decks.";
           $("loading").style.display = "none";
           showError("No cube selected.");
@@ -652,18 +712,21 @@
         }
 
         $("decks-subtitle").textContent = subtitleForCube(currentCubeId, cubes);
+        setHedronSyncUiState();
         loadDecks();
       })
       .catch(function () {
         if (!currentCubeId) {
           stopProcessingStatusPoll();
           setProcessingStatusVisible(false);
+          setHedronSyncUiState();
           $("decks-subtitle").textContent = "Select a cube in the header to view decks.";
           $("loading").style.display = "none";
           showError("No cube selected.");
           return;
         }
         $("decks-subtitle").textContent = "All decks for cube " + currentCubeId + ".";
+        setHedronSyncUiState();
         loadDecks();
       });
   }
@@ -688,6 +751,10 @@
 
   function init() {
     bindModalUi();
+    try {
+      var btn = $("hedron-sync-btn");
+      if (btn) btn.addEventListener("click", triggerHedronSync);
+    } catch (eBtn) {}
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", boot);
     } else {

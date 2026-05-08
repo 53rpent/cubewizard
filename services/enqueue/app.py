@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from google.cloud import firestore
 from google.cloud import tasks_v2
@@ -32,12 +32,29 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
 
 class EnqueueRequest(BaseModel):
     upload_id: str = Field(..., min_length=1)
-    r2_bucket: str = Field(..., min_length=1)
-    r2_prefix: str = Field(..., min_length=1)
     cube_id: Optional[str] = None
     pilot_name: Optional[str] = None
     submitted_at: Optional[str] = None
     schema_version: int = 1
+
+    # Browser-upload flow: staged objects under r2_prefix in r2_bucket
+    r2_bucket: Optional[str] = None
+    r2_prefix: Optional[str] = None
+
+    # URL-source flow (e.g. Hedron): worker downloads image from this URL
+    image_url: Optional[str] = None
+    image_source: Optional[str] = None
+    match_wins: Optional[int] = None
+    match_losses: Optional[int] = None
+    match_draws: Optional[int] = None
+
+    @model_validator(mode="after")
+    def _need_one_source(self) -> "EnqueueRequest":
+        has_r2 = bool(self.r2_bucket and self.r2_prefix)
+        has_url = bool(self.image_url)
+        if not (has_r2 or has_url):
+            raise ValueError("must include r2_bucket and r2_prefix, or image_url")
+        return self
 
 
 def _required_env(name: str) -> str:
@@ -95,12 +112,24 @@ async def enqueue(
     fields: Dict[str, Any] = {
         "upload_id": req.upload_id,
         "status": "queued",
-        "r2_bucket": req.r2_bucket,
-        "r2_prefix": req.r2_prefix,
         "submitted_at": req.submitted_at,
         "schema_version": req.schema_version,
         "created_at": firestore.SERVER_TIMESTAMP,
     }
+    if req.r2_bucket is not None:
+        fields["r2_bucket"] = req.r2_bucket
+    if req.r2_prefix is not None:
+        fields["r2_prefix"] = req.r2_prefix
+    if req.image_url is not None:
+        fields["image_url"] = req.image_url
+    if req.image_source is not None:
+        fields["image_source"] = req.image_source
+    if req.match_wins is not None:
+        fields["match_wins"] = req.match_wins
+    if req.match_losses is not None:
+        fields["match_losses"] = req.match_losses
+    if req.match_draws is not None:
+        fields["match_draws"] = req.match_draws
     if req.cube_id is not None:
         fields["cube_id"] = req.cube_id
     if req.pilot_name is not None:
@@ -120,7 +149,7 @@ async def enqueue(
     client = tasks_v2.CloudTasksClient()
     parent = client.queue_path(project, location, queue)
 
-    payload = req.model_dump()
+    payload = req.model_dump(mode="json", exclude_none=True)
     body_bytes = json.dumps(payload).encode("utf-8")
     # Cloud Tasks requires the HTTP body to be base64-encoded.
     body_b64 = base64.b64encode(body_bytes).decode("utf-8")

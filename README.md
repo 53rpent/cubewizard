@@ -117,7 +117,6 @@ Store enqueue shared secrets in **Google Secret Manager** (`enqueue-shared-secre
 Required Cloudflare Worker `stg` secrets (Wrangler):
 
 ```bash
-wrangler secret put GCP_ENQUEUE_URL --env stg
 wrangler secret put ENQUEUE_SHARED_SECRET --env stg
 
 # For /api/processing-decks/:cubeId — reads Firestore upload-status DB (see wrangler.jsonc FIRESTORE_* vars per env).
@@ -129,6 +128,7 @@ Apply D1 migrations as needed (repository ships SQL under `migrations/`):
 ```bash
 npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/001_add_auto_sync_hedron_network.sql
 npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/002_add_hedron_synced_decks.sql
+npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/003_add_hedron_sync_state.sql
 ```
 
 ### Dashboard Features
@@ -242,3 +242,9 @@ Optional Worker var **`DECK_IMAGE_PUBLIC_BASE_URL`**: set to your public R2 cust
 - **R2 Credential Errors**: Verify `[r2]` section in `config.ini` has correct endpoint, key ID, and secret
 - **D1 Write Failures**: Ensure `npx wrangler` is available and authenticated (`npx wrangler whoami`)
 - **Wrangler Auth**: Run `npx wrangler login` if D1 commands return authorization errors
+
+## License
+
+CubeWizard is free software: you may redistribute and/or modify it under the terms of the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.html) as published by the Free Software Foundation, either **version 3** of the License or **(at your option) any later version**. See [LICENSE](LICENSE) for the full license text.
+
+Copyright © 2026 CubeWizard contributors.
