@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS cubes (
     cube_id TEXT PRIMARY KEY,
     created TIMESTAMP NOT NULL,
     last_updated TIMESTAMP NOT NULL,
-    total_decks INTEGER DEFAULT 0
+    total_decks INTEGER DEFAULT 0,
+    auto_sync_hedron_network INTEGER NOT NULL DEFAULT 1
 );
 
 -- Decks table - stores deck metadata
@@ -71,9 +72,21 @@ CREATE TABLE IF NOT EXISTS cube_mapping (
     description TEXT DEFAULT ''
 );
 
+-- Hedron Network: one row per deck image UUID already staged + enqueued
+CREATE TABLE IF NOT EXISTS hedron_synced_decks (
+    deck_image_uuid TEXT PRIMARY KEY,
+    cube_id TEXT NOT NULL,
+    draft_id TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    r2_prefix TEXT NOT NULL,
+    synced_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (cube_id) REFERENCES cubes (cube_id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_decks_cube_id ON decks(cube_id);
 CREATE INDEX IF NOT EXISTS idx_decks_pilot_name ON decks(pilot_name);
 CREATE INDEX IF NOT EXISTS idx_decks_processing_timestamp ON decks(processing_timestamp);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_name ON deck_cards(name);
+CREATE INDEX IF NOT EXISTS idx_hedron_synced_decks_cube_id ON hedron_synced_decks(cube_id);

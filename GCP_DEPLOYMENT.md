@@ -102,6 +102,8 @@ Staging resources are deployed via workflow dispatch using:
 Staging GCP bootstrap commands (queue / service accounts / Firestore db id) live in:
 - `GCP_STAGING.md`
 
+The staging upload-status database **`cw-upload-status-stg`** is **regional** in **`us-east1`** (not multi-region **`nam5`**).
+
 ### GitHub Actions and Cloud Run env
 
 The prod workflow **updates** **`cubewizard-enqueue`** non-secret env vars and binds **`ENQUEUE_SHARED_SECRET`** from Secret Manager (`enqueue-shared-secret-prod:latest`). It **updates** **`cubewizard-worker`** Firestore-related env vars only (`--update-env-vars`) so existing secrets (OpenAI, R2, D1) stay on the service between deploys.
@@ -112,7 +114,7 @@ Worker still needs secrets that are not stored in GitHub (unless you add them yo
 ### Troubleshooting
 
 - **Enqueue deploy fails because of `[ENQUEUE_SHARED_SECRET]` env type**: workflows run best-effort `gcloud run services update ... --remove-env-vars` and `--remove-secrets` for `ENQUEUE_SHARED_SECRET` before deploy. If migration still fails, run those manually once, then rerun the workflow.
-- **Deploy cannot read Secret Manager**: ensure `enqueue-shared-secret-prod|stg` exists and **`enqueue-sa` / `enqueue-sa-stg`** has **`secretAccessor`** on that secret (see section 4). Add the same binding for **`github-deployer`** if the deploy step itself is denied access.
+- **Deploy cannot read Secret Manager**: ensure `ENQUEUE_SHARED_SECRET_PROD|STG` exists and **`enqueue-sa` / `enqueue-sa-stg`** has **`secretAccessor`** on that secret (see section 4). Add the same binding for **`github-deployer`** if the deploy step itself is denied access.
 
   Example error (`enqueue-shared-secret-prod`):
 
@@ -147,7 +149,8 @@ If you pick different emails, update `.github/workflows/deploy-cloud-run.yml` ac
 **`enqueue-sa`**
 - `roles/cloudtasks.enqueuer` (create tasks)
 - `roles/datastore.user` (Firestore read/write)
-- `roles/secretmanager.secretAccessor` on secret `enqueue-shared-secret-prod` (see section 4; not necessarily project-wide)
+- `roles/secretmanager.secretAccessor` on secret `ENQUEUE_SHARED_SECRET_PROD` (see section 4; not necessarily project-wide)
+- **`roles/iam.serviceAccountUser` on `cloudtasks-invoker-sa@...`** (`add-iam-policy-binding` on **that invoker SA**): grant **both** (1) **`enqueue-sa`** and (2) the **Cloud Tasks service agent** **`service-<PROJECT_NUMBER>@gcp-sa-cloudtasks.iam.gserviceaccount.com`** so Cloud Tasks can mint OIDC for the worker (**same pattern for staging** → **`GCP_STAGING.md`**)
 
 **`worker-sa`**
 - `roles/datastore.user` (Firestore read/write)
@@ -174,7 +177,7 @@ You can tune rate limits later; start conservative if you want to avoid LLM rate
 
 #### `cubewizard-enqueue` env vars / secrets
 
-Workflows configure prod/stg enqueue as follows: **`ENQUEUE_SHARED_SECRET`** is supplied **from Secret Manager** (`enqueue-shared-secret-prod` / `enqueue-shared-secret-stg`, version `latest`). The rest are **`--update-env-vars`**:
+Workflows configure prod/stg enqueue as follows: **`ENQUEUE_SHARED_SECRET`** is supplied **from Secret Manager** (`ENQUEUE_SHARED_SECRET_PROD` / `ENQUEUE_SHARED_SECRET_STG`, version `latest`). The rest are **`--update-env-vars`**:
 
 Reference list:
 
@@ -235,8 +238,7 @@ collection the enqueue/worker services write. Configure the Worker with a dedica
 
 - `GCP_FIRESTORE_SA_JSON` (Wrangler secret): full service account JSON with `roles/datastore.user` (read-only is fine)
 - `GCP_PROJECT_ID` (optional if `project_id` exists in the JSON)
-- `FIRESTORE_DATABASE_ID` (optional; should match enqueue/worker, e.g. `cw-upload-status`)
-- `FIRESTORE_COLLECTION` (optional; defaults to `jobs`)
+- `FIRESTORE_DATABASE_ID` / `FIRESTORE_COLLECTION`: set in **[`wrangler.jsonc`](wrangler.jsonc)** under `env.stg.vars` / `env.prod.vars` (`cw-upload-status-stg` vs `cw-upload-status`) so `/api/processing-decks` hits the same Firestore DB as enqueue/worker. Do **not** add a Wrangler **secret** with the same name unless you intend to override; Worker secrets take precedence over `vars`.
 
 Firestore may prompt you to create a composite index the first time the Worker runs the `cube_id + status`
 queries; click the console link from the error log if you see one.

@@ -1,4 +1,4 @@
-ï»¿# CubeWizard - MTG Cube Analytics Platform
+# CubeWizard - MTG Cube Analytics Platform
 
 **Site Maintainer Guide**
 
@@ -10,8 +10,8 @@ CubeWizard is a Magic: The Gathering cube analysis platform that processes deck 
 - **Backend API**: Cloudflare Worker (`src/worker.js`) serving analytics endpoints from D1
 - **Database**: Cloudflare D1 (SQLite-compatible, serverless)
 - **Storage**: Cloudflare R2 for deck image uploads
-- **Processing Pipeline**: Python — OpenAI Vision for card recognition, Scryfall for enrichment, writes to D1 via wrangler CLI
-- **Input**: Web form upload (R2) or direct image processing
+- **Processing Pipeline**: GCP Cloud Run — `services/enqueue` accepts uploads from the Worker and enqueues Cloud Tasks; `services/worker` downloads from R2, runs OpenAI Vision + Scryfall enrichment (`main.py` / shared Python modules), writes to Cloudflare D1 and uploads oriented images to R2
+- **Input**: Web form upload (R2); optional local `python main.py` only for maintainer debugging (same code path as the Cloud Run worker)
 
 ## Environment Setup
 
@@ -55,76 +55,23 @@ bucket_name = decklist-uploads
 ### How It Works
 
 1. **Players submit decklists** via the web form at `/submit.html`.
-2. **The Worker** (`src/worker.js`) validates the upload and stores it in R2 under `{cube_id}/{timestamp}_{pilotName}/`.
-3. **`pull_from_r2.py`** downloads new submissions from R2 into the local `submissions/` directory.
-4. **`main.py import`** processes each submission (CSV metadata + deck image) through the AI vision pipeline, enriches with Scryfall data, and writes directly to Cloudflare D1.
-5. Successfully processed folders are moved to `imported/` with a timestamp.
-6. The live site immediately reflects new data (no deploy needed — D1 is the source of truth).
+2. **The Cloudflare Worker** (`src/worker.js`) validates the upload, stores objects in R2 under `{cube_id}/{timestamp}_{pilotName}/`, and calls **`services/enqueue`** on GCP with bucket/prefix metadata.
+3. **Cloud Tasks** invokes **`services/worker`**, which downloads that prefix into a temporary folder, normalizes it to `pilot_data.csv` + `deck_image.*`, and runs **`CubeWizard.process_submissions`** (same Python stack as below).
+4. The worker writes enriched decks to **Cloudflare D1**, uploads oriented images to the **`cubewizard-deck-images`** R2 bucket, and updates **Firestore** job status (`GCP_DEPLOYMENT.md`).
+5. The live site reads D1 directly — no static redeploy is required for new deck rows.
 
-### Command Line Interface
+### Python Modules (shared with Cloud Run)
 
-#### Single Image Processing
-```bash
-# Basic image processing
-python main.py path/to/deck_image.jpg
+Repo-root modules **`main.py`**, **`image_processor.py`**, **`scryfall_client.py`**, **`d1_writer.py`**, **`oriented_r2.py`**, and **`config_manager.py`** are copied into the worker container (`services/worker/Dockerfile`) and are the canonical processing implementation.
 
-# With CubeCobra ID for improved accuracy
-python main.py path/to/deck_image.jpg your_cubecobra_id
-```
+### Optional local CLI
 
-#### Import Deck Submissions
-```bash
-# Process all submissions in submissions/ folder
-python main.py import
-
-# Process from custom directory
-python main.py import path/to/custom_folder
-```
-
-#### Interactive Mode
-```bash
-python main.py
-```
-Presents menu with options:
-1. Process a single image file
-2. Process deck submissions
-3. Process a manual card list
-
-### R2 Pull Commands
-```bash
-# Pull new submissions from R2
-python pull_from_r2.py --pull
-
-# List submissions in R2 and their download status
-python pull_from_r2.py --list
-
-# Reset tracker to re-download everything
-python pull_from_r2.py --reset
-
-# Interactive mode
-python pull_from_r2.py
-```
-
-### Automated Weekly Pull
-
-`scheduled_pull.bat` can be run via Windows Task Scheduler. It:
-1. Pulls new submissions from R2 into `submissions/`
-2. Runs `python main.py import` to process and write to D1
-3. Logs output to `scheduled_pull.log`
+Maintainers can still run **`python main.py`** for one-off debugging (single image, `import` against a local folder, or interactive menu). Production traffic does **not** depend on this; use **`GCP_DEPLOYMENT.md`** / GitHub Actions for deploys.
 
 ## Website Update Workflow
 
-Since the Worker reads from D1 directly, the typical workflow is:
-
-```bash
-# 1. Pull new submissions from R2
-python pull_from_r2.py --pull
-
-# 2. Process downloaded decklists (writes to D1 automatically)
-python main.py import
-```
-
-No deploy step needed — the live site reflects D1 data immediately.
+- **Deck data**: arrives via uploads → GCP worker → D1 (site picks it up automatically).
+- **Frontend / Worker**: change files under `docs/` or `src/` and **`npx wrangler deploy`** (or rely on CI if configured).
 
 ## Deploying Workers
 
@@ -173,39 +120,15 @@ Required Cloudflare Worker `stg` secrets (Wrangler):
 wrangler secret put GCP_ENQUEUE_URL --env stg
 wrangler secret put ENQUEUE_SHARED_SECRET --env stg
 
-# For /api/processing-decks/:cubeId status in stg
+# For /api/processing-decks/:cubeId — reads Firestore upload-status DB (see wrangler.jsonc FIRESTORE_* vars per env).
 wrangler secret put GCP_FIRESTORE_SA_JSON --env stg
-wrangler secret put FIRESTORE_DATABASE_ID --env stg
 ```
 
-Apply D1 schema additions for deck image keys (run once against remote D1):
+Apply D1 migrations as needed (repository ships SQL under `migrations/`):
 
 ```bash
-npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/001_oriented_image_r2_columns.sql
-npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/002_oriented_thumb_r2_key.sql
-```
-
-Backfill oriented images from local `output/stored_images/` into the blob bucket (requires `.env` R2 + D1). This also uploads a small WebP thumbnail per deck (`{cube_id}/{image_id}_thumb.webp`):
-
-```bash
-python migrate_stored_images_to_r2.py --dry-run
-python migrate_stored_images_to_r2.py
-```
-
-If decks were processed but `output/stored_images/` was never populated, copy each **staging** object from R2 into the filename the pipeline would use (`stored_images/{image_id}.{ext}`). `image_id` comes from D1 (same hash as ingest), not from metadata alone — the script lists staging, looks up the deck by `staging_image_r2_key` or by cube + pilot + W–L–D, then downloads only if the file is missing:
-
-```bash
-python recover_staging_to_stored_images.py --dry-run
-python recover_staging_to_stored_images.py
-# Optional: set stored_image_path in D1 after download; resolve duplicate D1 matches
-python recover_staging_to_stored_images.py --update-d1 --pick-latest
-```
-
-After full images exist in R2, generate any missing list thumbnails (or `--force` to rebuild):
-
-```bash
-python backfill_thumbnails.py --dry-run
-python backfill_thumbnails.py
+npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/001_add_auto_sync_hedron_network.sql
+npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/002_add_hedron_synced_decks.sql
 ```
 
 ### Dashboard Features
@@ -223,24 +146,21 @@ The site includes:
 
 ```
 CubeWizard/
-├── main.py                      # Primary entry point — image processing + D1 writes
-├── d1_writer.py                 # Cloudflare D1 writer (primary storage backend)
+├── main.py                      # CubeWizard class — shared with Cloud Run worker (CLI optional)
+├── d1_writer.py                 # Cloudflare D1 REST writer
 ├── image_processor.py           # OpenAI Vision API integration
 ├── scryfall_client.py           # Scryfall API wrapper
-├── config_manager.py            # Configuration handling
-├── pull_from_r2.py              # R2 download tool (staging bucket)
-├── oriented_r2.py               # Upload oriented deck images to blob R2 bucket
-├── migrate_stored_images_to_r2.py # One-time migration: local stored_images → blob bucket + D1 (+ WebP thumbs)
-├── backfill_thumbnails.py         # Build WebP thumbs for decks that have full image in R2 but no thumb row
-├── recover_staging_to_stored_images.py # Download staging R2 images into stored_images/ by image_id
-├── migrations/                  # D1 SQL migrations (e.g. oriented_image_r2 columns)
-├── config.ini                   # Configuration (R2 creds, OpenAI settings)
+├── oriented_r2.py               # Upload oriented deck images / thumbnails to R2 (blob bucket)
+├── config_manager.py            # Loads OpenAI / paths from config.ini
+├── migrations/                  # D1 SQL migrations (oriented_image_r2 columns, etc.)
+├── config.ini                   # OpenAI + optional local R2 defaults (worker uses Secret/env too)
 ├── schema.sql                   # D1 database schema reference
 ├── requirements.txt             # Python dependencies
-├── .env                         # Environment variables (API keys)
-├── scheduled_pull.bat           # Automated pull + process script
 ├── wrangler.jsonc               # Cloudflare Workers config (stg/prod)
 ├── wrangler-redirect.jsonc      # Redirect worker config
+├── services/
+│   ├── enqueue/                 # Cloud Run: enqueue Cloud Tasks
+│   └── worker/                  # Cloud Run: R2 download + processing + Firestore
 ├── src/
 │   ├── worker.js                # Main Cloudflare Worker (API + static assets)
 │   └── redirect-worker.js       # Domain redirect worker
@@ -256,10 +176,7 @@ CubeWizard/
 │   ├── submit.html              # Deck submission form
 │   ├── add_cube.html            # Add new cube form
 │   └── CubeWizard.png           # Site logo
-├── submissions/                 # Incoming deck submissions (from R2)
-├── imported/                    # Processed submissions (archived)
-└── output/
-    └── stored_images/           # Processed deck images (local archive)
+└── output/stored_images/        # Created when running main.py locally (optional archive)
 ```
 
 ## D1 Database
@@ -305,16 +222,16 @@ Optional Worker var **`DECK_IMAGE_PUBLIC_BASE_URL`**: set to your public R2 cust
 ## Maintenance
 
 ### Submission Processing
-1. New submissions arrive in R2 via the web form
-2. Run `python pull_from_r2.py --pull` to download to `submissions/`
-3. Run `python main.py import` to process and write to D1
-4. Successfully processed folders move to `imported/` with timestamp
-5. Failed submissions remain in `submissions/` with error details
+
+1. New submissions land in R2 from the web form.
+2. The Cloudflare Worker calls GCP **enqueue**, which creates a Cloud Task for **worker**.
+3. Monitor job status in **Firestore** (and optional Worker endpoints such as `/api/processing-decks/:cubeId` when configured); see **`GCP_DEPLOYMENT.md`** and **`STG_VALIDATION.md`** for staging checks.
 
 ### Monitoring
-- Check `submissions/` for unprocessed submissions
-- Query D1 directly for database statistics
-- Review `scheduled_pull.log` for automated run results
+
+- Cloud Run logs for **`cubewizard-enqueue`** / **`cubewizard-worker`** (and `*-stg` variants).
+- Cloud Tasks queue depth and retries in the GCP console.
+- D1 queries (examples above) for deck counts and recent rows.
 
 ## Troubleshooting
 
