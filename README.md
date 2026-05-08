@@ -129,6 +129,7 @@ Apply D1 migrations as needed (repository ships SQL under `migrations/`):
 
 ```bash
 npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/001_add_auto_sync_hedron_network.sql
+npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/002_add_hedron_synced_decks.sql
 ```
 
 ### Dashboard Features

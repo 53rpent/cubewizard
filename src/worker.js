@@ -6,7 +6,7 @@
  */
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // --- Analytics API endpoints (D1) ---
@@ -77,7 +77,7 @@ export default {
     }
 
     if (url.pathname === "/api/add-cube" && request.method === "POST") {
-      return handleAddCube(request, env);
+      return handleAddCube(request, env, ctx);
     }
 
     const legacyRedirect = legacyAnalysisToDataViewRedirect(url);
@@ -102,6 +102,28 @@ export default {
       return jsonResponse({ error: "Not found" }, 404);
     }
   },
+
+  // Daily Hedron sync — uncomment after validating add-cube import (see wrangler triggers too).
+  /*
+  async scheduled(event, env, ctx) {
+    try {
+      var res = await env.cubewizard_db.prepare(
+        "SELECT cube_id FROM cubes WHERE auto_sync_hedron_network = 1"
+      ).all();
+      var rows = res.results || [];
+      for (var i = 0; i < rows.length; i++) {
+        var cid = rows[i].cube_id;
+        ctx.waitUntil(
+          syncHedronCube(env, cid).catch(function (e) {
+            console.error("hedron scheduled sync", cid, e);
+          })
+        );
+      }
+    } catch (e) {
+      console.error("hedron scheduled handler", e);
+    }
+  },
+  */
 };
 
 /**
@@ -451,6 +473,222 @@ async function enqueueGcpEvalJob(env, prefix, meta) {
     return { ok: false, skipped: false };
   } finally {
     clearTimeout(tid);
+  }
+}
+
+var HEDRON_ORIGIN = "https://hedron.network";
+var HEDRON_SEARCH_URL = "https://hedron.network/cube-results/search";
+var HEDRON_SYNC_CONCURRENCY = 3;
+var HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+function hedronContentTypeToExt(contentType) {
+  var ct = String(contentType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  var extMap = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "image/heif": "heif",
+  };
+  return extMap[ct] || "jpg";
+}
+
+/**
+ * Pull deck images from Hedron Network for a cube (CubeCobra id works as cubeId query param).
+ * Stages R2 uploads + metadata.json and enqueues GCP processing; dedupes via hedron_synced_decks.
+ */
+async function syncHedronCube(env, cubeId) {
+  var id = String(cubeId || "").trim();
+  if (!id) return;
+
+  var jobs = [];
+  var nextKey = null;
+
+  do {
+    var u = new URL(HEDRON_SEARCH_URL);
+    u.searchParams.set("cubeId", id);
+    if (nextKey) u.searchParams.set("nextKey", nextKey);
+
+    var resp = await fetch(u.toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "CubeWizard-Worker/1.0",
+      },
+    });
+
+    if (!resp.ok) {
+      console.error("hedron search failed", id, resp.status);
+      return;
+    }
+
+    var json;
+    try {
+      json = await resp.json();
+    } catch (e) {
+      console.error("hedron search json parse", id, e);
+      return;
+    }
+
+    if (!json || !Array.isArray(json.drafts)) break;
+
+    for (var di = 0; di < json.drafts.length; di++) {
+      var draft = json.drafts[di];
+      var players = draft.players || [];
+      for (var pi = 0; pi < players.length; pi++) {
+        var player = players[pi];
+        var deckArr = player.images && player.images.deck;
+        if (!Array.isArray(deckArr) || deckArr.length === 0) continue;
+        var first = deckArr[0];
+        var deckPath = first && first.url;
+        if (!deckPath || typeof deckPath !== "string") continue;
+        var segs = deckPath.split("/").filter(Boolean);
+        var deckImageUuid = segs[segs.length - 1];
+        if (!deckImageUuid) continue;
+
+        var ev =
+          String(draft.eventCode != null ? draft.eventCode : "") +
+          ":" +
+          String(draft.flightName != null ? draft.flightName : "");
+        var pilotName = ev + " " + String(player.id != null ? player.id : "Unknown");
+
+        var wins =
+          typeof player.wins === "number"
+            ? player.wins
+            : parseInt(String(player.wins != null ? player.wins : "0"), 10) || 0;
+        var losses =
+          typeof player.losses === "number"
+            ? player.losses
+            : parseInt(String(player.losses != null ? player.losses : "0"), 10) || 0;
+        var draws =
+          typeof player.draws === "number"
+            ? player.draws
+            : parseInt(String(player.draws != null ? player.draws : "0"), 10) || 0;
+
+        jobs.push({
+          draftId: String(draft.draftId || ""),
+          playerId: String(player.id != null ? player.id : ""),
+          deckPath: deckPath,
+          deckImageUuid: deckImageUuid,
+          pilotName: pilotName,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          recordLogged: draft.date || new Date().toISOString(),
+        });
+      }
+    }
+
+    nextKey = json.nextKey || null;
+  } while (nextKey);
+
+  for (var start = 0; start < jobs.length; start += HEDRON_SYNC_CONCURRENCY) {
+    var slice = jobs.slice(start, start + HEDRON_SYNC_CONCURRENCY);
+    await Promise.all(
+      slice.map(function (j) {
+        return syncOneHedronDeckJob(env, id, j);
+      })
+    );
+  }
+}
+
+async function syncOneHedronDeckJob(env, cubeId, job) {
+  try {
+    var dup = await env.cubewizard_db
+      .prepare("SELECT 1 AS x FROM hedron_synced_decks WHERE deck_image_uuid = ? LIMIT 1")
+      .bind(job.deckImageUuid)
+      .first();
+    if (dup) return;
+
+    var imgUrl =
+      job.deckPath.indexOf("http") === 0 ? job.deckPath : HEDRON_ORIGIN + job.deckPath;
+
+    var imgResp = await fetch(imgUrl, {
+      headers: { "User-Agent": "CubeWizard-Worker/1.0" },
+    });
+    if (!imgResp.ok) {
+      console.error("hedron image fetch failed", job.deckImageUuid, imgResp.status);
+      return;
+    }
+
+    var contentType = imgResp.headers.get("Content-Type") || "image/jpeg";
+    var ctMain = contentType.split(";")[0].trim() || "image/jpeg";
+    var ext = hedronContentTypeToExt(contentType);
+    var buf = await imgResp.arrayBuffer();
+
+    if (buf.byteLength > HEDRON_MAX_IMAGE_BYTES) {
+      console.error("hedron image too large", job.deckImageUuid, buf.byteLength);
+      return;
+    }
+
+    var safePilot = job.pilotName.replace(/[^a-zA-Z0-9_\- ]/g, "");
+    var ts = new Date().toISOString().replace(/[:.]/g, "-");
+    var prefix = cubeId + "/" + ts + "_" + safePilot + "_h" + job.deckImageUuid;
+
+    var imageKey = prefix + "/image." + ext;
+
+    await env.BUCKET.put(imageKey, buf, {
+      httpMetadata: { contentType: ctMain },
+      customMetadata: { pilotName: job.pilotName, cubeId: cubeId, source: "hedron" },
+    });
+
+    var winRate = job.wins + job.losses > 0 ? job.wins / (job.wins + job.losses) : 0;
+    var metadata = {
+      cube_id: cubeId,
+      pilot_name: job.pilotName,
+      match_wins: job.wins,
+      match_losses: job.losses,
+      match_draws: job.draws,
+      win_rate: winRate,
+      record_logged: job.recordLogged,
+      image_key: imageKey,
+      original_filename: "hedron-" + job.deckImageUuid + "." + ext,
+      image_source: "hedron:" + job.deckImageUuid,
+    };
+
+    await env.BUCKET.put(prefix + "/metadata.json", JSON.stringify(metadata, null, 2), {
+      httpMetadata: { contentType: "application/json" },
+    });
+
+    var syncedAt = new Date().toISOString();
+    var runResult = await env.cubewizard_db
+      .prepare(
+        "INSERT OR IGNORE INTO hedron_synced_decks (deck_image_uuid, cube_id, draft_id, player_id, r2_prefix, synced_at) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .bind(job.deckImageUuid, cubeId, job.draftId, job.playerId, prefix, syncedAt)
+      .run();
+
+    var written = 0;
+    if (runResult && runResult.meta) {
+      written =
+        runResult.meta.rows_written != null
+          ? runResult.meta.rows_written
+          : runResult.meta.changes != null
+            ? runResult.meta.changes
+            : 0;
+    }
+
+    if (!written) {
+      try {
+        await env.BUCKET.delete(imageKey);
+        await env.BUCKET.delete(prefix + "/metadata.json");
+      } catch (delErr) {
+        console.error("hedron dedup race cleanup", delErr);
+      }
+      return;
+    }
+
+    var enqueueResult = await enqueueGcpEvalJob(env, prefix, {
+      cube_id: cubeId,
+      pilot_name: job.pilotName,
+    });
+    if (!enqueueResult.ok && !enqueueResult.skipped) {
+      console.error("hedron enqueue failed", cubeId, job.deckImageUuid, enqueueResult);
+    }
+  } catch (e) {
+    console.error("hedron syncOneHedronDeckJob", cubeId, job && job.deckImageUuid, e);
   }
 }
 
@@ -2081,7 +2319,7 @@ async function handleValidateCube(url, env) {
   }
 }
 
-async function handleAddCube(request, env) {
+async function handleAddCube(request, env, ctx) {
   try {
     var body = await request.json();
 
@@ -2151,6 +2389,14 @@ async function handleAddCube(request, env) {
     await env.BUCKET.put(key, JSON.stringify(payload, null, 2), {
       httpMetadata: { contentType: "application/json" },
     });
+
+    if (autoSyncHedron && ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(
+        syncHedronCube(env, cubeId).catch(function (e) {
+          console.error("hedron sync on add-cube", cubeId, e);
+        })
+      );
+    }
 
     return jsonResponse({
       success: true,

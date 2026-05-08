@@ -99,5 +99,5 @@ jobs:
       - name: Deploy Cloudflare Worker (staging)
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_KEY }}
           command: "deploy --env stg --config wrangler.jsonc --var CWW_DEPLOY_VERSION:${{ github.sha }}"
