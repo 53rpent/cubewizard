@@ -103,9 +103,12 @@ export default {
     }
   },
 
-  // Daily Hedron sync — uncomment after validating add-cube import (see wrangler triggers too).
-  /*
+  /** Daily Hedron sync: triggered by Cloudflare Cron Triggers (Wrangler `triggers.crons`), not GCP. Skipped on stg (`CWW_ENV`). */
   async scheduled(event, env, ctx) {
+    var cwEnv = typeof env.CWW_ENV === "string" ? env.CWW_ENV.trim().toLowerCase() : "";
+    if (cwEnv === "staging") {
+      return;
+    }
     try {
       var res = await env.cubewizard_db.prepare(
         "SELECT cube_id FROM cubes WHERE auto_sync_hedron_network = 1"
@@ -123,7 +126,6 @@ export default {
       console.error("hedron scheduled handler", e);
     }
   },
-  */
 };
 
 /**
