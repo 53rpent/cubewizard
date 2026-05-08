@@ -48,7 +48,8 @@
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
-				"FIRESTORE_COLLECTION": "jobs"
+				"FIRESTORE_COLLECTION": "jobs",
+				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app"
 			},
 			"r2_buckets": [
 				{
@@ -83,7 +84,8 @@
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status",
-				"FIRESTORE_COLLECTION": "jobs"
+				"FIRESTORE_COLLECTION": "jobs",
+				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app"
 			},
 			"r2_buckets": [
 				{

@@ -117,7 +117,6 @@ Store enqueue shared secrets in **Google Secret Manager** (`enqueue-shared-secre
 Required Cloudflare Worker `stg` secrets (Wrangler):
 
 ```bash
-wrangler secret put GCP_ENQUEUE_URL --env stg
 wrangler secret put ENQUEUE_SHARED_SECRET --env stg
 
 # For /api/processing-decks/:cubeId — reads Firestore upload-status DB (see wrangler.jsonc FIRESTORE_* vars per env).

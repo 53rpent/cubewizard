@@ -222,7 +222,6 @@ Cloud Tasks requires the HTTP request body to be **base64-encoded**. The `enqueu
 
 ```bash
 # Pick the env you deploy (`stg` / `prod` / default)
-wrangler secret put GCP_ENQUEUE_URL --env prod
 wrangler secret put ENQUEUE_SHARED_SECRET --env prod
 ```
 
