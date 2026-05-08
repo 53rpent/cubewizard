@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import sys
 import tempfile
 import base64
 import csv
@@ -25,6 +27,7 @@ from main import CubeWizard
 load_dotenv()
 
 app = FastAPI(title="cubewizard-worker")
+log = logging.getLogger("cubewizard.worker")
 
 
 HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -381,8 +384,33 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
         # acknowledge the task to avoid duplicate attempts.
         return {"ok": True, "upload_id": req.upload_id, "status": "running"}
 
-    # Do work in a temp dir (Cloud Run writable).
+    claimed = bool(claim.get("claimed"))
+    wrote_terminal = False
+
+    def _mark_job_failed(message: str) -> None:
+        nonlocal wrote_terminal
+        if wrote_terminal:
+            return
+        err = (message or "unknown error")[:8000]
+        try:
+            job_ref.set(
+                {
+                    "status": "failed",
+                    "finished_at": firestore.SERVER_TIMESTAMP,
+                    "error": err,
+                },
+                merge=True,
+            )
+            wrote_terminal = True
+        except Exception as fe:
+            log.exception(
+                "Failed to write Firestore failed status for upload_id=%s: %s",
+                req.upload_id,
+                fe,
+            )
+
     try:
+        log.info("job claimed, starting work upload_id=%s", req.upload_id)
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             submissions_dir = base / "submissions"
@@ -414,17 +442,23 @@ async def run_task(req: TaskRequest) -> Dict[str, Any]:
                 },
                 merge=True,
             )
+            wrote_terminal = True
+            log.info("job done upload_id=%s", req.upload_id)
 
             return {"ok": True, "upload_id": req.upload_id, "result": result}
 
-    except Exception as e:
-        job_ref.set(
-            {
-                "status": "failed",
-                "finished_at": firestore.SERVER_TIMESTAMP,
-                "error": str(e),
-            },
-            merge=True,
-        )
+    except BaseException as e:
+        if isinstance(e, SystemExit):
+            raise
+        _mark_job_failed(str(e) or type(e).__name__)
+        log.exception("job failed upload_id=%s", req.upload_id)
         raise
+    finally:
+        # If we claimed "running" but never wrote done/failed (SIGKILL still loses), at least
+        # cover Cloud Run timeout / SIGTERM / asyncio cancel / OOM-adjacent exits that run finally.
+        exc = sys.exc_info()[1]
+        if claimed and not wrote_terminal and not isinstance(exc, SystemExit):
+            _mark_job_failed(
+                "worker exited without terminal status (request timeout, platform shutdown, or crash mid-flight)"
+            )
 

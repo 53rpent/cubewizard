@@ -69,7 +69,7 @@ export default {
 
     const hedronSyncMatch = url.pathname.match(/^\/api\/hedron-sync\/([^/]+)$/);
     if (hedronSyncMatch && request.method === "POST") {
-      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx);
+      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx, request);
     }
 
     // --- Existing endpoints ---
@@ -122,7 +122,7 @@ export default {
       for (let i = 0; i < rows.length; i++) {
         let cid = rows[i].cube_id;
         ctx.waitUntil(
-          syncHedronCube(env, cid).catch(function (e) {
+          syncHedronCube(env, cid, ctx).catch(function (e) {
             console.error("hedron scheduled sync", cid, e);
           })
         );
@@ -509,14 +509,85 @@ var HEDRON_ORIGIN = "https://hedron.network";
 var HEDRON_SEARCH_URL = "https://hedron.network/cube-results/search";
 var HEDRON_SYNC_MAX_PAGES_PER_TICK = 6;
 var HEDRON_SYNC_MAX_DECKS_PER_TICK = 25;
+/** Wall-clock budget per Worker invocation chunk (enqueue + Hedron fetches). Cursor stays in D1; continuation picks up. */
+var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
+/** Nested waitUntil continuations when WORKER_PUBLIC_URL is unset (same isolate; limited to avoid spinning). */
+var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
+var HEDRON_CONTINUE_HEADER = "X-CubeWizard-Continue";
+
+/**
+ * After a budget stop: true if Hedron sync should run again (incomplete pagination or new decks when done=1).
+ */
+async function hedronSyncShouldContinue(env, cubeId) {
+  var id = String(cubeId || "").trim();
+  if (!id) return false;
+  var state = await env.cubewizard_db
+    .prepare("SELECT done FROM hedron_sync_state WHERE cube_id = ?")
+    .bind(id)
+    .first();
+  var done = state && state.done ? 1 : 0;
+  if (!done) return true;
+  return hedronPageHasMissingDeck(env, id, null);
+}
+
+/**
+ * Start another Worker invocation (preferred) or nest sync in waitUntil so large Hedron imports keep going after timeouts.
+ * Set env WORKER_PUBLIC_URL to your site origin (no trailing slash), e.g. https://cubewizard.example.com — uses ENQUEUE_SHARED_SECRET as continue token.
+ */
+function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
+  var id = String(cubeId || "").trim();
+  if (!id || !ctx || typeof ctx.waitUntil !== "function") return;
+
+  var d = depth != null ? depth : 0;
+  var base = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
+
+  if (base && secret) {
+    var url = base + "/api/hedron-sync/" + encodeURIComponent(id);
+    ctx.waitUntil(
+      fetch(url, {
+        method: "POST",
+        headers: { [HEDRON_CONTINUE_HEADER]: secret },
+      })
+        .then(function (r) {
+          if (!r.ok) console.error("hedron continuation fetch failed", id, r.status);
+        })
+        .catch(function (e) {
+          console.error("hedron continuation fetch", id, e);
+        })
+    );
+    return;
+  }
+
+  if (d < HEDRON_SYNC_CONTINUE_MAX_DEPTH) {
+    ctx.waitUntil(
+      syncHedronCube(env, id, ctx, d + 1).catch(function (e) {
+        console.error("hedron sync nested continuation", id, e);
+      })
+    );
+  } else {
+    console.error(
+      "hedron sync: wall budget exceeded; set WORKER_PUBLIC_URL for reliable large Hedron imports",
+      id
+    );
+  }
+}
 
 /**
  * Pull deck images from Hedron Network for a cube (CubeCobra id works as cubeId query param).
  * Enqueues GCP processing with Hedron image URLs (worker downloads); dedupes via hedron_synced_decks.
+ * @param {any} ctx ExecutionContext for waitUntil continuations when wall budget is exceeded
+ * @param {number} [depth] Nested continuation depth (internal)
  */
-async function syncHedronCube(env, cubeId) {
+async function syncHedronCube(env, cubeId, ctx, depth) {
   var id = String(cubeId || "").trim();
   if (!id) return;
+
+  var wallStart = Date.now();
+  function overWallBudget() {
+    return Date.now() - wallStart >= HEDRON_SYNC_WALL_BUDGET_MS;
+  }
+  var needContinuation = false;
 
   // Cursor-based sync: import multiple decks per invocation, resuming with Hedron's nextKey.
   var nowIso = new Date().toISOString();
@@ -541,6 +612,11 @@ async function syncHedronCube(env, cubeId) {
   var imported = 0;
   var pages = 0;
   while (pages < HEDRON_SYNC_MAX_PAGES_PER_TICK) {
+    if (overWallBudget()) {
+      needContinuation = true;
+      break;
+    }
+
     var page = await fetchHedronSearchPage(id, nextKey);
     if (!page || !Array.isArray(page.drafts)) {
       await upsertHedronSyncState(env, id, nextKey, done, nowIso, "invalid_page");
@@ -552,6 +628,10 @@ async function syncHedronCube(env, cubeId) {
     // starve progress by making findFirstMissingDeckJobInPage return the same deck repeatedly.
     var skipDeckUuidsThisPage = new Set();
     while (imported < HEDRON_SYNC_MAX_DECKS_PER_TICK) {
+      if (overWallBudget()) {
+        needContinuation = true;
+        break;
+      }
       var job = await findFirstMissingDeckJobInPage(env, page, skipDeckUuidsThisPage);
       if (!job) break;
       var syncedOk = await syncOneHedronDeckJob(env, id, job);
@@ -561,7 +641,12 @@ async function syncHedronCube(env, cubeId) {
       await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
     }
 
+    if (needContinuation) break;
+
     if (imported >= HEDRON_SYNC_MAX_DECKS_PER_TICK) {
+      if (ctx && (await hedronSyncShouldContinue(env, id))) {
+        scheduleHedronSyncContinuation(env, ctx, id, depth);
+      }
       return;
     }
 
@@ -574,6 +659,19 @@ async function syncHedronCube(env, cubeId) {
     nextKey = String(nk);
     pages++;
     await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
+  }
+
+  // Hit max pages this chunk but catalog may continue (nextKey still in D1, done=0).
+  if (!needContinuation && ctx && pages >= HEDRON_SYNC_MAX_PAGES_PER_TICK) {
+    if (await hedronSyncShouldContinue(env, id)) {
+      scheduleHedronSyncContinuation(env, ctx, id, depth);
+    }
+  }
+
+  if (needContinuation && ctx) {
+    if (await hedronSyncShouldContinue(env, id)) {
+      scheduleHedronSyncContinuation(env, ctx, id, depth);
+    }
   }
 }
 
@@ -1310,12 +1408,21 @@ async function handleGetDeck(deckId, env, request) {
   });
 }
 
-async function handleTriggerHedronSync(cubeId, env, ctx) {
+async function handleTriggerHedronSync(cubeId, env, ctx, request) {
   try {
     var id = String(cubeId || "").trim();
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
+
+    var continueHdr = request.headers.get(HEDRON_CONTINUE_HEADER);
+    if (continueHdr != null && String(continueHdr).length > 0) {
+      var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
+      if (!secret || continueHdr !== secret) {
+        return jsonResponse({ error: "unauthorized" }, 401);
+      }
+    }
+
     ctx.waitUntil(
-      syncHedronCube(env, id).catch(function (e) {
+      syncHedronCube(env, id, ctx).catch(function (e) {
         console.error("hedron manual sync", id, e);
       })
     );
@@ -2460,7 +2567,7 @@ async function handleAddCube(request, env, ctx) {
 
     if (autoSyncHedron && ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(
-        syncHedronCube(env, cubeId).catch(function (e) {
+        syncHedronCube(env, cubeId, ctx).catch(function (e) {
           console.error("hedron sync on add-cube", cubeId, e);
         })
       );
