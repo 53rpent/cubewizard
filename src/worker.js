@@ -114,8 +114,8 @@ export default {
         "SELECT cube_id FROM cubes WHERE auto_sync_hedron_network = 1"
       ).all();
       var rows = res.results || [];
-      for (var i = 0; i < rows.length; i++) {
-        var cid = rows[i].cube_id;
+      for (let i = 0; i < rows.length; i++) {
+        let cid = rows[i].cube_id;
         ctx.waitUntil(
           syncHedronCube(env, cid).catch(function (e) {
             console.error("hedron scheduled sync", cid, e);
