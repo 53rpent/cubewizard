@@ -18,13 +18,25 @@
   var processingPollTimer = null;
   var processingFetchInFlight = false;
   var hedronSyncInFlight = false;
+  var activeProcessingJobCount = 0;
 
   function setHedronSyncUiState() {
     var btn = $("hedron-sync-btn");
     var msg = $("hedron-sync-msg");
     if (!btn) return;
     btn.disabled = !currentCubeId || hedronSyncInFlight;
-    btn.textContent = hedronSyncInFlight ? "Queueing Hedron decks..." : "Sync Hedron";
+    btn.textContent = hedronSyncInFlight
+      ? "Queueing Hedron decks..."
+      : activeProcessingJobCount > 0
+        ? "Processing decks..."
+        : "Sync Hedron";
+    if (activeProcessingJobCount > 0 && !hedronSyncInFlight) {
+      btn.setAttribute("aria-disabled", "true");
+      btn.title = "Wait for current deck processing to finish before syncing Hedron again.";
+    } else {
+      btn.removeAttribute("aria-disabled");
+      btn.title = "";
+    }
     if (msg && !currentCubeId) {
       msg.textContent = "";
     }
@@ -40,6 +52,15 @@
   function triggerHedronSync() {
     if (!currentCubeId) return;
     if (hedronSyncInFlight) return;
+    if (activeProcessingJobCount > 0) {
+      var noun = activeProcessingJobCount === 1 ? "deck is" : "decks are";
+      setHedronSyncMessage(
+        "Hedron sync is unavailable while " + activeProcessingJobCount + " " + noun +
+          " still being processed. Wait for processing to finish, then try again.",
+        "error"
+      );
+      return;
+    }
     hedronSyncInFlight = true;
     setHedronSyncMessage("Reading Hedron data and queueing deck images...", "");
     setHedronSyncUiState();
@@ -140,6 +161,17 @@
     else card.setAttribute("hidden", "hidden");
   }
 
+  function setActiveProcessingJobs(jobs) {
+    var count = 0;
+    jobs = Array.isArray(jobs) ? jobs : [];
+    for (var i = 0; i < jobs.length; i++) {
+      var st = String((jobs[i] && jobs[i].status) || "queued").toLowerCase();
+      if (st !== "done" && st !== "error" && st !== "failed") count++;
+    }
+    activeProcessingJobCount = count;
+    setHedronSyncUiState();
+  }
+
   function renderProcessingJobs(jobs) {
     var ul = $("processing-status-list");
     if (!ul) return;
@@ -199,23 +231,28 @@
         var data = res.data || {};
         if (!res.ok) {
           setProcessingStatusVisible(false);
+          setActiveProcessingJobs([]);
           return;
         }
         if (data.disabled) {
           setProcessingStatusVisible(false);
+          setActiveProcessingJobs([]);
           return;
         }
         var jobs = data.jobs || [];
         if (!jobs.length) {
           setProcessingStatusVisible(false);
+          setActiveProcessingJobs([]);
           return;
         }
+        setActiveProcessingJobs(jobs);
         renderProcessingJobs(jobs);
         setProcessingStatusVisible(true);
       })
       .catch(function () {
         processingFetchInFlight = false;
         setProcessingStatusVisible(false);
+        setActiveProcessingJobs([]);
       });
   }
 
