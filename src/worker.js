@@ -907,7 +907,15 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         cube_id: id,
         elapsed_ms: Date.now() - syncStartedAt,
       });
-      return;
+      return {
+        ok: true,
+        cube_id: id,
+        decks_queued: 0,
+        pages_processed: 0,
+        done: true,
+        continuation_scheduled: false,
+        no_new_decks: true,
+      };
     }
     nextKey = null;
     done = 0;
@@ -915,6 +923,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
 
   var imported = 0;
   var pages = 0;
+  var pagesProcessed = 0;
   while (pages < maxPagesTick) {
     if (overWallBudget()) {
       needContinuation = true;
@@ -924,8 +933,9 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
     var page = await fetchHedronSearchPage(id, nextKey);
     if (!page || !Array.isArray(page.drafts)) {
       await upsertHedronSyncState(env, id, nextKey, done, nowIso, "invalid_page");
-      return;
+      throw new Error("invalid Hedron page");
     }
+    pagesProcessed++;
 
     // One batched dedupe read per Hedron page, then scan in memory (avoids dozens of D1 subrequests per page).
     var pageJobRows = buildHedronPageJobRows(page);
@@ -986,7 +996,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
           new Date().toISOString(),
           queueResult.reason || "queue_failed"
         );
-        return;
+        throw new Error(queueResult.reason || "queue_failed");
       }
       for (var qi = 0; qi < jobsToQueue.length; qi++) {
         syncedOnPage.add(jobsToQueue[qi].deckImageUuid);
@@ -1005,6 +1015,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
     if (needContinuation) break;
 
     if (imported >= maxDecksTick) {
+      var deckLimitContinuation = false;
       logHedron("sync_deck_limit_reached", {
         cube_id: id,
         imported_this_tick: imported,
@@ -1013,8 +1024,16 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
       });
       if (ctx && (await hedronSyncShouldContinue(env, id))) {
         await scheduleHedronSyncContinuation(env, ctx, id, depth);
+        deckLimitContinuation = true;
       }
-      return;
+      return {
+        ok: true,
+        cube_id: id,
+        decks_queued: imported,
+        pages_processed: pagesProcessed,
+        done: false,
+        continuation_scheduled: deckLimitContinuation,
+      };
     }
 
     // No candidates in this page; advance cursor.
@@ -1027,7 +1046,14 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         pages_processed: pages + 1,
         elapsed_ms: Date.now() - syncStartedAt,
       });
-      return;
+      return {
+        ok: true,
+        cube_id: id,
+        decks_queued: imported,
+        pages_processed: pagesProcessed,
+        done: true,
+        continuation_scheduled: false,
+      };
     }
     nextKey = String(nk);
     pages++;
@@ -1035,6 +1061,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
   }
 
   // Hit max pages this chunk but catalog may continue (nextKey still in D1, done=0).
+  var continuationScheduled = false;
   if (!needContinuation && ctx && pages >= maxPagesTick) {
     if (await hedronSyncShouldContinue(env, id)) {
       logHedron("sync_page_limit_continuation", {
@@ -1044,6 +1071,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         elapsed_ms: Date.now() - syncStartedAt,
       });
       await scheduleHedronSyncContinuation(env, ctx, id, depth);
+      continuationScheduled = true;
     }
   }
 
@@ -1056,8 +1084,17 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         elapsed_ms: Date.now() - syncStartedAt,
       });
       await scheduleHedronSyncContinuation(env, ctx, id, depth);
+      continuationScheduled = true;
     }
   }
+  return {
+    ok: true,
+    cube_id: id,
+    decks_queued: imported,
+    pages_processed: pagesProcessed,
+    done: false,
+    continuation_scheduled: continuationScheduled,
+  };
 }
 
 async function upsertHedronSyncState(env, cubeId, nextKey, done, updatedAtIso, lastError) {
@@ -1728,8 +1765,8 @@ async function handleTriggerHedronSync(cubeId, env, ctx, request) {
     // Keep manual sync request-bound so the UI spinner reflects the producer phase:
     // Hedron JSON fetch, parse, D1 dedupe, and Cloudflare Queue publishing. Running
     // this in waitUntil risks Cloudflare cancelling it 30s after the response returns.
-    await syncHedronCube(env, id, ctx);
-    return jsonResponse({ ok: true }, 200);
+    var result = await syncHedronCube(env, id, ctx);
+    return jsonResponse(result || { ok: true, cube_id: id, decks_queued: 0 }, 200);
   } catch (e) {
     var msg = e && e.message ? String(e.message) : String(e);
     console.error("hedron manual sync handler", msg, e && e.stack ? e.stack : "");

@@ -65,10 +65,23 @@
           setHedronSyncMessage(err, "error");
           return;
         }
-        setHedronSyncMessage(
-          "Hedron data has been queued. Decks will appear as the queue is processed.",
-          "ok"
-        );
+        var queued =
+          res && res.data && typeof res.data.decks_queued === "number"
+            ? res.data.decks_queued
+            : 0;
+        var noun = queued === 1 ? "deck" : "decks";
+        var suffix =
+          res && res.data && res.data.continuation_scheduled
+            ? " More Hedron pages will continue queueing in the background."
+            : "";
+        if (queued > 0) {
+          setHedronSyncMessage(
+            queued + " Hedron " + noun + " queued for database import." + suffix,
+            "ok"
+          );
+        } else {
+          setHedronSyncMessage("No new Hedron decks found to add.", "ok");
+        }
         refreshProcessingStatus();
       })
       .catch(function () {
