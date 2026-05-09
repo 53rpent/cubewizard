@@ -637,12 +637,16 @@ async function hedronSyncShouldContinue(env, cubeId) {
 }
 
 /**
- * Start another Worker invocation (preferred) or nest sync in waitUntil so large Hedron imports keep going after timeouts.
- * Set env WORKER_PUBLIC_URL to your site origin (no trailing slash), e.g. https://cubewizard.example.com — uses ENQUEUE_SHARED_SECRET as continue token.
+ * Continue Hedron sync in a new Worker HTTP invocation (WORKER_PUBLIC_URL + ENQUEUE_SHARED_SECRET),
+ * or nest in waitUntil when those are unset (same isolate; subrequest budget shared).
+ *
+ * Important: when WORKER_PUBLIC_URL is set, we await fetch() here (inside syncHedronCube) instead of
+ * ctx.waitUntil(fetch), because nested waitUntil from an already-deferred task often does not run
+ * reliably after the client response is sent — sync looked like it stopped after MAX_DECKS_PER_TICK.
  */
-function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
+async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   var id = String(cubeId || "").trim();
-  if (!id || !ctx || typeof ctx.waitUntil !== "function") return;
+  if (!id) return;
 
   var d = depth != null ? depth : 0;
   var base = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
@@ -650,20 +654,30 @@ function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
 
   if (base && secret) {
     var url = base + "/api/hedron-sync/" + encodeURIComponent(id);
-    ctx.waitUntil(
-      fetch(url, {
+    try {
+      var r = await fetch(url, {
         method: "POST",
         headers: { [HEDRON_CONTINUE_HEADER]: secret },
-      })
-        .then(function (r) {
-          if (!r.ok) console.error("hedron continuation fetch failed", id, r.status);
-        })
-        .catch(function (e) {
-          console.error("hedron continuation fetch", id, e);
-        })
-    );
+      });
+      if (!r.ok) {
+        var body = "";
+        try {
+          body = (await r.text()).slice(0, 200);
+        } catch (te) {}
+        console.error(
+          "hedron continuation fetch failed",
+          id,
+          r.status,
+          body ? body : ""
+        );
+      }
+    } catch (e) {
+      console.error("hedron continuation fetch", id, e);
+    }
     return;
   }
+
+  if (!ctx || typeof ctx.waitUntil !== "function") return;
 
   if (d < HEDRON_SYNC_CONTINUE_MAX_DEPTH) {
     ctx.waitUntil(
@@ -673,7 +687,7 @@ function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     );
   } else {
     console.error(
-      "hedron sync: wall budget exceeded; set WORKER_PUBLIC_URL for reliable large Hedron imports",
+      "hedron sync: continuation depth exceeded; set WORKER_PUBLIC_URL + ENQUEUE_SHARED_SECRET for HTTP chunking",
       id
     );
   }
@@ -782,7 +796,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
 
     if (imported >= maxDecksTick) {
       if (ctx && (await hedronSyncShouldContinue(env, id))) {
-        scheduleHedronSyncContinuation(env, ctx, id, depth);
+        await scheduleHedronSyncContinuation(env, ctx, id, depth);
       }
       return;
     }
@@ -801,13 +815,13 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
   // Hit max pages this chunk but catalog may continue (nextKey still in D1, done=0).
   if (!needContinuation && ctx && pages >= maxPagesTick) {
     if (await hedronSyncShouldContinue(env, id)) {
-      scheduleHedronSyncContinuation(env, ctx, id, depth);
+      await scheduleHedronSyncContinuation(env, ctx, id, depth);
     }
   }
 
   if (needContinuation && ctx) {
     if (await hedronSyncShouldContinue(env, id)) {
-      scheduleHedronSyncContinuation(env, ctx, id, depth);
+      await scheduleHedronSyncContinuation(env, ctx, id, depth);
     }
   }
 }
