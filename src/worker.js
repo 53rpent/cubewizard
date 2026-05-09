@@ -637,19 +637,25 @@ async function hedronSyncShouldContinue(env, cubeId) {
 }
 
 /**
- * Continue Hedron sync in a new Worker HTTP invocation (WORKER_PUBLIC_URL + ENQUEUE_SHARED_SECRET),
+ * Continue Hedron sync in a new Worker HTTP invocation (ENQUEUE_SHARED_SECRET + a fetch base URL),
  * or nest in waitUntil when those are unset (same isolate; subrequest budget shared).
  *
- * Important: when WORKER_PUBLIC_URL is set, we await fetch() here (inside syncHedronCube) instead of
- * ctx.waitUntil(fetch), because nested waitUntil from an already-deferred task often does not run
- * reliably after the client response is sent — sync looked like it stopped after MAX_DECKS_PER_TICK.
+ * Uses WORKER_CONTINUE_URL if set, else WORKER_PUBLIC_URL. Prefer WORKER_CONTINUE_URL =
+ * https://<script-name>.<subdomain>.workers.dev so continuation does not self-fetch the custom
+ * domain (often Cloudflare 522: connection timed out to origin / routing loop edge cases).
+ *
+ * Important: we await fetch() here (inside syncHedronCube) instead of ctx.waitUntil(fetch), because
+ * nested waitUntil from an already-deferred task often does not run reliably after the client
+ * response is sent — sync looked like it stopped after MAX_DECKS_PER_TICK.
  */
 async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   var id = String(cubeId || "").trim();
   if (!id) return;
 
   var d = depth != null ? depth : 0;
-  var base = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  var continueBase = String(env.WORKER_CONTINUE_URL || "").trim().replace(/\/+$/, "");
+  var publicBase = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  var base = continueBase || publicBase;
   var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
 
   if (base && secret) {
@@ -687,7 +693,7 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     );
   } else {
     console.error(
-      "hedron sync: continuation depth exceeded; set WORKER_PUBLIC_URL + ENQUEUE_SHARED_SECRET for HTTP chunking",
+      "hedron sync: continuation depth exceeded; set WORKER_CONTINUE_URL or WORKER_PUBLIC_URL + ENQUEUE_SHARED_SECRET for HTTP chunking",
       id
     );
   }

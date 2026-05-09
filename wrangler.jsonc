@@ -47,8 +47,10 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
-				// Public origin that serves this worker (custom domain or *.workers.dev); no trailing slash. Used for Hedron sync continuations.
+				// Browser-facing site (optional). Hedron continuation fetch prefers WORKER_CONTINUE_URL to avoid 522 on self-fetch via custom domain.
 				"WORKER_PUBLIC_URL": "https://stg.cube-wizard.com",
+				// Direct Workers URL for continuation POST only: https://cubewizard-stg.<account>.workers.dev (Workers dashboard → this worker). Empty falls back to WORKER_PUBLIC_URL (may 522).
+				"WORKER_CONTINUE_URL": "https://cubewizard-stg.amatveyenko.workers.dev",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
 				"FIRESTORE_COLLECTION": "jobs",
 				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app"
@@ -85,8 +87,9 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
-				// Public origin that serves this worker (custom domain or *.workers.dev); no trailing slash. Used for Hedron sync continuations.
 				"WORKER_PUBLIC_URL": "https://cube-wizard.com",
+				// See stg: set to https://cubewizard-prod.<account>.workers.dev if continuation 522s against the custom domain.
+				"WORKER_CONTINUE_URL": "https://cubewizard-prod.amatveyenko.workers.dev",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status",
 				"FIRESTORE_COLLECTION": "jobs",
 				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app"
