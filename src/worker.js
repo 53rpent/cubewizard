@@ -507,13 +507,119 @@ async function enqueueGcpEvalJob(env, prefix, meta) {
 
 var HEDRON_ORIGIN = "https://hedron.network";
 var HEDRON_SEARCH_URL = "https://hedron.network/cube-results/search";
+/** Defaults; override with Wrangler vars to stay under Workers free-tier subrequest limits (each D1 op + outbound fetch counts). */
 var HEDRON_SYNC_MAX_PAGES_PER_TICK = 6;
-var HEDRON_SYNC_MAX_DECKS_PER_TICK = 25;
+/** Default 10: each new deck costs ~2 subrequests (GCP fetch + D1); free tier allows 50/invocation. */
+var HEDRON_SYNC_MAX_DECKS_PER_TICK = 10;
+/** Write hedron_sync_state every N deck attempts (reduces D1 subrequests; one upsert always runs after each page pass). */
+var HEDRON_SYNC_CURSOR_UPSERT_EVERY = 5;
 /** Wall-clock budget per Worker invocation chunk (enqueue + Hedron fetches). Cursor stays in D1; continuation picks up. */
 var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
 /** Nested waitUntil continuations when WORKER_PUBLIC_URL is unset (same isolate; limited to avoid spinning). */
 var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
 var HEDRON_CONTINUE_HEADER = "X-CubeWizard-Continue";
+
+function hedronEnvInt(env, key, defaultVal, maxVal) {
+  var cap = maxVal != null ? maxVal : 200;
+  try {
+    var raw = env[key];
+    if (raw != null && raw !== "") {
+      var n = parseInt(String(raw), 10);
+      if (isFinite(n) && n >= 1 && n <= cap) return n;
+    }
+  } catch (e) {}
+  return defaultVal;
+}
+
+/** @returns {{ deckImageUuid: string, job: object }[]} */
+function buildHedronPageJobRows(json) {
+  var rows = [];
+  if (!json || !Array.isArray(json.drafts)) return rows;
+  for (var di = 0; di < json.drafts.length; di++) {
+    var draft = json.drafts[di];
+    var players = draft.players || [];
+    for (var pi = 0; pi < players.length; pi++) {
+      var player = players[pi];
+      var deckArr = player.images && player.images.deck;
+      if (!Array.isArray(deckArr) || deckArr.length === 0) continue;
+      var first = deckArr[0];
+      var deckPath = first && first.url;
+      if (!deckPath || typeof deckPath !== "string") continue;
+
+      var segs = deckPath.split("/").filter(Boolean);
+      var deckImageUuid = segs[segs.length - 1];
+      if (!deckImageUuid) continue;
+
+      var ev =
+        String(draft.eventCode != null ? draft.eventCode : "") +
+        ":" +
+        String(draft.flightName != null ? draft.flightName : "");
+      var pilotName = ev + " " + String(player.id != null ? player.id : "Unknown");
+
+      var wins =
+        typeof player.wins === "number"
+          ? player.wins
+          : parseInt(String(player.wins != null ? player.wins : "0"), 10) || 0;
+      var losses =
+        typeof player.losses === "number"
+          ? player.losses
+          : parseInt(String(player.losses != null ? player.losses : "0"), 10) || 0;
+      var draws =
+        typeof player.draws === "number"
+          ? player.draws
+          : parseInt(String(player.draws != null ? player.draws : "0"), 10) || 0;
+
+      rows.push({
+        deckImageUuid: deckImageUuid,
+        job: {
+          draftId: String(draft.draftId || ""),
+          playerId: String(player.id != null ? player.id : ""),
+          deckPath: deckPath,
+          deckImageUuid: deckImageUuid,
+          pilotName: pilotName,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          recordLogged: draft.date || new Date().toISOString(),
+        },
+      });
+    }
+  }
+  return rows;
+}
+
+function hedronUniqueUuidsFromJobRows(rows) {
+  var u = [];
+  var seen = new Set();
+  for (var i = 0; i < rows.length; i++) {
+    var id = rows[i].deckImageUuid;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    u.push(id);
+  }
+  return u;
+}
+
+/** One batched D1 read for many UUIDs (replaces N per-row lookups). Chunked for SQLite parameter limits. */
+async function hedronBatchSyncedUuidSet(env, uuids) {
+  var existing = new Set();
+  if (!uuids || !uuids.length) return existing;
+  var chunkSize = 80;
+  for (var c = 0; c < uuids.length; c += chunkSize) {
+    var slice = uuids.slice(c, c + chunkSize);
+    var ph = new Array(slice.length).fill("?").join(",");
+    var stmt = env.cubewizard_db.prepare(
+      "SELECT deck_image_uuid FROM hedron_synced_decks WHERE deck_image_uuid IN (" + ph + ")"
+    );
+    var bound = stmt.bind.apply(stmt, slice);
+    var res = await bound.all();
+    var results = res.results || [];
+    for (var i = 0; i < results.length; i++) {
+      existing.add(results[i].deck_image_uuid);
+    }
+  }
+  return existing;
+}
 
 /**
  * After a budget stop: true if Hedron sync should run again (incomplete pagination or new decks when done=1).
@@ -583,6 +689,19 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
   var id = String(cubeId || "").trim();
   if (!id) return;
 
+  var maxDecksTick = hedronEnvInt(
+    env,
+    "HEDRON_SYNC_MAX_DECKS_PER_TICK",
+    HEDRON_SYNC_MAX_DECKS_PER_TICK,
+    100
+  );
+  var maxPagesTick = hedronEnvInt(
+    env,
+    "HEDRON_SYNC_MAX_PAGES_PER_TICK",
+    HEDRON_SYNC_MAX_PAGES_PER_TICK,
+    30
+  );
+
   var wallStart = Date.now();
   function overWallBudget() {
     return Date.now() - wallStart >= HEDRON_SYNC_WALL_BUDGET_MS;
@@ -611,7 +730,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
 
   var imported = 0;
   var pages = 0;
-  while (pages < HEDRON_SYNC_MAX_PAGES_PER_TICK) {
+  while (pages < maxPagesTick) {
     if (overWallBudget()) {
       needContinuation = true;
       break;
@@ -623,27 +742,45 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
       return;
     }
 
-    // Import as many missing decks as we can from this page, bounded by max decks per tick.
-    // Skip UUIDs we've already attempted this page in this tick so a failing enqueue cannot
-    // starve progress by making findFirstMissingDeckJobInPage return the same deck repeatedly.
+    // One batched dedupe read per Hedron page, then scan in memory (avoids dozens of D1 subrequests per page).
+    var pageJobRows = buildHedronPageJobRows(page);
+    var syncUuids = hedronUniqueUuidsFromJobRows(pageJobRows);
+    var syncedOnPage = await hedronBatchSyncedUuidSet(env, syncUuids);
     var skipDeckUuidsThisPage = new Set();
-    while (imported < HEDRON_SYNC_MAX_DECKS_PER_TICK) {
+    var attemptsThisPage = 0;
+
+    while (imported < maxDecksTick) {
       if (overWallBudget()) {
         needContinuation = true;
         break;
       }
-      var job = await findFirstMissingDeckJobInPage(env, page, skipDeckUuidsThisPage);
+      var job = null;
+      for (var ri = 0; ri < pageJobRows.length; ri++) {
+        var prow = pageJobRows[ri];
+        if (skipDeckUuidsThisPage.has(prow.deckImageUuid)) continue;
+        if (syncedOnPage.has(prow.deckImageUuid)) continue;
+        job = prow.job;
+        break;
+      }
       if (!job) break;
-      var syncedOk = await syncOneHedronDeckJob(env, id, job);
+
+      var syncedOk = await syncOneHedronDeckJob(env, id, job, { skipExistsCheck: true });
       skipDeckUuidsThisPage.add(job.deckImageUuid);
-      if (syncedOk) imported++;
-      // Cursor stays on this same page; the next loop iteration will find the next missing deck.
-      await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
+      if (syncedOk) {
+        syncedOnPage.add(job.deckImageUuid);
+        imported++;
+      }
+      attemptsThisPage++;
+      if (attemptsThisPage % HEDRON_SYNC_CURSOR_UPSERT_EVERY === 0) {
+        await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
+      }
     }
+
+    await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
 
     if (needContinuation) break;
 
-    if (imported >= HEDRON_SYNC_MAX_DECKS_PER_TICK) {
+    if (imported >= maxDecksTick) {
       if (ctx && (await hedronSyncShouldContinue(env, id))) {
         scheduleHedronSyncContinuation(env, ctx, id, depth);
       }
@@ -662,7 +799,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
   }
 
   // Hit max pages this chunk but catalog may continue (nextKey still in D1, done=0).
-  if (!needContinuation && ctx && pages >= HEDRON_SYNC_MAX_PAGES_PER_TICK) {
+  if (!needContinuation && ctx && pages >= maxPagesTick) {
     if (await hedronSyncShouldContinue(env, id)) {
       scheduleHedronSyncContinuation(env, ctx, id, depth);
     }
@@ -728,59 +865,17 @@ async function hedronDeckUuidExists(env, deckImageUuid) {
   return !!dup;
 }
 
+/** First deck on this Hedron page not yet in hedron_synced_decks (batched lookup). */
 async function findFirstMissingDeckJobInPage(env, json, skipDeckUuids) {
-  for (var di = 0; di < json.drafts.length; di++) {
-    var draft = json.drafts[di];
-    var players = draft.players || [];
-    for (var pi = 0; pi < players.length; pi++) {
-      var player = players[pi];
-      var deckArr = player.images && player.images.deck;
-      if (!Array.isArray(deckArr) || deckArr.length === 0) continue;
-      var first = deckArr[0];
-      var deckPath = first && first.url;
-      if (!deckPath || typeof deckPath !== "string") continue;
-
-      var segs = deckPath.split("/").filter(Boolean);
-      var deckImageUuid = segs[segs.length - 1];
-      if (!deckImageUuid) continue;
-
-      if (skipDeckUuids && skipDeckUuids.has(deckImageUuid)) continue;
-
-      if (await hedronDeckUuidExists(env, deckImageUuid)) {
-        continue;
-      }
-
-      var ev =
-        String(draft.eventCode != null ? draft.eventCode : "") +
-        ":" +
-        String(draft.flightName != null ? draft.flightName : "");
-      var pilotName = ev + " " + String(player.id != null ? player.id : "Unknown");
-
-      var wins =
-        typeof player.wins === "number"
-          ? player.wins
-          : parseInt(String(player.wins != null ? player.wins : "0"), 10) || 0;
-      var losses =
-        typeof player.losses === "number"
-          ? player.losses
-          : parseInt(String(player.losses != null ? player.losses : "0"), 10) || 0;
-      var draws =
-        typeof player.draws === "number"
-          ? player.draws
-          : parseInt(String(player.draws != null ? player.draws : "0"), 10) || 0;
-
-      return {
-        draftId: String(draft.draftId || ""),
-        playerId: String(player.id != null ? player.id : ""),
-        deckPath: deckPath,
-        deckImageUuid: deckImageUuid,
-        pilotName: pilotName,
-        wins: wins,
-        losses: losses,
-        draws: draws,
-        recordLogged: draft.date || new Date().toISOString(),
-      };
-    }
+  var rows = buildHedronPageJobRows(json);
+  if (!rows.length) return null;
+  var uuids = hedronUniqueUuidsFromJobRows(rows);
+  var synced = await hedronBatchSyncedUuidSet(env, uuids);
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (skipDeckUuids && skipDeckUuids.has(row.deckImageUuid)) continue;
+    if (synced.has(row.deckImageUuid)) continue;
+    return row.job;
   }
   return null;
 }
@@ -792,10 +887,14 @@ async function hedronPageHasMissingDeck(env, cubeId, nextKey) {
   return !!job;
 }
 
-/** @returns {Promise<boolean>} true if the deck was enqueued and recorded in hedron_synced_decks */
-async function syncOneHedronDeckJob(env, cubeId, job) {
+/**
+ * @param {{ skipExistsCheck?: boolean }} [opts] Set skipExistsCheck when caller already batched dedupe (saves D1 subrequest per deck).
+ * @returns {Promise<boolean>} true if the deck was enqueued and recorded in hedron_synced_decks
+ */
+async function syncOneHedronDeckJob(env, cubeId, job, opts) {
   try {
-    if (await hedronDeckUuidExists(env, job.deckImageUuid)) return false;
+    var opt = opts || {};
+    if (!opt.skipExistsCheck && (await hedronDeckUuidExists(env, job.deckImageUuid))) return false;
 
     var imgUrl =
       job.deckPath.indexOf("http") === 0 ? job.deckPath : HEDRON_ORIGIN + job.deckPath;

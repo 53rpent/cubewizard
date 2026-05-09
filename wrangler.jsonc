@@ -47,7 +47,8 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
-				"WORKER_PUBLIC_URL": "",
+				// Public origin that serves this worker (custom domain or *.workers.dev); no trailing slash. Used for Hedron sync continuations.
+				"WORKER_PUBLIC_URL": "https://stg.cube-wizard.com",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
 				"FIRESTORE_COLLECTION": "jobs",
 				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app"
@@ -84,7 +85,8 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
-				"WORKER_PUBLIC_URL": "",
+				// Public origin that serves this worker (custom domain or *.workers.dev); no trailing slash. Used for Hedron sync continuations.
+				"WORKER_PUBLIC_URL": "https://cube-wizard.com",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status",
 				"FIRESTORE_COLLECTION": "jobs",
 				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app"
