@@ -91,7 +91,7 @@ function gcpEnqueueUrl(env) {
   return trimmed.toLowerCase().endsWith("/enqueue") ? trimmed : trimmed + "/enqueue";
 }
 
-async function downloadImage(imageUrl) {
+async function fetchImageStream(imageUrl) {
   var controller = new AbortController();
   var timer = setTimeout(function () {
     controller.abort();
@@ -119,37 +119,28 @@ async function downloadImage(imageUrl) {
     }
 
     var contentType = resp.headers.get("Content-Type") || "image/jpeg";
-    var reader = resp.body && resp.body.getReader ? resp.body.getReader() : null;
-    if (!reader) {
-      var arr = await resp.arrayBuffer();
-      if (arr.byteLength > HEDRON_MAX_IMAGE_BYTES) {
-        throw PermanentError("hedron image exceeds max size");
-      }
+    if (!resp.body) throw new Error("hedron image response has no body");
+
+    if (contentLength > 0) {
       return {
-        body: new Blob([arr], { type: contentType }),
-        bytes: arr.byteLength,
+        body: resp.body,
+        byteCount: Promise.resolve(contentLength),
         contentType: contentType,
         ext: contentTypeToExt(contentType),
       };
     }
 
-    var chunks = [];
-    var total = 0;
-    while (true) {
-      var read = await reader.read();
-      if (read.done) break;
-      if (!read.value) continue;
-      total += read.value.byteLength;
-      if (total > HEDRON_MAX_IMAGE_BYTES) {
-        throw PermanentError("hedron image exceeds max size");
-      }
-      chunks.push(read.value);
+    // R2 requires a known-length stream. If Hedron omits Content-Length, buffer
+    // this single queue message with the same 20 MB guard before writing to R2.
+    var arr = await resp.arrayBuffer();
+    if (arr.byteLength <= 0) throw PermanentError("hedron image is empty");
+    if (arr.byteLength > HEDRON_MAX_IMAGE_BYTES) {
+      throw PermanentError("hedron image exceeds max size");
     }
 
-    if (total <= 0) throw PermanentError("hedron image is empty");
     return {
-      body: new Blob(chunks, { type: contentType }),
-      bytes: total,
+      body: new Blob([arr], { type: contentType }),
+      byteCount: Promise.resolve(arr.byteLength),
       contentType: contentType,
       ext: contentTypeToExt(contentType),
     };
@@ -206,12 +197,13 @@ async function processHedronMessage(raw, env) {
   var draws = optionalInt(job, "match_draws");
   var winRate = wins + losses > 0 ? wins / (wins + losses) : 0;
 
-  var image = await downloadImage(imageUrl);
+  var image = await fetchImageStream(imageUrl);
   var imageKey = prefix + "/image." + image.ext;
   await env.BUCKET.put(imageKey, image.body, {
     httpMetadata: { contentType: image.contentType },
     customMetadata: { pilotName: pilotName, cubeId: cubeId, source: "hedron" },
   });
+  var downloadedBytes = await image.byteCount;
 
   var metadata = {
     cube_id: cubeId,
@@ -228,7 +220,7 @@ async function processHedronMessage(raw, env) {
     upload_id: uploadId,
     draft_id: job.draft_id ? String(job.draft_id) : "",
     player_id: job.player_id ? String(job.player_id) : "",
-    downloaded_bytes: image.bytes,
+    downloaded_bytes: downloadedBytes,
   };
   await env.BUCKET.put(prefix + "/metadata.json", JSON.stringify(metadata, null, 2), {
     httpMetadata: { contentType: "application/json" },
@@ -245,5 +237,15 @@ async function processHedronMessage(raw, env) {
     match_wins: wins,
     match_losses: losses,
     match_draws: draws,
+  });
+
+  console.log("hedron_consumer", {
+    event: "job_staged_and_enqueued",
+    cube_id: cubeId,
+    deck_image_uuid: deckImageUuid,
+    upload_id: uploadId,
+    r2_prefix: prefix + "/",
+    image_key: imageKey,
+    downloaded_bytes: downloadedBytes,
   });
 }

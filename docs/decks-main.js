@@ -24,6 +24,7 @@
     var msg = $("hedron-sync-msg");
     if (!btn) return;
     btn.disabled = !currentCubeId || hedronSyncInFlight;
+    btn.textContent = hedronSyncInFlight ? "Queueing Hedron decks..." : "Sync Hedron";
     if (msg && !currentCubeId) {
       msg.textContent = "";
     }
@@ -40,7 +41,7 @@
     if (!currentCubeId) return;
     if (hedronSyncInFlight) return;
     hedronSyncInFlight = true;
-    setHedronSyncMessage("Starting Hedron sync…", "");
+    setHedronSyncMessage("Reading Hedron data and queueing deck images...", "");
     setHedronSyncUiState();
     fetch("/api/hedron-sync/" + encodeURIComponent(currentCubeId), { method: "POST" })
       .then(function (r) {
@@ -64,7 +65,10 @@
           setHedronSyncMessage(err, "error");
           return;
         }
-        setHedronSyncMessage("Hedron sync started. New decks will appear as they process.", "ok");
+        setHedronSyncMessage(
+          "Hedron data has been queued. Decks will appear as the queue is processed.",
+          "ok"
+        );
         refreshProcessingStatus();
       })
       .catch(function () {
