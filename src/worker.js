@@ -637,50 +637,72 @@ async function hedronSyncShouldContinue(env, cubeId) {
 }
 
 /**
- * Continue Hedron sync in a new Worker HTTP invocation (ENQUEUE_SHARED_SECRET + a fetch base URL),
- * or nest in waitUntil when those are unset (same isolate; subrequest budget shared).
+ * Continue Hedron sync in a new logical invocation (fresh subrequest budget).
  *
- * Uses WORKER_CONTINUE_URL if set, else WORKER_PUBLIC_URL. Prefer WORKER_CONTINUE_URL =
- * https://<script-name>.<subdomain>.workers.dev so continuation does not self-fetch the custom
- * domain (often Cloudflare 522: connection timed out to origin / routing loop edge cases).
+ * Priority:
+ * 1) env.WORKER_SELF (service binding to this Worker) — no public DNS/custom domain; avoids 522 on
+ *    self-fetch to orange-cloud hostnames when dashboard vars override wrangler.
+ * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — public HTTP fallback.
+ * 3) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
  *
- * Important: we await fetch() here (inside syncHedronCube) instead of ctx.waitUntil(fetch), because
- * nested waitUntil from an already-deferred task often does not run reliably after the client
- * response is sent — sync looked like it stopped after MAX_DECKS_PER_TICK.
+ * We await the continuation dispatch from inside syncHedronCube (not nested ctx.waitUntil(fetch))
+ * so it reliably runs after the client response is sent.
  */
 async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   var id = String(cubeId || "").trim();
   if (!id) return;
 
   var d = depth != null ? depth : 0;
-  var continueBase = String(env.WORKER_CONTINUE_URL || "").trim().replace(/\/+$/, "");
-  var publicBase = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
-  var base = continueBase || publicBase;
   var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
 
-  if (base && secret) {
-    var url = base + "/api/hedron-sync/" + encodeURIComponent(id);
+  /** @returns {Promise<Response>|null} */
+  async function continuationRequest() {
+    var path = "/api/hedron-sync/" + encodeURIComponent(id);
+    var hdrs = {};
+    hdrs[HEDRON_CONTINUE_HEADER] = secret;
+
+    var selfBind = env.WORKER_SELF;
+    if (selfBind && typeof selfBind.fetch === "function") {
+      return selfBind.fetch(
+        new Request("https://internal-cubewizard" + path, {
+          method: "POST",
+          headers: hdrs,
+        })
+      );
+    }
+
+    var continueBase = String(env.WORKER_CONTINUE_URL || "").trim().replace(/\/+$/, "");
+    var publicBase = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+    var base = continueBase || publicBase;
+    if (!base) return null;
+    return fetch(base + path, {
+      method: "POST",
+      headers: hdrs,
+    });
+  }
+
+  if (secret) {
     try {
-      var r = await fetch(url, {
-        method: "POST",
-        headers: { [HEDRON_CONTINUE_HEADER]: secret },
-      });
-      if (!r.ok) {
-        var body = "";
-        try {
-          body = (await r.text()).slice(0, 200);
-        } catch (te) {}
-        console.error(
-          "hedron continuation fetch failed",
-          id,
-          r.status,
-          body ? body : ""
-        );
+      var r = await continuationRequest();
+      if (r) {
+        if (!r.ok) {
+          var body = "";
+          try {
+            body = (await r.text()).slice(0, 200);
+          } catch (te) {}
+          console.error(
+            "hedron continuation fetch failed",
+            id,
+            r.status,
+            body ? body : ""
+          );
+        }
+        return;
       }
     } catch (e) {
       console.error("hedron continuation fetch", id, e);
+      return;
     }
-    return;
   }
 
   if (!ctx || typeof ctx.waitUntil !== "function") return;
@@ -693,7 +715,7 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     );
   } else {
     console.error(
-      "hedron sync: continuation depth exceeded; set WORKER_CONTINUE_URL or WORKER_PUBLIC_URL + ENQUEUE_SHARED_SECRET for HTTP chunking",
+      "hedron sync: continuation depth exceeded; add WORKER_SELF service binding or WORKER_CONTINUE_URL + ENQUEUE_SHARED_SECRET",
       id
     );
   }

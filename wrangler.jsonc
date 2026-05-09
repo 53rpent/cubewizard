@@ -40,6 +40,12 @@
 	"env": {
 		"stg": {
 			"name": "cubewizard-stg",
+			"services": [
+				{
+					"binding": "WORKER_SELF",
+					"service": "cubewizard-stg"
+				}
+			],
 			"observability": {
 				"enabled": true
 			},
@@ -80,6 +86,12 @@
 		},
 		"prod": {
 			"name": "cubewizard-prod",
+			"services": [
+				{
+					"binding": "WORKER_SELF",
+					"service": "cubewizard-prod"
+				}
+			],
 			"observability": {
 				"enabled": true
 			},
