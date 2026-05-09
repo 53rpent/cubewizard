@@ -123,6 +123,39 @@ wrangler secret put ENQUEUE_SHARED_SECRET --env stg
 wrangler secret put GCP_FIRESTORE_SA_JSON --env stg
 ```
 
+### Hedron Cloudflare Queue pipeline
+
+Hedron sync uses Cloudflare Queues so the site Worker only fetches/parses Hedron JSON and publishes deck jobs. The dedicated consumer Workers download Hedron images to R2, then call the existing GCP enqueue service with the staged `r2_bucket` and `r2_prefix`.
+
+Create the queues once per environment:
+
+```bash
+npx wrangler queues create cubewizard-hedron-stg
+npx wrangler queues create cubewizard-hedron-stg-dlq
+npx wrangler queues create cubewizard-hedron-prod
+npx wrangler queues create cubewizard-hedron-prod-dlq
+```
+
+Set the same enqueue shared secret on the main Workers and the Hedron consumer Workers:
+
+```bash
+npx wrangler secret put ENQUEUE_SHARED_SECRET --env stg
+npx wrangler secret put ENQUEUE_SHARED_SECRET --env prod
+npx wrangler secret put ENQUEUE_SHARED_SECRET --config wrangler-hedron-consumer.jsonc --env stg
+npx wrangler secret put ENQUEUE_SHARED_SECRET --config wrangler-hedron-consumer.jsonc --env prod
+```
+
+Deploy the producer and consumer Workers:
+
+```bash
+npx wrangler deploy --env stg
+npx wrangler deploy --env prod
+npx wrangler deploy --config wrangler-hedron-consumer.jsonc --env stg
+npx wrangler deploy --config wrangler-hedron-consumer.jsonc --env prod
+```
+
+Validate staging first by triggering `/api/hedron-sync/:cubeId` for a small cube, then for a cube with more than 50 Hedron decks to confirm `sendBatch` publishing and queue consumer delivery.
+
 Apply D1 migrations as needed (repository ships SQL under `migrations/`):
 
 ```bash
@@ -157,12 +190,14 @@ CubeWizard/
 ├── schema.sql                   # D1 database schema reference
 ├── requirements.txt             # Python dependencies
 ├── wrangler.jsonc               # Cloudflare Workers config (stg/prod)
+├── wrangler-hedron-consumer.jsonc # Hedron Queue consumer config (stg/prod)
 ├── wrangler-redirect.jsonc      # Redirect worker config
 ├── services/
 │   ├── enqueue/                 # Cloud Run: enqueue Cloud Tasks
 │   └── worker/                  # Cloud Run: R2 download + processing + Firestore
 ├── src/
 │   ├── worker.js                # Main Cloudflare Worker (API + static assets)
+│   ├── hedron-consumer.js       # Cloudflare Queue consumer for Hedron images
 │   └── redirect-worker.js       # Domain redirect worker
 ├── docs/                        # Static site assets (served by Worker)
 │   ├── index.html               # Main dashboard SPA

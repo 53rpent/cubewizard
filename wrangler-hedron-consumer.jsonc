@@ -1,0 +1,76 @@
+{
+	"name": "cubewizard-hedron-consumer",
+	"compatibility_date": "2024-09-19",
+	"main": "src/hedron-consumer.js",
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"CWW_ENV": "local",
+		"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+	},
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "decklist-uploads"
+		}
+	],
+	"env": {
+		"stg": {
+			"name": "cubewizard-hedron-consumer-stg",
+			"observability": {
+				"enabled": true
+			},
+			"vars": {
+				"CWW_ENV": "staging",
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app"
+			},
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "decklist-uploads"
+				}
+			],
+			"queues": {
+				"consumers": [
+					{
+						"queue": "cubewizard-hedron-stg",
+						"max_batch_size": 10,
+						"max_batch_timeout": 10,
+						"max_retries": 5,
+						"dead_letter_queue": "cubewizard-hedron-stg-dlq"
+					}
+				]
+			}
+		},
+		"prod": {
+			"name": "cubewizard-hedron-consumer-prod",
+			"observability": {
+				"enabled": true
+			},
+			"vars": {
+				"CWW_ENV": "production",
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app"
+			},
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "decklist-uploads"
+				}
+			],
+			"queues": {
+				"consumers": [
+					{
+						"queue": "cubewizard-hedron-prod",
+						"max_batch_size": 10,
+						"max_batch_timeout": 10,
+						"max_retries": 5,
+						"dead_letter_queue": "cubewizard-hedron-prod-dlq"
+					}
+				]
+			}
+		}
+	}
+}

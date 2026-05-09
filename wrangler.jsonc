@@ -46,6 +46,14 @@
 					"service": "cubewizard-stg"
 				}
 			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "HEDRON_QUEUE",
+						"queue": "cubewizard-hedron-stg"
+					}
+				]
+			},
 			"observability": {
 				"enabled": true
 			},
@@ -94,6 +102,14 @@
 					"service": "cubewizard-prod"
 				}
 			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "HEDRON_QUEUE",
+						"queue": "cubewizard-hedron-prod"
+					}
+				]
+			},
 			"observability": {
 				"enabled": true
 			},
