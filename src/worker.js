@@ -518,6 +518,23 @@ var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
 /** Nested waitUntil continuations when WORKER_PUBLIC_URL is unset (same isolate; limited to avoid spinning). */
 var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
 var HEDRON_CONTINUE_HEADER = "X-CubeWizard-Continue";
+/** Synthetic FQDN for WORKER_SELF.fetch only (.invalid is reserved in RFC 2606). Service bindings ignore the host, but the URL must be fully qualified — a host without a dot caused 500s for some runtimes. */
+var HEDRON_SERVICE_SYNC_HOST = "cubewizard-hedron.invalid";
+
+function isHedronServiceBindingContinuation(request) {
+  try {
+    return new URL(request.url).hostname === HEDRON_SERVICE_SYNC_HOST;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Secret for public HTTP Hedron continuations only (optional env HEDRON_SYNC_CONTINUE_SECRET). If unset, falls back to ENQUEUE_SHARED_SECRET (will appear in CF request logs — prefer WORKER_SELF or set a separate continue secret). */
+function hedronContinuationSharedSecret(env) {
+  var c = String(env.HEDRON_SYNC_CONTINUE_SECRET || "").trim();
+  if (c) return c;
+  return String(env.ENQUEUE_SHARED_SECRET || "").trim();
+}
 
 function hedronEnvInt(env, key, defaultVal, maxVal) {
   var cap = maxVal != null ? maxVal : 200;
@@ -640,9 +657,8 @@ async function hedronSyncShouldContinue(env, cubeId) {
  * Continue Hedron sync in a new logical invocation (fresh subrequest budget).
  *
  * Priority:
- * 1) env.WORKER_SELF (service binding to this Worker) — no public DNS/custom domain; avoids 522 on
- *    self-fetch to orange-cloud hostnames when dashboard vars override wrangler.
- * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — public HTTP fallback.
+ * 1) env.WORKER_SELF (service binding) — no public DNS; no auth header (avoids enqueue secret in CF logs).
+ * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — uses HEDRON_SYNC_CONTINUE_SECRET or ENQUEUE_SHARED_SECRET (header may appear in logs).
  * 3) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
  *
  * We await the continuation dispatch from inside syncHedronCube (not nested ctx.waitUntil(fetch))
@@ -653,20 +669,19 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   if (!id) return;
 
   var d = depth != null ? depth : 0;
-  var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
+  var httpSecret = hedronContinuationSharedSecret(env);
 
   /** @returns {Promise<Response>|null} */
   async function continuationRequest() {
     var path = "/api/hedron-sync/" + encodeURIComponent(id);
-    var hdrs = {};
-    hdrs[HEDRON_CONTINUE_HEADER] = secret;
 
     var selfBind = env.WORKER_SELF;
     if (selfBind && typeof selfBind.fetch === "function") {
+      // No shared secret in headers: CF logs request metadata and would expose it. Service binding
+      // is already account-scoped; synthetic host is only used from this Worker.
       return selfBind.fetch(
-        new Request("https://internal-cubewizard" + path, {
+        new Request("https://" + HEDRON_SERVICE_SYNC_HOST + path, {
           method: "POST",
-          headers: hdrs,
         })
       );
     }
@@ -675,34 +690,35 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     var publicBase = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
     var base = continueBase || publicBase;
     if (!base) return null;
+    if (!httpSecret) return null;
+    var h2 = new Headers();
+    h2.set(HEDRON_CONTINUE_HEADER, httpSecret);
     return fetch(base + path, {
       method: "POST",
-      headers: hdrs,
+      headers: h2,
     });
   }
 
-  if (secret) {
-    try {
-      var r = await continuationRequest();
-      if (r) {
-        if (!r.ok) {
-          var body = "";
-          try {
-            body = (await r.text()).slice(0, 200);
-          } catch (te) {}
-          console.error(
-            "hedron continuation fetch failed",
-            id,
-            r.status,
-            body ? body : ""
-          );
-        }
-        return;
+  try {
+    var r = await continuationRequest();
+    if (r) {
+      if (!r.ok) {
+        var errBody = "";
+        try {
+          errBody = (await r.text()).slice(0, 200);
+        } catch (te) {}
+        console.error(
+          "hedron continuation fetch failed",
+          id,
+          r.status,
+          errBody ? errBody : ""
+        );
       }
-    } catch (e) {
-      console.error("hedron continuation fetch", id, e);
       return;
     }
+  } catch (e) {
+    console.error("hedron continuation fetch", id, e);
+    return;
   }
 
   if (!ctx || typeof ctx.waitUntil !== "function") return;
@@ -1554,23 +1570,31 @@ async function handleTriggerHedronSync(cubeId, env, ctx, request) {
     var id = String(cubeId || "").trim();
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
 
-    var continueHdr = request.headers.get(HEDRON_CONTINUE_HEADER);
-    if (continueHdr != null && String(continueHdr).length > 0) {
-      var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
-      if (!secret || continueHdr !== secret) {
-        return jsonResponse({ error: "unauthorized" }, 401);
+    if (!isHedronServiceBindingContinuation(request)) {
+      var hdrs = request && request.headers;
+      var continueHdr =
+        hdrs && typeof hdrs.get === "function" ? hdrs.get(HEDRON_CONTINUE_HEADER) : null;
+      if (continueHdr != null && String(continueHdr).length > 0) {
+        var contSecret = hedronContinuationSharedSecret(env);
+        if (!contSecret || continueHdr !== contSecret) {
+          return jsonResponse({ error: "unauthorized" }, 401);
+        }
       }
     }
 
-    ctx.waitUntil(
-      syncHedronCube(env, id, ctx).catch(function (e) {
-        console.error("hedron manual sync", id, e);
-      })
-    );
+    var job = syncHedronCube(env, id, ctx).catch(function (e) {
+      console.error("hedron manual sync", id, e);
+    });
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(job);
+    } else {
+      await job;
+    }
     return jsonResponse({ ok: true }, 200);
   } catch (e) {
-    console.error("hedron manual sync handler", e);
-    return jsonResponse({ error: "Failed to start Hedron sync" }, 500);
+    var msg = e && e.message ? String(e.message) : String(e);
+    console.error("hedron manual sync handler", msg, e && e.stack ? e.stack : "");
+    return jsonResponse({ error: "Failed to start Hedron sync", detail: msg.slice(0, 200) }, 500);
   }
 }
 
