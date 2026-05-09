@@ -36,6 +36,7 @@ env.bak/
 venv.bak/
 
 # IDEs
+.cursor/
 .vscode/
 .idea/
 *.swp

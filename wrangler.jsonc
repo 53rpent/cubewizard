@@ -40,6 +40,20 @@
 	"env": {
 		"stg": {
 			"name": "cubewizard-stg",
+			"services": [
+				{
+					"binding": "WORKER_SELF",
+					"service": "cubewizard-stg"
+				}
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "HEDRON_QUEUE",
+						"queue": "cubewizard-hedron-stg"
+					}
+				]
+			},
 			"observability": {
 				"enabled": true
 			},
@@ -47,9 +61,15 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
+				// Browser-facing site (optional). Hedron continuation fetch prefers WORKER_CONTINUE_URL to avoid 522 on self-fetch via custom domain.
+				"WORKER_PUBLIC_URL": "https://stg.cube-wizard.com",
+				// Direct Workers URL for continuation POST only: https://cubewizard-stg.<account>.workers.dev (Workers dashboard → this worker). Empty falls back to WORKER_PUBLIC_URL (may 522).
+				"WORKER_CONTINUE_URL": "https://cubewizard-stg.amatveyenko.workers.dev",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
 				"FIRESTORE_COLLECTION": "jobs",
-				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app"
+				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app",
+				// Optional: secret for Hedron HTTP continuations (JSON body continuation_token). If unset, ENQUEUE_SHARED_SECRET is used for that token only.
+				"HEDRON_SYNC_CONTINUE_SECRET": ""
 			},
 			"r2_buckets": [
 				{
@@ -76,6 +96,20 @@
 		},
 		"prod": {
 			"name": "cubewizard-prod",
+			"services": [
+				{
+					"binding": "WORKER_SELF",
+					"service": "cubewizard-prod"
+				}
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "HEDRON_QUEUE",
+						"queue": "cubewizard-hedron-prod"
+					}
+				]
+			},
 			"observability": {
 				"enabled": true
 			},
@@ -83,9 +117,14 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
+				"WORKER_PUBLIC_URL": "https://cube-wizard.com",
+				// See stg: set to https://cubewizard-prod.<account>.workers.dev if continuation 522s against the custom domain.
+				"WORKER_CONTINUE_URL": "https://cubewizard-prod.amatveyenko.workers.dev",
 				"FIRESTORE_DATABASE_ID": "cw-upload-status",
 				"FIRESTORE_COLLECTION": "jobs",
-				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app"
+				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app",
+				// Optional: see stg HEDRON_SYNC_CONTINUE_SECRET (JSON body, not headers).
+				"HEDRON_SYNC_CONTINUE_SECRET": ""
 			},
 			"r2_buckets": [
 				{

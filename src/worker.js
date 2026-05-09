@@ -69,7 +69,7 @@ export default {
 
     const hedronSyncMatch = url.pathname.match(/^\/api\/hedron-sync\/([^/]+)$/);
     if (hedronSyncMatch && request.method === "POST") {
-      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx);
+      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx, request);
     }
 
     // --- Existing endpoints ---
@@ -122,7 +122,7 @@ export default {
       for (let i = 0; i < rows.length; i++) {
         let cid = rows[i].cube_id;
         ctx.waitUntil(
-          syncHedronCube(env, cid).catch(function (e) {
+          syncHedronCube(env, cid, ctx).catch(function (e) {
             console.error("hedron scheduled sync", cid, e);
           })
         );
@@ -507,16 +507,397 @@ async function enqueueGcpEvalJob(env, prefix, meta) {
 
 var HEDRON_ORIGIN = "https://hedron.network";
 var HEDRON_SEARCH_URL = "https://hedron.network/cube-results/search";
+/** Defaults; override with Wrangler vars to stay under Workers free-tier subrequest limits (each D1 op + outbound fetch counts). */
 var HEDRON_SYNC_MAX_PAGES_PER_TICK = 6;
-var HEDRON_SYNC_MAX_DECKS_PER_TICK = 25;
+/** Default 250: queue batches replace per-deck GCP calls; D1 writes are grouped after queue publish. */
+var HEDRON_SYNC_MAX_DECKS_PER_TICK = 250;
+/** Cloudflare Queues sendBatch supports up to 100 messages; keep the default lower for message-size headroom. */
+var HEDRON_QUEUE_BATCH_SIZE = 50;
+/** Write hedron_sync_state every N deck attempts (reduces D1 subrequests; one upsert always runs after each page pass). */
+var HEDRON_SYNC_CURSOR_UPSERT_EVERY = 5;
+/** Wall-clock budget per Worker invocation chunk (enqueue + Hedron fetches). Cursor stays in D1; continuation picks up. */
+var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
+/** Nested waitUntil continuations when WORKER_PUBLIC_URL is unset (same isolate; limited to avoid spinning). */
+var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
+/** JSON field for public HTTP Hedron continuations (not sent as a header — avoids secrets in default CF request logs). */
+var HEDRON_CONTINUE_TOKEN_JSON_FIELD = "continuation_token";
+/** Synthetic FQDN for WORKER_SELF.fetch only (.invalid is reserved in RFC 2606). Service bindings ignore the host, but the URL must be fully qualified — a host without a dot caused 500s for some runtimes. */
+var HEDRON_SERVICE_SYNC_HOST = "cubewizard-hedron.invalid";
+
+function isHedronServiceBindingContinuation(request) {
+  try {
+    return new URL(request.url).hostname === HEDRON_SERVICE_SYNC_HOST;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Secret for public HTTP Hedron continuations only (optional env HEDRON_SYNC_CONTINUE_SECRET). If unset, falls back to ENQUEUE_SHARED_SECRET (sent in JSON body, not headers, to reduce log exposure). */
+function hedronContinuationSharedSecret(env) {
+  var c = String(env.HEDRON_SYNC_CONTINUE_SECRET || "").trim();
+  if (c) return c;
+  return String(env.ENQUEUE_SHARED_SECRET || "").trim();
+}
+
+function hedronEnvInt(env, key, defaultVal, maxVal) {
+  var cap = maxVal != null ? maxVal : 200;
+  try {
+    var raw = env[key];
+    if (raw != null && raw !== "") {
+      var n = parseInt(String(raw), 10);
+      if (isFinite(n) && n >= 1 && n <= cap) return n;
+    }
+  } catch (e) {}
+  return defaultVal;
+}
+
+function hedronImageUrl(deckPath) {
+  var p = String(deckPath || "").trim();
+  if (!p) return "";
+  return p.indexOf("http") === 0 ? p : HEDRON_ORIGIN + p;
+}
+
+function hedronR2Prefix(deckImageUuid) {
+  return "hedron/" + String(deckImageUuid || "").replace(/[^a-zA-Z0-9_\-:.]/g, "_");
+}
+
+function logHedron(event, fields) {
+  var payload = fields && typeof fields === "object" ? fields : {};
+  payload.event = event;
+  console.log("hedron_sync", payload);
+}
+
+/** @returns {{ deckImageUuid: string, job: object }[]} */
+function buildHedronPageJobRows(json) {
+  var rows = [];
+  if (!json || !Array.isArray(json.drafts)) return rows;
+  for (var di = 0; di < json.drafts.length; di++) {
+    var draft = json.drafts[di];
+    var players = draft.players || [];
+    for (var pi = 0; pi < players.length; pi++) {
+      var player = players[pi];
+      var deckArr = player.images && player.images.deck;
+      if (!Array.isArray(deckArr) || deckArr.length === 0) continue;
+      var first = deckArr[0];
+      var deckPath = first && first.url;
+      if (!deckPath || typeof deckPath !== "string") continue;
+
+      var segs = deckPath.split("/").filter(Boolean);
+      var deckImageUuid = segs[segs.length - 1];
+      if (!deckImageUuid) continue;
+
+      var ev =
+        String(draft.eventCode != null ? draft.eventCode : "") +
+        ":" +
+        String(draft.flightName != null ? draft.flightName : "");
+      var pilotName = ev + " " + String(player.id != null ? player.id : "Unknown");
+
+      var wins =
+        typeof player.wins === "number"
+          ? player.wins
+          : parseInt(String(player.wins != null ? player.wins : "0"), 10) || 0;
+      var losses =
+        typeof player.losses === "number"
+          ? player.losses
+          : parseInt(String(player.losses != null ? player.losses : "0"), 10) || 0;
+      var draws =
+        typeof player.draws === "number"
+          ? player.draws
+          : parseInt(String(player.draws != null ? player.draws : "0"), 10) || 0;
+
+      rows.push({
+        deckImageUuid: deckImageUuid,
+        job: {
+          draftId: String(draft.draftId || ""),
+          playerId: String(player.id != null ? player.id : ""),
+          deckPath: deckPath,
+          deckImageUuid: deckImageUuid,
+          pilotName: pilotName,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          recordLogged: draft.date || new Date().toISOString(),
+        },
+      });
+    }
+  }
+  return rows;
+}
+
+function hedronUniqueUuidsFromJobRows(rows) {
+  var u = [];
+  var seen = new Set();
+  for (var i = 0; i < rows.length; i++) {
+    var id = rows[i].deckImageUuid;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    u.push(id);
+  }
+  return u;
+}
+
+/** One batched D1 read for many UUIDs (replaces N per-row lookups). Chunked for SQLite parameter limits. */
+async function hedronBatchSyncedUuidSet(env, uuids) {
+  var existing = new Set();
+  if (!uuids || !uuids.length) return existing;
+  var chunkSize = 80;
+  for (var c = 0; c < uuids.length; c += chunkSize) {
+    var slice = uuids.slice(c, c + chunkSize);
+    var ph = new Array(slice.length).fill("?").join(",");
+    var stmt = env.cubewizard_db.prepare(
+      "SELECT deck_image_uuid FROM hedron_synced_decks WHERE deck_image_uuid IN (" + ph + ")"
+    );
+    var bound = stmt.bind.apply(stmt, slice);
+    var res = await bound.all();
+    var results = res.results || [];
+    for (var i = 0; i < results.length; i++) {
+      existing.add(results[i].deck_image_uuid);
+    }
+  }
+  return existing;
+}
+
+async function insertQueuedHedronDecks(env, cubeId, jobs) {
+  if (!jobs || !jobs.length) return 0;
+  var nowIso = new Date().toISOString();
+  var written = 0;
+  // D1 can reject large multi-row inserts with "too many SQL variables".
+  // Each row binds 6 values, so 15 rows keeps each statement comfortably small.
+  var chunkSize = 15;
+  for (var c = 0; c < jobs.length; c += chunkSize) {
+    var slice = jobs.slice(c, c + chunkSize);
+    var placeholders = [];
+    var args = [];
+    for (var i = 0; i < slice.length; i++) {
+      var job = slice[i];
+      placeholders.push("(?, ?, ?, ?, ?, ?)");
+      args.push(
+        job.deckImageUuid,
+        cubeId,
+        job.draftId,
+        job.playerId,
+        hedronR2Prefix(job.deckImageUuid),
+        nowIso
+      );
+    }
+    var stmt = env.cubewizard_db.prepare(
+      "INSERT OR IGNORE INTO hedron_synced_decks (deck_image_uuid, cube_id, draft_id, player_id, r2_prefix, synced_at) VALUES " +
+        placeholders.join(",")
+    );
+    var runResult = await stmt.bind.apply(stmt, args).run();
+    if (runResult && runResult.meta) {
+      written +=
+        runResult.meta.rows_written != null
+          ? runResult.meta.rows_written
+          : runResult.meta.changes != null
+            ? runResult.meta.changes
+            : 0;
+    }
+  }
+  return written;
+}
+
+async function enqueueHedronDeckJobs(env, cubeId, jobs) {
+  if (!jobs || !jobs.length) return { ok: true, queued: 0 };
+  var q = env.HEDRON_QUEUE;
+  if (!q || typeof q.sendBatch !== "function") {
+    console.error("hedron queue skipped: missing env.HEDRON_QUEUE binding");
+    return { ok: false, queued: 0, reason: "missing_queue" };
+  }
+
+  var batchSize = hedronEnvInt(env, "HEDRON_QUEUE_BATCH_SIZE", HEDRON_QUEUE_BATCH_SIZE, 100);
+  var totalQueued = 0;
+  for (var c = 0; c < jobs.length; c += batchSize) {
+    var slice = jobs.slice(c, c + batchSize);
+    var messages = [];
+    for (var i = 0; i < slice.length; i++) {
+      var job = slice[i];
+      messages.push({
+        body: {
+          schema_version: 1,
+          upload_id: "hedron:" + job.deckImageUuid,
+          cube_id: cubeId,
+          deck_image_uuid: job.deckImageUuid,
+          draft_id: job.draftId,
+          player_id: job.playerId,
+          pilot_name: job.pilotName,
+          submitted_at: job.recordLogged,
+          image_url: hedronImageUrl(job.deckPath),
+          image_source: "hedron",
+          match_wins: job.wins,
+          match_losses: job.losses,
+          match_draws: job.draws,
+          r2_prefix: hedronR2Prefix(job.deckImageUuid),
+        },
+        contentType: "json",
+      });
+    }
+    logHedron("queue_batch_publish_start", {
+      cube_id: cubeId,
+      batch_index: Math.floor(c / batchSize) + 1,
+      batch_size: slice.length,
+      total_jobs: jobs.length,
+    });
+    await q.sendBatch(messages);
+    totalQueued += slice.length;
+    var d1Written = await insertQueuedHedronDecks(env, cubeId, slice);
+    logHedron("queue_batch_publish_done", {
+      cube_id: cubeId,
+      batch_index: Math.floor(c / batchSize) + 1,
+      batch_size: slice.length,
+      queued_total: totalQueued,
+      dedupe_rows_written: d1Written,
+    });
+  }
+  return { ok: true, queued: totalQueued };
+}
 
 /**
- * Pull deck images from Hedron Network for a cube (CubeCobra id works as cubeId query param).
- * Enqueues GCP processing with Hedron image URLs (worker downloads); dedupes via hedron_synced_decks.
+ * After a budget stop: true if Hedron sync should run again (incomplete pagination or new decks when done=1).
  */
-async function syncHedronCube(env, cubeId) {
+async function hedronSyncShouldContinue(env, cubeId) {
+  var id = String(cubeId || "").trim();
+  if (!id) return false;
+  var state = await env.cubewizard_db
+    .prepare("SELECT done FROM hedron_sync_state WHERE cube_id = ?")
+    .bind(id)
+    .first();
+  var done = state && state.done ? 1 : 0;
+  if (!done) return true;
+  return hedronPageHasMissingDeck(env, id, null);
+}
+
+/**
+ * Continue Hedron sync in a new logical invocation (fresh subrequest budget).
+ *
+ * Priority:
+ * 1) env.WORKER_SELF (service binding) — no public DNS; no auth header (avoids enqueue secret in CF logs).
+ * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — POST JSON { continuation_token } (not headers).
+ * 3) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
+ *
+ * Callers must use {@link dispatchHedronSyncContinuation}, not await this function from syncHedronCube:
+ * awaiting service-binding or HTTP continuation fetch chains parent → child handlers recursively, so the
+ * browser request does not get a response until every chunk finishes (proxy timeouts despite successful work).
+ */
+async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   var id = String(cubeId || "").trim();
   if (!id) return;
+
+  var d = depth != null ? depth : 0;
+  var httpSecret = hedronContinuationSharedSecret(env);
+
+  /** @returns {Promise<Response>|null} */
+  async function continuationRequest() {
+    var path = "/api/hedron-sync/" + encodeURIComponent(id);
+
+    var selfBind = env.WORKER_SELF;
+    if (selfBind && typeof selfBind.fetch === "function") {
+      // No shared secret in headers: CF logs request metadata and would expose it. Service binding
+      // is already account-scoped; synthetic host is only used from this Worker.
+      return selfBind.fetch(
+        new Request("https://" + HEDRON_SERVICE_SYNC_HOST + path, {
+          method: "POST",
+        })
+      );
+    }
+
+    var continueBase = String(env.WORKER_CONTINUE_URL || "").trim().replace(/\/+$/, "");
+    var publicBase = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+    var base = continueBase || publicBase;
+    if (!base) return null;
+    if (!httpSecret) return null;
+    var payload = {};
+    payload[HEDRON_CONTINUE_TOKEN_JSON_FIELD] = httpSecret;
+    return fetch(base + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  try {
+    var r = await continuationRequest();
+    if (r) {
+      if (!r.ok) {
+        var errBody = "";
+        try {
+          errBody = (await r.text()).slice(0, 200);
+        } catch (te) {}
+        console.error(
+          "hedron continuation fetch failed",
+          id,
+          r.status,
+          errBody ? errBody : ""
+        );
+      }
+      return;
+    }
+  } catch (e) {
+    console.error("hedron continuation fetch", id, e);
+    return;
+  }
+
+  if (!ctx || typeof ctx.waitUntil !== "function") return;
+
+  if (d < HEDRON_SYNC_CONTINUE_MAX_DEPTH) {
+    ctx.waitUntil(
+      syncHedronCube(env, id, ctx, d + 1).catch(function (e) {
+        console.error("hedron sync nested continuation", id, e);
+      })
+    );
+  } else {
+    console.error(
+      "hedron sync: continuation depth exceeded; add WORKER_SELF service binding or WORKER_CONTINUE_URL + ENQUEUE_SHARED_SECRET",
+      id
+    );
+  }
+}
+
+/**
+ * Schedule a Hedron sync continuation without blocking the current invocation (see scheduleHedronSyncContinuation).
+ * @param {any} ctx
+ * @param {number} [depth]
+ */
+function dispatchHedronSyncContinuation(env, ctx, cubeId, depth) {
+  var id = String(cubeId || "").trim();
+  if (!id) return;
+  var p = scheduleHedronSyncContinuation(env, ctx, id, depth).catch(function (e) {
+    console.error("hedron sync continuation dispatch failed", id, e);
+  });
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(p);
+  }
+}
+
+/**
+ * Pull Hedron Network JSON for a cube (CubeCobra id works as cubeId query param).
+ * Publishes deck image jobs to Cloudflare Queues in batches; the consumer stages images to R2.
+ * @param {any} ctx ExecutionContext for waitUntil continuations when wall budget is exceeded
+ * @param {number} [depth] Nested continuation depth (internal)
+ */
+async function syncHedronCube(env, cubeId, ctx, depth) {
+  var id = String(cubeId || "").trim();
+  if (!id) return;
+  var syncStartedAt = Date.now();
+
+  var maxDecksTick = hedronEnvInt(
+    env,
+    "HEDRON_SYNC_MAX_DECKS_PER_TICK",
+    HEDRON_SYNC_MAX_DECKS_PER_TICK,
+    1000
+  );
+  var maxPagesTick = hedronEnvInt(
+    env,
+    "HEDRON_SYNC_MAX_PAGES_PER_TICK",
+    HEDRON_SYNC_MAX_PAGES_PER_TICK,
+    30
+  );
+
+  var wallStart = Date.now();
+  function overWallBudget() {
+    return Date.now() - wallStart >= HEDRON_SYNC_WALL_BUDGET_MS;
+  }
+  var needContinuation = false;
 
   // Cursor-based sync: import multiple decks per invocation, resuming with Hedron's nextKey.
   var nowIso = new Date().toISOString();
@@ -527,12 +908,31 @@ async function syncHedronCube(env, cubeId) {
 
   var nextKey = state && state.next_key ? String(state.next_key) : null;
   var done = state && state.done ? 1 : 0;
+  logHedron("sync_start", {
+    cube_id: id,
+    next_key: nextKey,
+    done: done,
+    max_decks_per_tick: maxDecksTick,
+    max_pages_per_tick: maxPagesTick,
+  });
 
   // If we previously reached the end, do a cheap poll on page 1. Only proceed if we detect a missing deck.
   if (done) {
     var hasNew = await hedronPageHasMissingDeck(env, id, null);
     if (!hasNew) {
-      return;
+      logHedron("sync_no_new_decks", {
+        cube_id: id,
+        elapsed_ms: Date.now() - syncStartedAt,
+      });
+      return {
+        ok: true,
+        cube_id: id,
+        decks_queued: 0,
+        pages_processed: 0,
+        done: true,
+        continuation_scheduled: false,
+        no_new_decks: true,
+      };
     }
     nextKey = null;
     done = 0;
@@ -540,41 +940,178 @@ async function syncHedronCube(env, cubeId) {
 
   var imported = 0;
   var pages = 0;
-  while (pages < HEDRON_SYNC_MAX_PAGES_PER_TICK) {
+  var pagesProcessed = 0;
+  while (pages < maxPagesTick) {
+    if (overWallBudget()) {
+      needContinuation = true;
+      break;
+    }
+
     var page = await fetchHedronSearchPage(id, nextKey);
     if (!page || !Array.isArray(page.drafts)) {
       await upsertHedronSyncState(env, id, nextKey, done, nowIso, "invalid_page");
-      return;
+      throw new Error("invalid Hedron page");
     }
+    pagesProcessed++;
 
-    // Import as many missing decks as we can from this page, bounded by max decks per tick.
-    // Skip UUIDs we've already attempted this page in this tick so a failing enqueue cannot
-    // starve progress by making findFirstMissingDeckJobInPage return the same deck repeatedly.
+    // One batched dedupe read per Hedron page, then scan in memory (avoids dozens of D1 subrequests per page).
+    var pageJobRows = buildHedronPageJobRows(page);
+    var syncUuids = hedronUniqueUuidsFromJobRows(pageJobRows);
+    var syncedOnPage = await hedronBatchSyncedUuidSet(env, syncUuids);
     var skipDeckUuidsThisPage = new Set();
-    while (imported < HEDRON_SYNC_MAX_DECKS_PER_TICK) {
-      var job = await findFirstMissingDeckJobInPage(env, page, skipDeckUuidsThisPage);
-      if (!job) break;
-      var syncedOk = await syncOneHedronDeckJob(env, id, job);
-      skipDeckUuidsThisPage.add(job.deckImageUuid);
-      if (syncedOk) imported++;
-      // Cursor stays on this same page; the next loop iteration will find the next missing deck.
-      await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
+    var attemptsThisPage = 0;
+    logHedron("page_parsed", {
+      cube_id: id,
+      page_index: pages + 1,
+      next_key: nextKey,
+      drafts: Array.isArray(page.drafts) ? page.drafts.length : 0,
+      parsed_decks: pageJobRows.length,
+      unique_decks: syncUuids.length,
+      already_synced: syncedOnPage.size,
+    });
+
+    var jobsToQueue = [];
+    for (var ri = 0; ri < pageJobRows.length && imported + jobsToQueue.length < maxDecksTick; ri++) {
+      if (overWallBudget()) {
+        needContinuation = true;
+        break;
+      }
+      var prow = pageJobRows[ri];
+      if (skipDeckUuidsThisPage.has(prow.deckImageUuid)) continue;
+      if (syncedOnPage.has(prow.deckImageUuid)) continue;
+      jobsToQueue.push(prow.job);
+      skipDeckUuidsThisPage.add(prow.deckImageUuid);
+      attemptsThisPage++;
+      if (attemptsThisPage % HEDRON_SYNC_CURSOR_UPSERT_EVERY === 0) {
+        await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
+      }
     }
 
-    if (imported >= HEDRON_SYNC_MAX_DECKS_PER_TICK) {
-      return;
+    logHedron("page_queue_candidates", {
+      cube_id: id,
+      page_index: pages + 1,
+      candidates: jobsToQueue.length,
+      imported_this_tick: imported,
+      max_decks_per_tick: maxDecksTick,
+      wall_budget_hit: needContinuation,
+    });
+
+    if (jobsToQueue.length) {
+      var queueResult;
+      try {
+        queueResult = await enqueueHedronDeckJobs(env, id, jobsToQueue);
+      } catch (queueErr) {
+        console.error("hedron queue publish failed", id, queueErr);
+        queueResult = { ok: false, queued: 0, reason: "queue_failed" };
+      }
+      if (!queueResult.ok) {
+        await upsertHedronSyncState(
+          env,
+          id,
+          nextKey,
+          0,
+          new Date().toISOString(),
+          queueResult.reason || "queue_failed"
+        );
+        throw new Error(queueResult.reason || "queue_failed");
+      }
+      for (var qi = 0; qi < jobsToQueue.length; qi++) {
+        syncedOnPage.add(jobsToQueue[qi].deckImageUuid);
+      }
+      imported += queueResult.queued || jobsToQueue.length;
+      logHedron("page_queued", {
+        cube_id: id,
+        page_index: pages + 1,
+        queued: queueResult.queued || jobsToQueue.length,
+        imported_this_tick: imported,
+      });
+    }
+
+    await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
+
+    if (needContinuation) break;
+
+    if (imported >= maxDecksTick) {
+      var deckLimitContinuation = false;
+      logHedron("sync_deck_limit_reached", {
+        cube_id: id,
+        imported_this_tick: imported,
+        max_decks_per_tick: maxDecksTick,
+        elapsed_ms: Date.now() - syncStartedAt,
+      });
+      if (ctx && (await hedronSyncShouldContinue(env, id))) {
+        dispatchHedronSyncContinuation(env, ctx, id, depth);
+        deckLimitContinuation = true;
+      }
+      return {
+        ok: true,
+        cube_id: id,
+        decks_queued: imported,
+        pages_processed: pagesProcessed,
+        done: false,
+        continuation_scheduled: deckLimitContinuation,
+      };
     }
 
     // No candidates in this page; advance cursor.
     var nk = page.nextKey || null;
     if (!nk) {
       await upsertHedronSyncState(env, id, null, 1, new Date().toISOString(), null);
-      return;
+      logHedron("sync_done", {
+        cube_id: id,
+        imported_this_tick: imported,
+        pages_processed: pages + 1,
+        elapsed_ms: Date.now() - syncStartedAt,
+      });
+      return {
+        ok: true,
+        cube_id: id,
+        decks_queued: imported,
+        pages_processed: pagesProcessed,
+        done: true,
+        continuation_scheduled: false,
+      };
     }
     nextKey = String(nk);
     pages++;
     await upsertHedronSyncState(env, id, nextKey, 0, new Date().toISOString(), null);
   }
+
+  // Hit max pages this chunk but catalog may continue (nextKey still in D1, done=0).
+  var continuationScheduled = false;
+  if (!needContinuation && ctx && pages >= maxPagesTick) {
+    if (await hedronSyncShouldContinue(env, id)) {
+      logHedron("sync_page_limit_continuation", {
+        cube_id: id,
+        pages_processed: pages,
+        imported_this_tick: imported,
+        elapsed_ms: Date.now() - syncStartedAt,
+      });
+      dispatchHedronSyncContinuation(env, ctx, id, depth);
+      continuationScheduled = true;
+    }
+  }
+
+  if (needContinuation && ctx) {
+    if (await hedronSyncShouldContinue(env, id)) {
+      logHedron("sync_wall_budget_continuation", {
+        cube_id: id,
+        pages_processed: pages,
+        imported_this_tick: imported,
+        elapsed_ms: Date.now() - syncStartedAt,
+      });
+      dispatchHedronSyncContinuation(env, ctx, id, depth);
+      continuationScheduled = true;
+    }
+  }
+  return {
+    ok: true,
+    cube_id: id,
+    decks_queued: imported,
+    pages_processed: pagesProcessed,
+    done: false,
+    continuation_scheduled: continuationScheduled,
+  };
 }
 
 async function upsertHedronSyncState(env, cubeId, nextKey, done, updatedAtIso, lastError) {
@@ -602,7 +1139,7 @@ async function upsertHedronSyncState(env, cubeId, nextKey, done, updatedAtIso, l
 async function fetchHedronSearchPage(cubeId, nextKey) {
   var u = new URL(HEDRON_SEARCH_URL);
   u.searchParams.set("cubeId", cubeId);
-  if (nextKey) u.searchParams.set("nextKey", String(nextKey));
+  if (nextKey) u.searchParams.set("lastKey", String(nextKey));
 
   var resp = await fetch(u.toString(), {
     headers: {
@@ -622,67 +1159,17 @@ async function fetchHedronSearchPage(cubeId, nextKey) {
   }
 }
 
-async function hedronDeckUuidExists(env, deckImageUuid) {
-  var dup = await env.cubewizard_db
-    .prepare("SELECT 1 AS x FROM hedron_synced_decks WHERE deck_image_uuid = ? LIMIT 1")
-    .bind(deckImageUuid)
-    .first();
-  return !!dup;
-}
-
+/** First deck on this Hedron page not yet in hedron_synced_decks (batched lookup). */
 async function findFirstMissingDeckJobInPage(env, json, skipDeckUuids) {
-  for (var di = 0; di < json.drafts.length; di++) {
-    var draft = json.drafts[di];
-    var players = draft.players || [];
-    for (var pi = 0; pi < players.length; pi++) {
-      var player = players[pi];
-      var deckArr = player.images && player.images.deck;
-      if (!Array.isArray(deckArr) || deckArr.length === 0) continue;
-      var first = deckArr[0];
-      var deckPath = first && first.url;
-      if (!deckPath || typeof deckPath !== "string") continue;
-
-      var segs = deckPath.split("/").filter(Boolean);
-      var deckImageUuid = segs[segs.length - 1];
-      if (!deckImageUuid) continue;
-
-      if (skipDeckUuids && skipDeckUuids.has(deckImageUuid)) continue;
-
-      if (await hedronDeckUuidExists(env, deckImageUuid)) {
-        continue;
-      }
-
-      var ev =
-        String(draft.eventCode != null ? draft.eventCode : "") +
-        ":" +
-        String(draft.flightName != null ? draft.flightName : "");
-      var pilotName = ev + " " + String(player.id != null ? player.id : "Unknown");
-
-      var wins =
-        typeof player.wins === "number"
-          ? player.wins
-          : parseInt(String(player.wins != null ? player.wins : "0"), 10) || 0;
-      var losses =
-        typeof player.losses === "number"
-          ? player.losses
-          : parseInt(String(player.losses != null ? player.losses : "0"), 10) || 0;
-      var draws =
-        typeof player.draws === "number"
-          ? player.draws
-          : parseInt(String(player.draws != null ? player.draws : "0"), 10) || 0;
-
-      return {
-        draftId: String(draft.draftId || ""),
-        playerId: String(player.id != null ? player.id : ""),
-        deckPath: deckPath,
-        deckImageUuid: deckImageUuid,
-        pilotName: pilotName,
-        wins: wins,
-        losses: losses,
-        draws: draws,
-        recordLogged: draft.date || new Date().toISOString(),
-      };
-    }
+  var rows = buildHedronPageJobRows(json);
+  if (!rows.length) return null;
+  var uuids = hedronUniqueUuidsFromJobRows(rows);
+  var synced = await hedronBatchSyncedUuidSet(env, uuids);
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (skipDeckUuids && skipDeckUuids.has(row.deckImageUuid)) continue;
+    if (synced.has(row.deckImageUuid)) continue;
+    return row.job;
   }
   return null;
 }
@@ -692,56 +1179,6 @@ async function hedronPageHasMissingDeck(env, cubeId, nextKey) {
   if (!page || !Array.isArray(page.drafts)) return false;
   var job = await findFirstMissingDeckJobInPage(env, page);
   return !!job;
-}
-
-/** @returns {Promise<boolean>} true if the deck was enqueued and recorded in hedron_synced_decks */
-async function syncOneHedronDeckJob(env, cubeId, job) {
-  try {
-    if (await hedronDeckUuidExists(env, job.deckImageUuid)) return false;
-
-    var imgUrl =
-      job.deckPath.indexOf("http") === 0 ? job.deckPath : HEDRON_ORIGIN + job.deckPath;
-
-    var uploadId = "hedron:" + job.deckImageUuid;
-    var enqueueResult = await enqueueGcpEvalJob(env, null, {
-      upload_id: uploadId,
-      cube_id: cubeId,
-      pilot_name: job.pilotName,
-      submitted_at: job.recordLogged,
-      image_url: imgUrl,
-      image_source: "hedron",
-      match_wins: job.wins,
-      match_losses: job.losses,
-      match_draws: job.draws,
-    });
-
-    if (!enqueueResult.ok && !enqueueResult.skipped) {
-      console.error("hedron enqueue failed", cubeId, job.deckImageUuid, enqueueResult);
-      return false;
-    }
-
-    var syncedAt = new Date().toISOString();
-    var runResult = await env.cubewizard_db
-      .prepare(
-        "INSERT OR IGNORE INTO hedron_synced_decks (deck_image_uuid, cube_id, draft_id, player_id, r2_prefix, synced_at) VALUES (?, ?, ?, ?, ?, ?)"
-      )
-      .bind(job.deckImageUuid, cubeId, job.draftId, job.playerId, "", syncedAt)
-      .run();
-
-    var written = 0;
-    if (runResult && runResult.meta) {
-      written =
-        runResult.meta.rows_written != null
-          ? runResult.meta.rows_written
-          : runResult.meta.changes != null
-            ? runResult.meta.changes
-            : 0;
-    }
-    return written > 0;
-  } catch (e) {
-    console.error("hedron syncOneHedronDeckJob", cubeId, job && job.deckImageUuid, e);
-    return false;
-  }
 }
 
 /**
@@ -1310,19 +1747,47 @@ async function handleGetDeck(deckId, env, request) {
   });
 }
 
-async function handleTriggerHedronSync(cubeId, env, ctx) {
+async function handleTriggerHedronSync(cubeId, env, ctx, request) {
   try {
     var id = String(cubeId || "").trim();
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
-    ctx.waitUntil(
-      syncHedronCube(env, id).catch(function (e) {
-        console.error("hedron manual sync", id, e);
-      })
-    );
-    return jsonResponse({ ok: true }, 200);
+
+    if (!isHedronServiceBindingContinuation(request)) {
+      var contSecret = hedronContinuationSharedSecret(env);
+      var ct =
+        request && request.headers && typeof request.headers.get === "function"
+          ? request.headers.get("Content-Type") || ""
+          : "";
+      var token = null;
+      if (request && request.body && ct.indexOf("application/json") >= 0) {
+        try {
+          var raw = await request.text();
+          if (raw && raw.length > 0 && raw.length < 20000) {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed[HEDRON_CONTINUE_TOKEN_JSON_FIELD] === "string") {
+              token = parsed[HEDRON_CONTINUE_TOKEN_JSON_FIELD];
+            }
+          }
+        } catch (parseErr) {
+          token = null;
+        }
+      }
+      if (token != null && String(token).length > 0) {
+        if (!contSecret || String(token) !== contSecret) {
+          return jsonResponse({ error: "unauthorized" }, 401);
+        }
+      }
+    }
+
+    // Keep manual sync request-bound so the UI spinner reflects the producer phase:
+    // Hedron JSON fetch, parse, D1 dedupe, and Cloudflare Queue publishing. Running
+    // this in waitUntil risks Cloudflare cancelling it 30s after the response returns.
+    var result = await syncHedronCube(env, id, ctx);
+    return jsonResponse(result || { ok: true, cube_id: id, decks_queued: 0 }, 200);
   } catch (e) {
-    console.error("hedron manual sync handler", e);
-    return jsonResponse({ error: "Failed to start Hedron sync" }, 500);
+    var msg = e && e.message ? String(e.message) : String(e);
+    console.error("hedron manual sync handler", msg, e && e.stack ? e.stack : "");
+    return jsonResponse({ error: "Failed to start Hedron sync", detail: msg.slice(0, 200) }, 500);
   }
 }
 
@@ -2460,7 +2925,7 @@ async function handleAddCube(request, env, ctx) {
 
     if (autoSyncHedron && ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(
-        syncHedronCube(env, cubeId).catch(function (e) {
+        syncHedronCube(env, cubeId, ctx).catch(function (e) {
           console.error("hedron sync on add-cube", cubeId, e);
         })
       );

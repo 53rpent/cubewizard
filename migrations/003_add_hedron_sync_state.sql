@@ -1,5 +1,5 @@
 -- Hedron Network sync cursor (resume pagination across many invocations).
--- `next_key` mirrors Hedron API `nextKey` for https://hedron.network/cube-results/search pagination.
+-- `next_key` stores Hedron's response `nextKey`; send it back as request parameter `lastKey`.
 -- `done=1` means we've reached the end at least once; we still poll page 1 for new decks.
 CREATE TABLE IF NOT EXISTS hedron_sync_state (
     cube_id TEXT PRIMARY KEY,
