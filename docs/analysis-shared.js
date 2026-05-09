@@ -13,7 +13,7 @@
     colors: {
       title: "Color data",
       description:
-        "This analysis examines how decks of each color perform. A deck is defined as being a certain color if it contains at least one card with that color in it. The color bar chart shows the overall win rate for decks containing each color.",
+        "This analysis examines how decks of each color perform. A deck is defined as being a certain color if it contains at least one card with that color in it. The color bar chart shows the overall win rate for decks containing each color. Sort any column in the table below to explore.",
       chartType: "color_performance",
     },
     synergies: {
@@ -73,6 +73,9 @@
   var perfSort = { key: "performance_delta", asc: false };
   var synergySnapshot = null;
   var synergySort = { key: "together_count", asc: false };
+  var colorIdentitySnapshot = null;
+  /** @type {{ key: string|null, asc: boolean }} null key = preserve API row order */
+  var colorIdentitySort = { key: null, asc: true };
   /** @type {string|null} Canonical card name from synergy rows when filter active */
   var synergyFilterName = null;
   var synergyFilterTimer = null;
@@ -566,6 +569,8 @@
     $("detailed-data").innerHTML = "";
     perfSnapshot = null;
     synergySnapshot = null;
+    colorIdentitySnapshot = null;
+    colorIdentitySort = { key: null, asc: true };
     var dc = $("detailed-chart");
     if (dc && global.Plotly && dc.querySelector(".js-plotly-plot")) {
       Plotly.purge("detailed-chart");
@@ -694,6 +699,14 @@
           synergySort.asc = key === "card1" || key === "card2";
         }
         renderSynergyTable();
+      } else if (stateDataView === "colors" && colorIdentitySnapshot && colorIdentitySnapshot.length) {
+        if (colorIdentitySort.key === key) {
+          colorIdentitySort.asc = !colorIdentitySort.asc;
+        } else {
+          colorIdentitySort.key = key;
+          colorIdentitySort.asc = key === "color";
+        }
+        renderColorIdentityTable();
       }
     });
   }
@@ -847,28 +860,74 @@
     return "color-identity-detail";
   }
 
-  function displayColorAnalysis(identityRows) {
-    var rows = identityRows && identityRows.length ? identityRows : [];
+  function compareColorIdentityRows(a, b, key, asc) {
+    if (key === "color") {
+      var cmp = String(a.color).localeCompare(String(b.color), undefined, { sensitivity: "base" });
+      return asc ? cmp : -cmp;
+    }
+    var va = Number(a[key]);
+    var vb = Number(b[key]);
+    if (!isFinite(va)) va = 0;
+    if (!isFinite(vb)) vb = 0;
+    if (va !== vb) {
+      return asc ? va - vb : vb - va;
+    }
+    return String(a.color).localeCompare(String(b.color), undefined, { sensitivity: "base" });
+  }
+
+  function buildSortedColorIdentity(snapshot, sortKey, asc) {
+    if (!sortKey) return snapshot.slice();
+    var rows = snapshot.slice();
+    rows.sort(function (a, b) {
+      var c = compareColorIdentityRows(a, b, sortKey, asc);
+      if (c !== 0) return c;
+      return String(a.color).localeCompare(String(b.color), undefined, { sensitivity: "base" });
+    });
+    return rows;
+  }
+
+  function renderColorIdentityTable() {
+    var rows = colorIdentitySnapshot && colorIdentitySnapshot.length ? colorIdentitySnapshot : [];
     var html = "<h3>Color data</h3>";
     if (!rows.length) {
       html += "<p>No color identity breakdown is available for this cube.</p>";
       $("detailed-data").innerHTML = html;
       return;
     }
-    html +=
-      '<table class="table color-identity-table"><thead><tr>' +
-      "<th scope=\"col\">Color</th><th scope=\"col\">Wins</th><th scope=\"col\"># Games</th><th scope=\"col\">Win Rate</th>" +
-      "</tr></thead><tbody>";
+    var sortKey = colorIdentitySort.key;
+    var asc = colorIdentitySort.asc;
+    var sorted = buildSortedColorIdentity(rows, sortKey, asc);
+    var colDefs = [
+      { key: "color", label: "Color" },
+      { key: "wins", label: "Wins" },
+      { key: "total_games", label: "# Games" },
+      { key: "win_rate", label: "Win rate" },
+    ];
+    html += '<table class="table color-identity-table" id="color-identity-table"><thead><tr>';
+    var ci;
+    for (ci = 0; ci < colDefs.length; ci++) {
+      var col = colDefs[ci];
+      var active = sortKey === col.key;
+      var arrow = active ? (asc ? " \u25b2" : " \u25bc") : "";
+      html +=
+        '<th scope="col"><button type="button" class="table-sort-btn" data-sort-key="' +
+        col.key +
+        '">' +
+        col.label +
+        arrow +
+        "</button></th>";
+    }
+    html += "</tr></thead><tbody>";
     var ri;
-    for (ri = 0; ri < rows.length; ri++) {
-      var r = rows[ri];
+    for (ri = 0; ri < sorted.length; ri++) {
+      var r = sorted[ri];
       var pct = r.total_games > 0 ? (r.win_rate * 100).toFixed(1) + "%" : "\u2014";
       var trClass = colorIdentityRowClass(r.color);
       html +=
         '<tr class="' +
         trClass +
         '"><td>' +
-        r.color +
+        escapeHtml(String(r.color)) +
         "</td><td>" +
         r.wins +
         "</td><td>" +
@@ -879,6 +938,22 @@
     }
     html += "</tbody></table>";
     $("detailed-data").innerHTML = html;
+  }
+
+  function displayColorAnalysis(identityRows) {
+    colorIdentitySnapshot =
+      identityRows && identityRows.length
+        ? identityRows.map(function (r) {
+            return {
+              color: r.color,
+              wins: r.wins,
+              total_games: r.total_games,
+              win_rate: r.win_rate,
+            };
+          })
+        : [];
+    colorIdentitySort = { key: null, asc: true };
+    renderColorIdentityTable();
   }
 
   function displayData(data) {
