@@ -12,6 +12,26 @@
     <link rel="stylesheet" href="/card-tooltip.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
+        .table-sort-btn {
+            font: inherit;
+            font-weight: 600;
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            color: inherit;
+            text-align: left;
+            width: 100%;
+        }
+        .table-sort-btn:hover {
+            color: #667eea;
+        }
+        .table-sort-btn:focus-visible {
+            outline: 2px solid #667eea;
+            outline-offset: 2px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -397,7 +417,203 @@
     <script>
         var currentCubeId = '';
         var currentCubeData = null;
-        
+        var dashSynergySnapshot = [];
+        var dashSynergySort = { key: 'together_count', asc: false };
+        var trophySnapshot = [];
+        var trophySort = { key: 'created', asc: false };
+
+        function dashSynergyPairKey(s) {
+            return String(s.card1) + '\0' + String(s.card2);
+        }
+
+        function compareDashSynergyRows(a, b, key, asc) {
+            if (key === 'card1') {
+                var c1 = String(a.card1).localeCompare(String(b.card1), undefined, { sensitivity: 'base' });
+                if (c1 !== 0) return asc ? c1 : -c1;
+                var c2 = String(a.card2).localeCompare(String(b.card2), undefined, { sensitivity: 'base' });
+                return asc ? c2 : -c2;
+            }
+            if (key === 'card2') {
+                var c2b = String(a.card2).localeCompare(String(b.card2), undefined, { sensitivity: 'base' });
+                if (c2b !== 0) return asc ? c2b : -c2b;
+                var c1b = String(a.card1).localeCompare(String(b.card1), undefined, { sensitivity: 'base' });
+                return asc ? c1b : -c1b;
+            }
+            var va = Number(a[key]);
+            var vb = Number(b[key]);
+            if (!isFinite(va)) va = 0;
+            if (!isFinite(vb)) vb = 0;
+            if (va !== vb) return asc ? va - vb : vb - va;
+            return dashSynergyPairKey(a).localeCompare(dashSynergyPairKey(b));
+        }
+
+        function renderDashboardSynergyTable() {
+            var el = document.getElementById('synergies');
+            if (!el) return;
+            if (!dashSynergySnapshot.length) {
+                el.innerHTML = '<p>Not enough data to list common card pairs yet.</p>';
+                return;
+            }
+            var sorted = dashSynergySnapshot.slice().sort(function (a, b) {
+                var c = compareDashSynergyRows(a, b, dashSynergySort.key, dashSynergySort.asc);
+                return c !== 0 ? c : dashSynergyPairKey(a).localeCompare(dashSynergyPairKey(b));
+            });
+            var sk = dashSynergySort.key;
+            var asc = dashSynergySort.asc;
+            var colDefs = [
+                { key: 'card1', label: 'Card 1' },
+                { key: 'card2', label: 'Card 2' },
+                { key: 'together_count', label: 'Decks' },
+                { key: 'together_win_rate', label: 'Win %' },
+            ];
+            var synHtml = '<div class="table-scroll"><table class="table" id="dashboard-synergy-table"><thead><tr>';
+            for (var ci = 0; ci < colDefs.length; ci++) {
+                var col = colDefs[ci];
+                var active = sk === col.key;
+                var arrow = active ? (asc ? ' \u25b2' : ' \u25bc') : '';
+                synHtml += '<th scope="col"><button type="button" class="table-sort-btn" data-dash-table="synergy" data-sort-key="' +
+                    col.key + '">' + col.label + arrow + '</button></th>';
+            }
+            synHtml += '</tr></thead><tbody>';
+            for (var si = 0; si < sorted.length; si++) {
+                var s = sorted[si];
+                var decksTogether = s.together_count != null ? s.together_count : '\u2014';
+                synHtml += '<tr><td>' + CW.cardNameHtml(s.card1, s.card1_image_url) + '</td><td>' +
+                    CW.cardNameHtml(s.card2, s.card2_image_url) + '</td>' +
+                    '<td class="trophy-mono">' + decksTogether + '</td>' +
+                    '<td class="trophy-mono">' + (s.together_win_rate * 100).toFixed(1) + '%</td></tr>';
+            }
+            synHtml += '</tbody></table></div>';
+            el.innerHTML = synHtml;
+        }
+
+        function trophyPhotoSortValue(d) {
+            return (d.deck_thumb_url || d.deck_photo_url) ? 1 : 0;
+        }
+
+        function trophyRowTieBreak(a, b) {
+            return String(a.deck_id).localeCompare(String(b.deck_id));
+        }
+
+        function compareTrophyRows(a, b, key, asc) {
+            if (key === 'photo') {
+                var pa = trophyPhotoSortValue(a);
+                var pb = trophyPhotoSortValue(b);
+                if (pa !== pb) return asc ? pa - pb : pb - pa;
+                return trophyRowTieBreak(a, b);
+            }
+            if (key === 'pilot_name') {
+                var cmp = String(a.pilot_name || '').localeCompare(String(b.pilot_name || ''), undefined, {
+                    sensitivity: 'base',
+                });
+                if (cmp !== 0) return asc ? cmp : -cmp;
+                return trophyRowTieBreak(a, b);
+            }
+            if (key === 'created') {
+                var ta = new Date(a.created).getTime();
+                var tb = new Date(b.created).getTime();
+                ta = isFinite(ta) ? ta : 0;
+                tb = isFinite(tb) ? tb : 0;
+                if (ta !== tb) return asc ? ta - tb : tb - ta;
+                return trophyRowTieBreak(a, b);
+            }
+            var va = Number(a[key]);
+            var vb = Number(b[key]);
+            if (key === 'win_rate') {
+                if (!isFinite(va)) va = -1;
+                if (!isFinite(vb)) vb = -1;
+            } else {
+                if (!isFinite(va)) va = 0;
+                if (!isFinite(vb)) vb = 0;
+            }
+            if (va !== vb) return asc ? va - vb : vb - va;
+            return trophyRowTieBreak(a, b);
+        }
+
+        function renderTrophyTable() {
+            var el = document.getElementById('trophy-case');
+            if (!el) return;
+            if (!trophySnapshot.length) {
+                el.innerHTML = '<p style="color:#666;font-size:0.875rem;">No undefeated decks yet for this cube.</p>';
+                return;
+            }
+            var sorted = trophySnapshot.slice().sort(function (a, b) {
+                return compareTrophyRows(a, b, trophySort.key, trophySort.asc);
+            });
+            var sk = trophySort.key;
+            var asc = trophySort.asc;
+            var colDefs = [
+                { key: 'photo', label: 'Photo' },
+                { key: 'pilot_name', label: 'Pilot' },
+                { key: 'match_wins', label: 'W', cls: 'trophy-mono' },
+                { key: 'match_losses', label: 'L', cls: 'trophy-mono' },
+                { key: 'match_draws', label: 'D', cls: 'trophy-mono' },
+                { key: 'win_rate', label: 'Win%', cls: 'trophy-mono' },
+                { key: 'total_cards', label: 'Cards', cls: 'trophy-mono' },
+                { key: 'created', label: 'Uploaded' },
+            ];
+            var html = '<table class="table" id="dashboard-trophy-table"><thead><tr>';
+            for (var hi = 0; hi < colDefs.length; hi++) {
+                var col = colDefs[hi];
+                var active = sk === col.key;
+                var arrow = active ? (asc ? ' \u25b2' : ' \u25bc') : '';
+                var thCls = col.cls ? ' class="' + col.cls + '"' : '';
+                html += '<th scope="col"' + thCls + '><button type="button" class="table-sort-btn" data-dash-table="trophy" data-sort-key="' +
+                    col.key + '">' + col.label + arrow + '</button></th>';
+            }
+            html += '</tr></thead><tbody>';
+            for (var i = 0; i < sorted.length; i++) {
+                var d = sorted[i];
+                var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
+                var thumbSrc = d.deck_thumb_url || d.deck_photo_url;
+                var photoTd = thumbSrc
+                    ? '<td style="width:56px;"><img src="' + String(thumbSrc).replace(/"/g, '&quot;') + '" alt="" loading="lazy" decoding="async" style="width:48px;height:48px;object-fit:cover;border-radius:6px;background:#eee;" /></td>'
+                    : '<td style="width:56px;">\u2014</td>';
+                html += '<tr>' + photoTd + '<td>' + (d.pilot_name || '') + '</td>' +
+                    '<td class="trophy-mono">' + (d.match_wins != null ? d.match_wins : '') + '</td>' +
+                    '<td class="trophy-mono">' + (d.match_losses != null ? d.match_losses : '') + '</td>' +
+                    '<td class="trophy-mono">' + (d.match_draws != null ? d.match_draws : 0) + '</td>' +
+                    '<td class="trophy-mono">' + winPct + '</td>' +
+                    '<td class="trophy-mono">' + (d.total_cards != null ? d.total_cards : '') + '</td>' +
+                    '<td>' + fmtUploaded(d.created) + '</td></tr>';
+            }
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }
+
+        function ensureDashboardTableSortDelegation() {
+            if (window._cwDashTableSortBound) return;
+            window._cwDashTableSortBound = true;
+            var host = document.getElementById('dashboard-content');
+            if (!host) return;
+            host.addEventListener('click', function (ev) {
+                var btn = ev.target.closest('button[data-sort-key]');
+                if (!btn || !host.contains(btn)) return;
+                var kind = btn.getAttribute('data-dash-table');
+                var key = btn.getAttribute('data-sort-key');
+                if (!key || !kind) return;
+                if (kind === 'synergy') {
+                    if (!dashSynergySnapshot.length) return;
+                    if (dashSynergySort.key === key) {
+                        dashSynergySort.asc = !dashSynergySort.asc;
+                    } else {
+                        dashSynergySort.key = key;
+                        dashSynergySort.asc = key === 'card1' || key === 'card2';
+                    }
+                    renderDashboardSynergyTable();
+                } else if (kind === 'trophy') {
+                    if (!trophySnapshot.length) return;
+                    if (trophySort.key === key) {
+                        trophySort.asc = !trophySort.asc;
+                    } else {
+                        trophySort.key = key;
+                        trophySort.asc = key === 'pilot_name';
+                    }
+                    renderTrophyTable();
+                }
+            });
+        }
+
         function bindCubeSelectChangeOnce() {
             var select = document.getElementById('cube-select');
             if (!select || select.dataset.cwCubeChangeBound) return;
@@ -532,20 +748,9 @@
             var syns = (data.synergies_most_played && data.synergies_most_played.length)
                 ? data.synergies_most_played
                 : (data.synergies || []).slice(0, 8);
-            if (syns.length > 0) {
-                var synHtml = '<div class="table-scroll"><table class="table"><thead><tr><th>Card 1</th><th>Card 2</th><th>Decks</th><th>Win %</th></tr></thead><tbody>';
-                for (var si = 0; si < syns.length; si++) {
-                    var s = syns[si];
-                    var decksTogether = s.together_count != null ? s.together_count : '—';
-                    synHtml += '<tr><td>' + CW.cardNameHtml(s.card1, s.card1_image_url) + '</td><td>' + CW.cardNameHtml(s.card2, s.card2_image_url) + '</td>' +
-                        '<td class="trophy-mono">' + decksTogether + '</td>' +
-                        '<td class="trophy-mono">' + (s.together_win_rate * 100).toFixed(1) + '%</td></tr>';
-                }
-                synHtml += '</tbody></table></div>';
-                document.getElementById('synergies').innerHTML = synHtml;
-            } else {
-                document.getElementById('synergies').innerHTML = '<p>Not enough data to list common card pairs yet.</p>';
-            }
+            dashSynergySnapshot = syns.slice();
+            dashSynergySort = { key: 'together_count', asc: false };
+            renderDashboardSynergyTable();
             
             document.getElementById('dashboard-content').style.display = 'block';
             var hintEl = document.getElementById('empty-dashboard-hint');
@@ -567,30 +772,9 @@
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     var decks = data.decks || [];
-                    if (decks.length === 0) {
-                        el.innerHTML = '<p style="color:#666;font-size:0.875rem;">No undefeated decks yet for this cube.</p>';
-                        return;
-                    }
-                    var html = '<table class="table"><thead><tr>' +
-                        '<th>Photo</th><th>Pilot</th><th class="trophy-mono">W</th><th class="trophy-mono">L</th><th class="trophy-mono">D</th>' +
-                        '<th class="trophy-mono">Win%</th><th class="trophy-mono">Cards</th><th>Uploaded</th></tr></thead><tbody>';
-                    for (var i = 0; i < decks.length; i++) {
-                        var d = decks[i];
-                        var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
-                        var thumbSrc = d.deck_thumb_url || d.deck_photo_url;
-                        var photoTd = thumbSrc
-                            ? '<td style="width:56px;"><img src="' + String(thumbSrc).replace(/"/g, '&quot;') + '" alt="" loading="lazy" decoding="async" style="width:48px;height:48px;object-fit:cover;border-radius:6px;background:#eee;" /></td>'
-                            : '<td style="width:56px;">—</td>';
-                        html += '<tr>' + photoTd + '<td>' + (d.pilot_name || '') + '</td>' +
-                            '<td class="trophy-mono">' + (d.match_wins != null ? d.match_wins : '') + '</td>' +
-                            '<td class="trophy-mono">' + (d.match_losses != null ? d.match_losses : '') + '</td>' +
-                            '<td class="trophy-mono">' + (d.match_draws != null ? d.match_draws : 0) + '</td>' +
-                            '<td class="trophy-mono">' + winPct + '</td>' +
-                            '<td class="trophy-mono">' + (d.total_cards != null ? d.total_cards : '') + '</td>' +
-                            '<td>' + fmtUploaded(d.created) + '</td></tr>';
-                    }
-                    html += '</tbody></table>';
-                    el.innerHTML = html;
+                    trophySnapshot = decks.slice();
+                    trophySort = { key: 'created', asc: false };
+                    renderTrophyTable();
                 })
                 .catch(function() {
                     el.innerHTML = '<p style="color:#dc3545;font-size:0.875rem;">Could not load trophy case.</p>';
@@ -654,6 +838,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
+            ensureDashboardTableSortDelegation();
             bindCubeSelectChangeOnce();
             loadCubeList();
             updateCubeDependentLinks();
@@ -691,7 +876,6 @@
             });
         });
     </script>
-    <!-- Buy me a coffee widget, removed until everything is set up/there are real costs -->
-    <!-- <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="5erpent" data-description="Support me on Buy me a coffee!" data-color="#667eea" data-position="Right" data-x_margin="18" data-y_margin="18"></script> -->
+    <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="5erpent" data-description="Support me on Buy me a coffee!" data-color="#667eea" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
 </body>
 </html>

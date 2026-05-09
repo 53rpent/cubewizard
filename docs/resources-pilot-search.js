@@ -89,11 +89,128 @@
     return "/" + encodeURIComponent(cubeId) + "/decks?deck=" + encodeURIComponent(deckId);
   }
 
-  function renderRows(decks) {
+  var pilotListSnapshot = [];
+  var pilotListSort = { key: "created", asc: false };
+
+  function pilotPhotoSortValue(d) {
+    return d.deck_thumb_url || d.deck_photo_url ? 1 : 0;
+  }
+
+  function pilotRowTieBreak(a, b) {
+    var ca = String(a.cube_id || "");
+    var cb = String(b.cube_id || "");
+    var c = ca.localeCompare(cb);
+    if (c !== 0) return c;
+    return String(a.deck_id).localeCompare(String(b.deck_id));
+  }
+
+  function comparePilotSnapshotRows(a, b, key, asc) {
+    if (key === "photo") {
+      var pa = pilotPhotoSortValue(a);
+      var pb = pilotPhotoSortValue(b);
+      if (pa !== pb) return asc ? pa - pb : pb - pa;
+      return pilotRowTieBreak(a, b);
+    }
+    if (key === "cube_id" || key === "pilot_name") {
+      var cmp = String(a[key] || "").localeCompare(String(b[key] || ""), undefined, {
+        sensitivity: "base",
+      });
+      if (cmp !== 0) return asc ? cmp : -cmp;
+      return pilotRowTieBreak(a, b);
+    }
+    if (key === "created") {
+      var ta = new Date(a.created).getTime();
+      var tb = new Date(b.created).getTime();
+      ta = isFinite(ta) ? ta : 0;
+      tb = isFinite(tb) ? tb : 0;
+      if (ta !== tb) return asc ? ta - tb : tb - ta;
+      return pilotRowTieBreak(a, b);
+    }
+    var va = Number(a[key]);
+    var vb = Number(b[key]);
+    if (key === "win_rate") {
+      if (!isFinite(va)) va = -1;
+      if (!isFinite(vb)) vb = -1;
+    } else {
+      if (!isFinite(va)) va = 0;
+      if (!isFinite(vb)) vb = 0;
+    }
+    if (va !== vb) return asc ? va - vb : vb - va;
+    return pilotRowTieBreak(a, b);
+  }
+
+  function buildSortedPilotRows(snapshot, sortKey, asc) {
+    var rows = snapshot.slice();
+    rows.sort(function (a, b) {
+      return comparePilotSnapshotRows(a, b, sortKey, asc);
+    });
+    return rows;
+  }
+
+  function ensurePilotTableSortDelegation() {
+    if (window._cwPilotTableSortBound) return;
+    window._cwPilotTableSortBound = true;
+    var wrap = document.querySelector(".pilot-table-wrap");
+    if (!wrap) return;
+    wrap.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("button[data-sort-key]");
+      if (!btn || !wrap.contains(btn)) return;
+      var thead = $("pilot-thead");
+      if (!thead || !thead.contains(btn)) return;
+      ev.preventDefault();
+      var key = btn.getAttribute("data-sort-key");
+      if (!key || !pilotListSnapshot.length) return;
+      if (pilotListSort.key === key) {
+        pilotListSort.asc = !pilotListSort.asc;
+      } else {
+        pilotListSort.key = key;
+        pilotListSort.asc = key === "cube_id" || key === "pilot_name";
+      }
+      renderPilotTable();
+    });
+  }
+
+  function renderPilotTable() {
+    var thead = $("pilot-thead");
     var tbody = $("pilot-tbody");
+    if (!thead || !tbody) return;
+
+    var colDefs = [
+      { key: "photo", label: "Photo" },
+      { key: "cube_id", label: "Cube" },
+      { key: "pilot_name", label: "Pilot" },
+      { key: "match_wins", label: "W", cls: "mono" },
+      { key: "match_losses", label: "L", cls: "mono" },
+      { key: "match_draws", label: "D", cls: "mono" },
+      { key: "win_rate", label: "Win%", cls: "mono" },
+      { key: "total_cards", label: "Cards", cls: "mono" },
+      { key: "created", label: "Uploaded" },
+    ];
+    var sk = pilotListSort.key;
+    var asc = pilotListSort.asc;
+    var hr = "<tr>";
+    for (var ci = 0; ci < colDefs.length; ci++) {
+      var col = colDefs[ci];
+      var active = sk === col.key;
+      var arrow = active ? (asc ? " \u25b2" : " \u25bc") : "";
+      var thCls = col.cls ? ' class="' + col.cls + '"' : "";
+      hr +=
+        "<th scope=\"col\"" +
+        thCls +
+        '><button type="button" class="table-sort-btn" data-sort-key="' +
+        col.key +
+        '">' +
+        col.label +
+        arrow +
+        "</button></th>";
+    }
+    hr += "</tr>";
+    thead.innerHTML = hr;
+
+    var sorted = buildSortedPilotRows(pilotListSnapshot, sk, asc);
     tbody.innerHTML = "";
-    for (var i = 0; i < decks.length; i++) {
-      var d = decks[i];
+    for (var i = 0; i < sorted.length; i++) {
+      var d = sorted[i];
       var tr = document.createElement("tr");
       tr.dataset.deckId = d.deck_id;
       tr.dataset.cubeId = d.cube_id || "";
@@ -190,7 +307,9 @@
           "\u201d.";
         hint.hidden = false;
         renderSummary(decks);
-        renderRows(decks);
+        pilotListSnapshot = decks.slice();
+        pilotListSort = { key: "created", asc: false };
+        renderPilotTable();
         $("pilot-results").style.display = "block";
       })
       .catch(function (err) {
@@ -201,6 +320,7 @@
   }
 
   function init() {
+    ensurePilotTableSortDelegation();
     var form = $("pilot-search-form");
     if (!form) return;
     form.addEventListener("submit", function (e) {

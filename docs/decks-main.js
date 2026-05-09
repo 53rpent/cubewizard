@@ -19,6 +19,78 @@
   var processingFetchInFlight = false;
   var hedronSyncInFlight = false;
   var activeProcessingJobCount = 0;
+  var deckListSnapshot = [];
+  var deckListSort = { key: "created", asc: false };
+
+  function deckPhotoSortValue(d) {
+    return d.deck_thumb_url || d.deck_photo_url ? 1 : 0;
+  }
+
+  function compareDeckSnapshotRows(a, b, key, asc) {
+    if (key === "photo") {
+      var pa = deckPhotoSortValue(a);
+      var pb = deckPhotoSortValue(b);
+      if (pa !== pb) return asc ? pa - pb : pb - pa;
+      return String(a.deck_id).localeCompare(String(b.deck_id));
+    }
+    if (key === "pilot_name") {
+      var cmp = String(a.pilot_name || "").localeCompare(String(b.pilot_name || ""), undefined, {
+        sensitivity: "base",
+      });
+      if (cmp !== 0) return asc ? cmp : -cmp;
+      return String(a.deck_id).localeCompare(String(b.deck_id));
+    }
+    if (key === "created") {
+      var ta = new Date(a.created).getTime();
+      var tb = new Date(b.created).getTime();
+      ta = isFinite(ta) ? ta : 0;
+      tb = isFinite(tb) ? tb : 0;
+      if (ta !== tb) return asc ? ta - tb : tb - ta;
+      return String(a.deck_id).localeCompare(String(b.deck_id));
+    }
+    var va = Number(a[key]);
+    var vb = Number(b[key]);
+    if (key === "win_rate") {
+      if (!isFinite(va)) va = -1;
+      if (!isFinite(vb)) vb = -1;
+    } else {
+      if (!isFinite(va)) va = 0;
+      if (!isFinite(vb)) vb = 0;
+    }
+    if (va !== vb) return asc ? va - vb : vb - va;
+    return String(a.deck_id).localeCompare(String(b.deck_id));
+  }
+
+  function buildSortedDecks(snapshot, sortKey, asc) {
+    var rows = snapshot.slice();
+    rows.sort(function (a, b) {
+      return compareDeckSnapshotRows(a, b, sortKey, asc);
+    });
+    return rows;
+  }
+
+  function ensureDeckTableSortDelegation() {
+    if (window._cwDecksTableSortBound) return;
+    window._cwDecksTableSortBound = true;
+    var wrap = $("table-section");
+    if (!wrap) return;
+    wrap.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("button[data-sort-key]");
+      if (!btn || !wrap.contains(btn)) return;
+      var thead = $("decks-thead");
+      if (!thead || !thead.contains(btn)) return;
+      ev.preventDefault();
+      var key = btn.getAttribute("data-sort-key");
+      if (!key || !deckListSnapshot.length) return;
+      if (deckListSort.key === key) {
+        deckListSort.asc = !deckListSort.asc;
+      } else {
+        deckListSort.key = key;
+        deckListSort.asc = key === "pilot_name";
+      }
+      renderDeckTable();
+    });
+  }
 
   function setHedronSyncUiState() {
     var btn = $("hedron-sync-btn");
@@ -280,11 +352,46 @@
     }
   }
 
-  function renderDeckRows(decks) {
+  function renderDeckTable() {
+    var thead = $("decks-thead");
     var tbody = $("decks-tbody");
+    if (!thead || !tbody) return;
+
+    var colDefs = [
+      { key: "photo", label: "Photo" },
+      { key: "pilot_name", label: "Pilot" },
+      { key: "match_wins", label: "W", cls: "mono" },
+      { key: "match_losses", label: "L", cls: "mono" },
+      { key: "match_draws", label: "D", cls: "mono" },
+      { key: "win_rate", label: "Win%", cls: "mono" },
+      { key: "total_cards", label: "Cards", cls: "mono" },
+      { key: "created", label: "Uploaded" },
+    ];
+    var sk = deckListSort.key;
+    var asc = deckListSort.asc;
+    var hr = "<tr>";
+    for (var ci = 0; ci < colDefs.length; ci++) {
+      var col = colDefs[ci];
+      var active = sk === col.key;
+      var arrow = active ? (asc ? " \u25b2" : " \u25bc") : "";
+      var thCls = col.cls ? ' class="' + col.cls + '"' : "";
+      hr +=
+        "<th scope=\"col\"" +
+        thCls +
+        '><button type="button" class="table-sort-btn" data-sort-key="' +
+        col.key +
+        '">' +
+        col.label +
+        arrow +
+        "</button></th>";
+    }
+    hr += "</tr>";
+    thead.innerHTML = hr;
+
+    var sorted = buildSortedDecks(deckListSnapshot, sk, asc);
     tbody.innerHTML = "";
-    for (var i = 0; i < decks.length; i++) {
-      var d = decks[i];
+    for (var i = 0; i < sorted.length; i++) {
+      var d = sorted[i];
       var tr = document.createElement("tr");
       tr.dataset.deckId = d.deck_id;
 
@@ -360,7 +467,9 @@
           setDecksMainVisible(false);
           return;
         }
-        renderDeckRows(decks);
+        deckListSnapshot = decks.slice();
+        deckListSort = { key: "created", asc: false };
+        renderDeckTable();
         setDecksMainVisible(true);
         maybeOpenDeckFromQuery();
       })
@@ -805,6 +914,7 @@
 
   function init() {
     bindModalUi();
+    ensureDeckTableSortDelegation();
     try {
       var btn = $("hedron-sync-btn");
       if (btn) btn.addEventListener("click", triggerHedronSync);

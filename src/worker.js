@@ -1365,14 +1365,15 @@ async function handleGetDashboard(cubeId, env) {
     " WHERE d.cube_id = ?"
   ).bind(cubeId).all();
 
+  var analyticsCardRows = filterDeckCardRowsForAnalytics(allCards);
   var cardsByDeck = {};
-  for (var ci = 0; ci < allCards.length; ci++) {
-    var card = allCards[ci];
+  for (var ci = 0; ci < analyticsCardRows.length; ci++) {
+    var card = analyticsCardRows[ci];
     if (!cardsByDeck[card.deck_id]) cardsByDeck[card.deck_id] = [];
     cardsByDeck[card.deck_id].push(card);
   }
 
-  var imageMap = buildCardImageMapFromRows(allCards);
+  var imageMap = buildCardImageMapFromRows(analyticsCardRows);
 
   var cardPerformances = computeCardPerformance(decks, cardsByDeck);
   attachPerformanceImages(cardPerformances, imageMap);
@@ -1434,9 +1435,10 @@ async function handleGetChart(cubeId, chartType, env) {
     " WHERE d.cube_id = ?"
   ).bind(cubeId).all();
 
+  var analyticsCardRows = filterDeckCardRowsForAnalytics(allCards);
   var cardsByDeck = {};
-  for (var ci = 0; ci < allCards.length; ci++) {
-    var card = allCards[ci];
+  for (var ci = 0; ci < analyticsCardRows.length; ci++) {
+    var card = analyticsCardRows[ci];
     if (!cardsByDeck[card.deck_id]) cardsByDeck[card.deck_id] = [];
     cardsByDeck[card.deck_id].push(card);
   }
@@ -2112,6 +2114,32 @@ async function handlePutDeckCards(deckIdStr, request, env) {
 // ============================================================
 //  Analytics computation - mirrors dashboard.py exactly
 // ============================================================
+
+/** Oracle names omitted from charts and cube-wide analytics (deck modal still lists full deck). */
+var ANALYTICS_EXCLUDED_CARD_NAMES = new Set([
+  "Island",
+  "Plains",
+  "Mountain",
+  "Swamp",
+  "Forest",
+  "Snow-Covered Island",
+  "Snow-Covered Plains",
+  "Snow-Covered Mountain",
+  "Snow-Covered Swamp",
+  "Snow-Covered Forest",
+]);
+
+function isExcludedFromAnalyticsCardName(name) {
+  return ANALYTICS_EXCLUDED_CARD_NAMES.has(String(name || "").trim());
+}
+
+function filterDeckCardRowsForAnalytics(rows) {
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (!isExcludedFromAnalyticsCardName(rows[i].name)) out.push(rows[i]);
+  }
+  return out;
+}
 
 function computeCardPerformance(decks, cardsByDeck) {
   var allDeckWinRates = [];
