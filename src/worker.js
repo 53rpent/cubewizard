@@ -517,7 +517,8 @@ var HEDRON_SYNC_CURSOR_UPSERT_EVERY = 5;
 var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
 /** Nested waitUntil continuations when WORKER_PUBLIC_URL is unset (same isolate; limited to avoid spinning). */
 var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
-var HEDRON_CONTINUE_HEADER = "X-CubeWizard-Continue";
+/** JSON field for public HTTP Hedron continuations (not sent as a header — avoids secrets in default CF request logs). */
+var HEDRON_CONTINUE_TOKEN_JSON_FIELD = "continuation_token";
 /** Synthetic FQDN for WORKER_SELF.fetch only (.invalid is reserved in RFC 2606). Service bindings ignore the host, but the URL must be fully qualified — a host without a dot caused 500s for some runtimes. */
 var HEDRON_SERVICE_SYNC_HOST = "cubewizard-hedron.invalid";
 
@@ -529,7 +530,7 @@ function isHedronServiceBindingContinuation(request) {
   }
 }
 
-/** Secret for public HTTP Hedron continuations only (optional env HEDRON_SYNC_CONTINUE_SECRET). If unset, falls back to ENQUEUE_SHARED_SECRET (will appear in CF request logs — prefer WORKER_SELF or set a separate continue secret). */
+/** Secret for public HTTP Hedron continuations only (optional env HEDRON_SYNC_CONTINUE_SECRET). If unset, falls back to ENQUEUE_SHARED_SECRET (sent in JSON body, not headers, to reduce log exposure). */
 function hedronContinuationSharedSecret(env) {
   var c = String(env.HEDRON_SYNC_CONTINUE_SECRET || "").trim();
   if (c) return c;
@@ -658,7 +659,7 @@ async function hedronSyncShouldContinue(env, cubeId) {
  *
  * Priority:
  * 1) env.WORKER_SELF (service binding) — no public DNS; no auth header (avoids enqueue secret in CF logs).
- * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — uses HEDRON_SYNC_CONTINUE_SECRET or ENQUEUE_SHARED_SECRET (header may appear in logs).
+ * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — POST JSON { continuation_token } (not headers).
  * 3) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
  *
  * We await the continuation dispatch from inside syncHedronCube (not nested ctx.waitUntil(fetch))
@@ -691,11 +692,12 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     var base = continueBase || publicBase;
     if (!base) return null;
     if (!httpSecret) return null;
-    var h2 = new Headers();
-    h2.set(HEDRON_CONTINUE_HEADER, httpSecret);
+    var payload = {};
+    payload[HEDRON_CONTINUE_TOKEN_JSON_FIELD] = httpSecret;
     return fetch(base + path, {
       method: "POST",
-      headers: h2,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
   }
 
@@ -1571,12 +1573,27 @@ async function handleTriggerHedronSync(cubeId, env, ctx, request) {
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
 
     if (!isHedronServiceBindingContinuation(request)) {
-      var hdrs = request && request.headers;
-      var continueHdr =
-        hdrs && typeof hdrs.get === "function" ? hdrs.get(HEDRON_CONTINUE_HEADER) : null;
-      if (continueHdr != null && String(continueHdr).length > 0) {
-        var contSecret = hedronContinuationSharedSecret(env);
-        if (!contSecret || continueHdr !== contSecret) {
+      var contSecret = hedronContinuationSharedSecret(env);
+      var ct =
+        request && request.headers && typeof request.headers.get === "function"
+          ? request.headers.get("Content-Type") || ""
+          : "";
+      var token = null;
+      if (request && request.body && ct.indexOf("application/json") >= 0) {
+        try {
+          var raw = await request.text();
+          if (raw && raw.length > 0 && raw.length < 20000) {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed[HEDRON_CONTINUE_TOKEN_JSON_FIELD] === "string") {
+              token = parsed[HEDRON_CONTINUE_TOKEN_JSON_FIELD];
+            }
+          }
+        } catch (parseErr) {
+          token = null;
+        }
+      }
+      if (token != null && String(token).length > 0) {
+        if (!contSecret || String(token) !== contSecret) {
           return jsonResponse({ error: "unauthorized" }, 401);
         }
       }
@@ -1585,7 +1602,12 @@ async function handleTriggerHedronSync(cubeId, env, ctx, request) {
     var job = syncHedronCube(env, id, ctx).catch(function (e) {
       console.error("hedron manual sync", id, e);
     });
-    if (ctx && typeof ctx.waitUntil === "function") {
+    // Service-binding continuations: await here so the response is not sent until this chunk
+    // finishes. Otherwise the caller's fetch() resolves immediately, the binding may close, and
+    // Cloudflare can cancel ctx.waitUntil tail work — logs show outcome "canceled" and sync can stop early.
+    if (isHedronServiceBindingContinuation(request)) {
+      await job;
+    } else if (ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(job);
     } else {
       await job;

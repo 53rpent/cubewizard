@@ -60,7 +60,7 @@
 				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
 				"FIRESTORE_COLLECTION": "jobs",
 				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app",
-				// Optional: secret for Hedron HTTP continuations only (X-CubeWizard-Continue). If unset, ENQUEUE_SHARED_SECRET is used and may appear in Workers request logs.
+				// Optional: secret for Hedron HTTP continuations (JSON body continuation_token). If unset, ENQUEUE_SHARED_SECRET is used for that token only.
 				"HEDRON_SYNC_CONTINUE_SECRET": ""
 			},
 			"r2_buckets": [
@@ -107,6 +107,7 @@
 				"FIRESTORE_DATABASE_ID": "cw-upload-status",
 				"FIRESTORE_COLLECTION": "jobs",
 				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app",
+				// Optional: see stg HEDRON_SYNC_CONTINUE_SECRET (JSON body, not headers).
 				"HEDRON_SYNC_CONTINUE_SECRET": ""
 			},
 			"r2_buckets": [
