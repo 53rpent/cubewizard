@@ -775,8 +775,9 @@ async function hedronSyncShouldContinue(env, cubeId) {
  * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — POST JSON { continuation_token } (not headers).
  * 3) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
  *
- * We await the continuation dispatch from inside syncHedronCube (not nested ctx.waitUntil(fetch))
- * so it reliably runs after the client response is sent.
+ * Callers must use {@link dispatchHedronSyncContinuation}, not await this function from syncHedronCube:
+ * awaiting service-binding or HTTP continuation fetch chains parent → child handlers recursively, so the
+ * browser request does not get a response until every chunk finishes (proxy timeouts despite successful work).
  */
 async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   var id = String(cubeId || "").trim();
@@ -849,6 +850,22 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
       "hedron sync: continuation depth exceeded; add WORKER_SELF service binding or WORKER_CONTINUE_URL + ENQUEUE_SHARED_SECRET",
       id
     );
+  }
+}
+
+/**
+ * Schedule a Hedron sync continuation without blocking the current invocation (see scheduleHedronSyncContinuation).
+ * @param {any} ctx
+ * @param {number} [depth]
+ */
+function dispatchHedronSyncContinuation(env, ctx, cubeId, depth) {
+  var id = String(cubeId || "").trim();
+  if (!id) return;
+  var p = scheduleHedronSyncContinuation(env, ctx, id, depth).catch(function (e) {
+    console.error("hedron sync continuation dispatch failed", id, e);
+  });
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(p);
   }
 }
 
@@ -1023,7 +1040,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         elapsed_ms: Date.now() - syncStartedAt,
       });
       if (ctx && (await hedronSyncShouldContinue(env, id))) {
-        await scheduleHedronSyncContinuation(env, ctx, id, depth);
+        dispatchHedronSyncContinuation(env, ctx, id, depth);
         deckLimitContinuation = true;
       }
       return {
@@ -1070,7 +1087,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         imported_this_tick: imported,
         elapsed_ms: Date.now() - syncStartedAt,
       });
-      await scheduleHedronSyncContinuation(env, ctx, id, depth);
+      dispatchHedronSyncContinuation(env, ctx, id, depth);
       continuationScheduled = true;
     }
   }
@@ -1083,7 +1100,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         imported_this_tick: imported,
         elapsed_ms: Date.now() - syncStartedAt,
       });
-      await scheduleHedronSyncContinuation(env, ctx, id, depth);
+      dispatchHedronSyncContinuation(env, ctx, id, depth);
       continuationScheduled = true;
     }
   }
