@@ -251,6 +251,7 @@ npx wrangler d1 execute cubewizard-db --env prod --remote --json --command "SELE
 | `/api/deck/:deckId/photo` | GET | Full oriented image from blob bucket |
 | `/api/deck/:deckId/thumb` | GET | WebP thumbnail (~256px long edge) for list views |
 | `/api/deck/:deckId/cards` | PUT | Replace deck list: JSON `{ "names": ["Card A", "Card B", ...] }` (one name per card; duplicates allowed). Resolves names via Scryfall **POST /cards/collection** in batches of 75 (500ms between batches), then **GET /cards/named?fuzzy=** for misses, with **~12s timeout** per fuzzy call and parallel fuzzy waves so large decks stay within Worker limits. |
+| `/api/internal/release-hedron-sync-dedupe` | POST | Internal: JSON `{ "deck_image_uuid": "<id>" }`, header `X-Shared-Secret` (same as GCP enqueue). Deletes that row from D1 `hedron_synced_decks`. Called by **`cubewizard-enqueue`** `/cleanup/stale-hedron-jobs` after verifying the Cloud Task is gone; not for browsers. |
 
 Optional Worker var **`DECK_IMAGE_PUBLIC_BASE_URL`**: set to your public R2 custom domain (no trailing slash) so APIs return absolute image URLs instead of same-origin `/api/deck/.../photo` or `/thumb`.
 

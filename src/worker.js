@@ -85,6 +85,11 @@ export default {
       return handleAddCube(request, env, ctx);
     }
 
+    /** GCP enqueue cleanup: release Hedron D1 dedupe row (same secret as /enqueue). */
+    if (url.pathname === "/api/internal/release-hedron-sync-dedupe" && request.method === "POST") {
+      return handleReleaseHedronSyncDedupe(request, env);
+    }
+
     const legacyRedirect = legacyAnalysisToDataViewRedirect(url);
     if (legacyRedirect) {
       return legacyRedirect;
@@ -407,6 +412,45 @@ async function handleGetProcessingDecks(cubeId, env) {
   } catch (e) {
     console.error("processing-decks error:", e);
     return jsonResponse({ error: "Failed to load processing status" }, 500);
+  }
+}
+
+async function handleReleaseHedronSyncDedupe(request, env) {
+  var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
+  var hdr = String(request.headers.get("X-Shared-Secret") || "").trim();
+  if (!secret || hdr !== secret) {
+    return jsonResponse({ error: "unauthorized" }, 401);
+  }
+  var body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return jsonResponse({ error: "invalid json" }, 400);
+  }
+  var uuid =
+    body && body.deck_image_uuid != null ? String(body.deck_image_uuid).trim() : "";
+  if (!uuid || uuid.length > 200) {
+    return jsonResponse({ error: "invalid deck_image_uuid" }, 400);
+  }
+  try {
+    var stmt = env.cubewizard_db
+      .prepare("DELETE FROM hedron_synced_decks WHERE deck_image_uuid = ?")
+      .bind(uuid);
+    var result = await stmt.run();
+    var meta = result.meta || {};
+    var changes =
+      meta.changes != null
+        ? meta.changes
+        : meta.rows_written != null
+          ? meta.rows_written
+          : 0;
+    return jsonResponse(
+      { ok: true, deck_image_uuid: uuid, deleted_rows: changes },
+      200
+    );
+  } catch (e) {
+    console.error("release hedron dedupe", e);
+    return jsonResponse({ error: "d1 delete failed" }, 500);
   }
 }
 

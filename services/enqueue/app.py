@@ -3,18 +3,20 @@ from __future__ import annotations
 import base64
 import hmac
 import json
+import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+import requests
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
+from google.api_core.exceptions import NotFound
+from google.api_core import exceptions as gcp_exceptions
 from google.cloud import firestore
 from google.cloud import tasks_v2
-from google.api_core import exceptions as gcp_exceptions
-import logging
-
 
 app = FastAPI(title="cubewizard-enqueue")
 log = logging.getLogger("cubewizard.enqueue")
@@ -168,8 +170,10 @@ async def enqueue(
         }
     }
 
+    task_name_to_store: Optional[str] = None
     try:
         created = client.create_task(request={"parent": parent, "task": task})
+        task_name_to_store = created.name
     except gcp_exceptions.GoogleAPICallError as exc:
         msg = getattr(exc, "message", None) or str(exc)
         log.exception("Cloud Tasks create_task failed (GoogleAPICallError): %s", msg)
@@ -180,5 +184,175 @@ async def enqueue(
         log.exception("Cloud Tasks create_task failed (unknown exception): %s", msg)
         raise HTTPException(status_code=502, detail=f"cloudtasks create_task failed: {msg}") from exc
 
-    return {"enqueued": True, "task_name": created.name, "upload_id": req.upload_id}
+    if task_name_to_store:
+        try:
+            job_ref.set({"cloud_task_name": task_name_to_store}, merge=True)
+        except Exception as exc:
+            log.exception(
+                "Failed to persist cloud_task_name on job upload_id=%s: %s",
+                req.upload_id,
+                exc,
+            )
+
+    return {"enqueued": True, "task_name": task_name_to_store, "upload_id": req.upload_id}
+
+
+def _hedron_deck_image_uuid(upload_id: str) -> Optional[str]:
+    uid = (upload_id or "").strip()
+    if not uid.startswith("hedron:"):
+        return None
+    rest = uid[len("hedron:") :].strip()
+    return rest or None
+
+
+def _cleanup_verify_task_gone(client: tasks_v2.CloudTasksClient, task_name: Optional[str]) -> bool:
+    """
+    Returns True if no Cloud Task remains for this name (completed, exhausted, or deleted).
+    Returns False if the task still exists (delivery or retries in flight).
+    If task_name is missing (legacy jobs), returns True only when caller uses legacy mode.
+    """
+    if not task_name:
+        return False
+    try:
+        client.get_task(name=task_name)
+        return False
+    except NotFound:
+        return True
+    except Exception as exc:
+        log.warning("cleanup: get_task failed for %s: %s — skipping doc", task_name, exc)
+        return False
+
+
+def _release_hedron_dedupe_via_worker(deck_uuid: str) -> bool:
+    """
+    DELETE hedron_synced_decks row on Cloudflare D1 via Worker internal API.
+    """
+    base = (os.environ.get("CUBEWIZARD_WORKER_PUBLIC_URL") or "").strip().rstrip("/")
+    if not base:
+        log.error("cleanup: CUBEWIZARD_WORKER_PUBLIC_URL unset; cannot release D1 dedupe slot")
+        return False
+    secret = _required_env("ENQUEUE_SHARED_SECRET")
+    url = base + "/api/internal/release-hedron-sync-dedupe"
+    try:
+        r = requests.post(
+            url,
+            json={"deck_image_uuid": deck_uuid},
+            headers={"X-Shared-Secret": secret},
+            timeout=30,
+        )
+    except Exception as exc:
+        log.exception("cleanup: Worker D1 release request failed: %s", exc)
+        return False
+    if r.status_code != 200:
+        log.warning(
+            "cleanup: Worker returned HTTP %s for deck_uuid=%s: %s",
+            r.status_code,
+            deck_uuid,
+            (r.text or "")[:500],
+        )
+        return False
+    try:
+        data = r.json()
+    except Exception:
+        data = {}
+    if not data.get("ok"):
+        log.warning("cleanup: Worker JSON not ok for deck_uuid=%s: %s", deck_uuid, data)
+        return False
+    return True
+
+
+@app.post("/cleanup/stale-hedron-jobs")
+async def cleanup_stale_hedron_jobs(
+    x_shared_secret: Optional[str] = Header(default=None, alias="X-Shared-Secret"),
+) -> Dict[str, Any]:
+    """
+    For Hedron pipeline jobs stuck in Firestore as ``running`` with an expired lease:
+    if the Cloud Task is no longer in the queue, delete the Firestore job doc and
+    remove the deck from ``hedron_synced_decks`` (D1) so the next Hedron sync can retry.
+
+    Invoke periodically (e.g. Cloud Scheduler) with the same ``X-Shared-Secret`` as /enqueue.
+
+    Requires Firestore composite index: ``status`` (ASC) + ``lease_expires_at`` (ASC).
+
+    Env:
+      - CUBEWIZARD_WORKER_PUBLIC_URL — Worker origin (no trailing slash), e.g. https://your.site
+      - CLEANUP_MAX_JOBS_PER_RUN — default 50
+      - CLEANUP_LEGACY_WITHOUT_TASK_NAME — if ``1``/``true``, treat running+expired Hedron jobs
+        without ``cloud_task_name`` as orphans (risky if a task still exists; prefer index backfill).
+    """
+    _verify_shared_secret(x_shared_secret)
+
+    jobs_collection = os.environ.get("FIRESTORE_COLLECTION", "jobs")
+    max_jobs = int(os.environ.get("CLEANUP_MAX_JOBS_PER_RUN", "50"))
+    legacy_no_task = (os.environ.get("CLEANUP_LEGACY_WITHOUT_TASK_NAME") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+    now = datetime.now(timezone.utc)
+    fs = _firestore_client()
+    tasks_client = tasks_v2.CloudTasksClient()
+
+    coll = fs.collection(jobs_collection)
+    q = coll.where("status", "==", "running").where("lease_expires_at", "<", now)
+
+    released: list[str] = []
+    skipped_task_alive: list[str] = []
+    skipped_not_hedron: list[str] = []
+
+    for doc in q.stream():
+        if len(released) >= max_jobs:
+            break
+        d = doc.to_dict() or {}
+        upload_id = str(d.get("upload_id") or "")
+        deck_uuid = _hedron_deck_image_uuid(upload_id)
+        if not deck_uuid:
+            if len(skipped_not_hedron) < 50:
+                skipped_not_hedron.append(doc.id)
+            continue
+
+        task_name = d.get("cloud_task_name")
+        if isinstance(task_name, str):
+            task_name = task_name.strip() or None
+        else:
+            task_name = None
+
+        if task_name:
+            if not _cleanup_verify_task_gone(tasks_client, task_name):
+                skipped_task_alive.append(upload_id)
+                continue
+        elif not legacy_no_task:
+            log.info(
+                "cleanup: skip legacy job without cloud_task_name upload_id=%s (set CLEANUP_LEGACY_WITHOUT_TASK_NAME=1 to purge)",
+                upload_id,
+            )
+            continue
+
+        if not _release_hedron_dedupe_via_worker(deck_uuid):
+            log.warning("cleanup: D1 release failed for upload_id=%s; leaving Firestore doc", upload_id)
+            continue
+
+        try:
+            doc.reference.delete()
+            released.append(upload_id)
+            log.info(
+                "cleanup: removed stale hedron job upload_id=%s deck_uuid=%s",
+                upload_id,
+                deck_uuid,
+            )
+        except Exception as exc:
+            log.exception(
+                "cleanup: Firestore delete failed after D1 release upload_id=%s: %s",
+                upload_id,
+                exc,
+            )
+
+    return {
+        "ok": True,
+        "released_count": len(released),
+        "released_upload_ids": released,
+        "skipped_task_still_in_queue": skipped_task_alive,
+        "skipped_non_hedron_doc_ids": skipped_not_hedron[:20],
+    }
 

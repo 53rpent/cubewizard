@@ -192,8 +192,35 @@ Reference list:
 
 Runtime service account should have:
 - Cloud Tasks Enqueuer
+- **Cloud Tasks Viewer** (`roles/cloudtasks.viewer`) — required for `POST /cleanup/stale-hedron-jobs`, which calls `tasks.get` to confirm the eval task is gone before releasing a stuck Hedron job
 - Firestore write access
 - Secret Manager accessor on the enqueue shared secret resource (section 4)
+
+After each successful `create_task`, enqueue merges **`cloud_task_name`** onto the Firestore job document so cleanup can correlate with Cloud Tasks.
+
+Optional env on **`cubewizard-enqueue`**:
+
+| Variable | Purpose |
+|----------|---------|
+| `CUBEWIZARD_WORKER_PUBLIC_URL` | Cloudflare Worker origin (no trailing slash), e.g. `https://www.yoursite.com`. Required for **`POST /cleanup/stale-hedron-jobs`** to call **`/api/internal/release-hedron-sync-dedupe`** and delete the matching row in D1 `hedron_synced_decks`. |
+| `CLEANUP_MAX_JOBS_PER_RUN` | Max Hedron releases per invocation (default `50`). |
+| `CLEANUP_LEGACY_WITHOUT_TASK_NAME` | If `true`/`1`, purge expired-leasel Hedron jobs that lack `cloud_task_name` (legacy). Default skips them; enabling assumes no matching task still exists (use cautiously). |
+
+**Firestore composite index** (create in console if the first cleanup query errors):
+
+- Collection: `FIRESTORE_COLLECTION` (usually `jobs`)
+- Fields: `status` Ascending, `lease_expires_at` Ascending
+
+**Scheduled cleanup (recommended)** — Cloud Scheduler HTTP target:
+
+- URL: `https://<cubewizard-enqueue-host>/cleanup/stale-hedron-jobs`
+- Method: POST
+- Header: `X-Shared-Secret: <same as ENQUEUE_SHARED_SECRET>`
+- Cadence: e.g. every 15–30 minutes
+
+Behavior: loads Firestore jobs with `status == running` and `lease_expires_at < now`, keeps only `upload_id` values prefixed with `hedron:`, verifies **`cloud_task_name`** is **not** found in Cloud Tasks (`NotFound`), then deletes the D1 dedupe row and removes the Firestore document so the next Hedron sync can enqueue again.
+
+**Risk note:** If the eval worker returned HTTP 200 to Cloud Tasks (task deleted) but failed to write `status: done` to Firestore, cleanup could still remove the dedupe row and allow a duplicate Hedron enqueue. This is rare; most stuck jobs are failed deliveries or exhausted retries with no successful completion.
 
 #### `cubewizard-worker` env vars / secrets
 
