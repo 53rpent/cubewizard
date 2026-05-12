@@ -29,6 +29,8 @@ env:
   CLOUD_TASKS_QUEUE: eval-queue-stg
   FIRESTORE_DATABASE_ID: cw-upload-status-stg
   FIRESTORE_COLLECTION: jobs
+  # D1 REST target for d1_writer.py — keep in sync with wrangler.jsonc env.stg d1_databases[0].database_id
+  CLOUDFLARE_D1_DATABASE_ID: 3ae6ad5b-d61e-443d-a501-d4cd215dffd5
 
   # Cloud Tasks OIDC invoker identity (must have run.invoker on the worker service)
   TASK_OIDC_SERVICE_ACCOUNT: cloudtasks-invoker-sa-stg@cubewizard.iam.gserviceaccount.com
@@ -88,27 +90,14 @@ jobs:
             --concurrency 1 \
             --timeout 1800 \
             --max-instances 5 \
-            --update-env-vars "FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}"
+            --memory 2Gi \
+            --update-env-vars "FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},CLOUDFLARE_D1_DATABASE_ID=${CLOUDFLARE_D1_DATABASE_ID}"
 
       - name: Get worker URL (stg)
         id: worker_url
         run: |
           URL="$(gcloud run services describe "${WORKER_SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
-
-      - name: Clear existing ENQUEUE_SHARED_SECRET binding (migrate to Secret Manager)
-        continue-on-error: true
-        run: |
-          gcloud run services update "${ENQUEUE_SERVICE}" \
-            --project "${PROJECT_ID}" \
-            --region "${REGION}" \
-            --remove-env-vars=ENQUEUE_SHARED_SECRET \
-            --quiet || true
-          gcloud run services update "${ENQUEUE_SERVICE}" \
-            --project "${PROJECT_ID}" \
-            --region "${REGION}" \
-            --remove-secrets=ENQUEUE_SHARED_SECRET \
-            --quiet || true
 
       - name: Deploy enqueue service (stg)
         run: |

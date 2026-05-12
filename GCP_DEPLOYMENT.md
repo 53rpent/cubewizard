@@ -204,7 +204,23 @@ Optional env on **`cubewizard-enqueue`**:
 |----------|---------|
 | `CUBEWIZARD_WORKER_PUBLIC_URL` | Cloudflare Worker origin (no trailing slash), e.g. `https://www.yoursite.com`. Required for **`POST /cleanup/stale-hedron-jobs`** to call **`/api/internal/release-hedron-sync-dedupe`** and delete the matching row in D1 `hedron_synced_decks`. |
 | `CLEANUP_MAX_JOBS_PER_RUN` | Max Hedron releases per invocation (default `50`). |
-| `CLEANUP_LEGACY_WITHOUT_TASK_NAME` | If `true`/`1`, purge expired-leasel Hedron jobs that lack `cloud_task_name` (legacy). Default skips them; enabling assumes no matching task still exists (use cautiously). |
+| `CLEANUP_LEGACY_WITHOUT_TASK_NAME` | If `true`/`1`, purge expired-lease Hedron jobs that lack `cloud_task_name` (legacy). Default skips them; enabling assumes no matching task still exists (use cautiously). |
+
+**Manual trigger** (same URL and header as Scheduler; no JSON body required):
+
+- One line (bash, cmd, or paste as-is in PowerShell if `curl.exe` is available):
+
+```text
+curl.exe -sS -X POST "https://<cubewizard-enqueue-host>/cleanup/stale-hedron-jobs" -H "X-Shared-Secret: YOUR_SECRET" -H "Content-Type: application/json"
+```
+
+- PowerShell (native; replace host and secret):
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "https://<cubewizard-enqueue-host>/cleanup/stale-hedron-jobs" -Headers @{ "X-Shared-Secret" = "YOUR_SECRET"; "Content-Type" = "application/json" }
+```
+
+Do not use bash-style `\` line continuations in PowerShell; they do not work there. Prefer one line, or split with the PowerShell continuation character (backtick) at the end of each continued line.
 
 **Firestore composite index** (create in console if the first cleanup query errors):
 
