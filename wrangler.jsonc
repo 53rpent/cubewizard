@@ -87,7 +87,7 @@
 			],
 			"d1_databases": [
 				{
-					"binding": "cubewizard_db_stg",
+					"binding": "cubewizard_db",
 					"database_name": "cubewizard-db-stg",
 					"database_id": "3ae6ad5b-d61e-443d-a501-d4cd215dffd5",
 					"remote": true
