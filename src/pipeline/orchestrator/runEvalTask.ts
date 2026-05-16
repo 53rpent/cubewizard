@@ -62,9 +62,6 @@ export interface RunEvalTaskEnv {
   CW_EVAL_MAX_IMAGE_SIDE?: string;
   /** Max side for orientation OpenAI previews only (default 1280; extraction uses full side). */
   CW_EVAL_ORIENT_MAX_SIDE?: string;
-  /** Public base URL for `cubewizard-deck-images` (optional; else R2 presigned GET URLs). */
-  DECK_IMAGE_PUBLIC_BASE_URL?: string;
-  CW_EVAL_VISION_PUBLIC_BASE_URL?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
@@ -225,6 +222,7 @@ export async function runEvalTask(
         uploadId: task.upload_id,
         blob: env.DECK_IMAGES_BLOB,
         env,
+        fetchImpl,
       });
 
   try {
@@ -282,7 +280,7 @@ export async function runEvalTask(
     console.log("eval_phase orient_start", {
       upload_id: task.upload_id,
       cube_id: cubeId,
-      vision_mode: localVision ? "inline" : vision!.urlMode,
+      vision_mode: localVision ? "inline" : "presigned",
     });
     const { frame: orientedRgba } = await orientDeckImageRgba(imageBytes, undefined, {
       apiKey,

@@ -72,13 +72,13 @@ export async function extractCardNamesFromRgba(
   const basePrompt = buildExtractionPrompt(opts.cubeCardList, opts.maxCardsInPrompt);
 
   const level = opts.openAiLogLevel ?? "off";
-  const gcpStyle = level === "medium";
+  const mediumLog = level === "medium";
 
   if (!opts.useMultiPass || !opts.cubeCardList) {
     return singlePass(imageInput, basePrompt, opts);
   }
 
-  if (gcpStyle) console.log("Pass 1: General aggressive detection...");
+  if (mediumLog) console.log("Pass 1: General aggressive detection...");
   const first = await singlePass(imageInput, basePrompt, opts);
   if (first.length === 0) {
     return first;
@@ -101,7 +101,7 @@ Focus ONLY on cards you haven't already identified.
 Return JSON via the schema with ONLY the additional card_names found in this pass (may be empty).
 `.trim();
 
-  if (gcpStyle) console.log("Pass 2: Focused detection on potentially missed cards...");
+  if (mediumLog) console.log("Pass 2: Focused detection on potentially missed cards...");
   const second = await singlePass(imageInput, missedPrompt, opts);
   for (const c of second) all.add(c);
 
@@ -120,13 +120,13 @@ ${slice.join(", ")}
 
 Return JSON via the schema with additional card_names only.
 `.trim();
-      if (gcpStyle) console.log("Pass 3: Validation pass for specific missing cards...");
+      if (mediumLog) console.log("Pass 3: Validation pass for specific missing cards...");
       const third = await singlePass(imageInput, validationPrompt, opts);
       for (const c of third) all.add(c);
     }
   }
 
-  if (gcpStyle) {
+  if (mediumLog) {
     console.log(`Multi-pass extraction complete: ${all.size} total cards identified`);
   }
   return [...all];

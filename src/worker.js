@@ -110,7 +110,7 @@ export default {
     }
   },
 
-  /** Daily Hedron sync: triggered by Cloudflare Cron Triggers (Wrangler `triggers.crons`), not GCP. Skipped on stg (`CWW_ENV`). */
+  /** Daily Hedron sync: Cloudflare Cron Triggers (`triggers.crons`). Skipped on stg (`CWW_ENV`). */
   async scheduled(event, env, ctx) {
     var cwEnv = typeof env.CWW_ENV === "string" ? env.CWW_ENV.trim().toLowerCase() : "";
     if (cwEnv === "staging") {
@@ -204,7 +204,7 @@ var HEDRON_ORIGIN = "https://hedron.network";
 var HEDRON_SEARCH_URL = "https://hedron.network/cube-results/search";
 /** Defaults; override with Wrangler vars to stay under Workers free-tier subrequest limits (each D1 op + outbound fetch counts). */
 var HEDRON_SYNC_MAX_PAGES_PER_TICK = 6;
-/** Default 250: queue batches replace per-deck GCP calls; D1 writes are grouped after queue publish. */
+/** Default 250: queue batches per deck; D1 writes are grouped after queue publish. */
 var HEDRON_SYNC_MAX_DECKS_PER_TICK = 250;
 /** Cloudflare Queues sendBatch supports up to 100 messages; keep the default lower for message-size headroom. */
 var HEDRON_QUEUE_BATCH_SIZE = 50;
@@ -1182,14 +1182,8 @@ function attachSynergyImages(arr, map) {
 //  Deck-by-deck API handlers
 // ============================================================
 
-function buildBlobImageUrl(request, env, deckId, objectKey, pathSegment) {
+function buildBlobImageUrl(request, deckId, objectKey, pathSegment) {
   if (!objectKey) return null;
-  var base = env.DECK_IMAGE_PUBLIC_BASE_URL;
-  if (base && String(base).trim()) {
-    var b = String(base).replace(/\/$/, "");
-    var parts = String(objectKey).split("/");
-    return b + "/" + parts.map(encodeURIComponent).join("/");
-  }
   return new URL(
     "/api/deck/" + encodeURIComponent(String(deckId)) + "/" + pathSegment,
     request.url
@@ -1265,10 +1259,10 @@ async function handleGetDecks(cubeId, env, request) {
   for (var i = 0; i < results.length; i++) {
     var d = results[i];
     d.deck_photo_url = buildBlobImageUrl(
-      request, env, d.deck_id, d.oriented_image_r2_key, "photo"
+      request, d.deck_id, d.oriented_image_r2_key, "photo"
     );
     d.deck_thumb_url = d.oriented_thumb_r2_key
-      ? buildBlobImageUrl(request, env, d.deck_id, d.oriented_thumb_r2_key, "thumb")
+      ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
   }
 
@@ -1304,13 +1298,12 @@ async function handleGetDecksByPilot(url, env, request) {
     var d = results[i];
     d.deck_photo_url = buildBlobImageUrl(
       request,
-      env,
       d.deck_id,
       d.oriented_image_r2_key,
       "photo"
     );
     d.deck_thumb_url = d.oriented_thumb_r2_key
-      ? buildBlobImageUrl(request, env, d.deck_id, d.oriented_thumb_r2_key, "thumb")
+      ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
   }
 
@@ -1329,10 +1322,10 @@ async function handleGetTrophyDecks(cubeId, env, request) {
   for (var j = 0; j < results.length; j++) {
     var t = results[j];
     t.deck_photo_url = buildBlobImageUrl(
-      request, env, t.deck_id, t.oriented_image_r2_key, "photo"
+      request, t.deck_id, t.oriented_image_r2_key, "photo"
     );
     t.deck_thumb_url = t.oriented_thumb_r2_key
-      ? buildBlobImageUrl(request, env, t.deck_id, t.oriented_thumb_r2_key, "thumb")
+      ? buildBlobImageUrl(request, t.deck_id, t.oriented_thumb_r2_key, "thumb")
       : t.deck_photo_url;
   }
 
@@ -1360,7 +1353,6 @@ async function handleGetDeck(deckId, env, request) {
 
   deck.deck_photo_url = buildBlobImageUrl(
     request,
-    env,
     deck.deck_id,
     deck.oriented_image_r2_key,
     "photo"
@@ -1368,7 +1360,6 @@ async function handleGetDeck(deckId, env, request) {
   deck.deck_thumb_url = deck.oriented_thumb_r2_key
     ? buildBlobImageUrl(
         request,
-        env,
         deck.deck_id,
         deck.oriented_thumb_r2_key,
         "thumb"

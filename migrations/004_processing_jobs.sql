@@ -1,5 +1,5 @@
 -- Upload / eval job status for /api/processing-decks (Phase B: read path; writers added in later phases).
--- id matches Firestore document id: u_<urlsafe-base64(upload_id) without padding> (see services/enqueue/app.py _job_doc_id).
+-- id: u_<urlsafe-base64(upload_id) without padding> (see src/pipeline/orchestrator/jobId.ts).
 
 CREATE TABLE IF NOT EXISTS processing_jobs (
     id TEXT PRIMARY KEY,

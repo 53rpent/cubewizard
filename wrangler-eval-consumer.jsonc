@@ -29,8 +29,7 @@
 		"CW_EVAL_ORIENT_MAX_SIDE": "1280",
 		"CW_EVAL_MAX_CONSUMERS": "1",
 		"CW_EVAL_MAX_RETRIES": "5",
-		"DECK_IMAGE_PUBLIC_BASE_URL": "",
-		"CLOUDFLARE_ACCOUNT_ID": ""
+		"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 	},
 	"r2_buckets": [
 		{
@@ -89,8 +88,7 @@
 				"CW_EVAL_ORIENT_MAX_SIDE": "1280",
 				"CW_EVAL_MAX_CONSUMERS": "1",
 				"CW_EVAL_MAX_RETRIES": "5",
-				"DECK_IMAGE_PUBLIC_BASE_URL": "",
-				"CLOUDFLARE_ACCOUNT_ID": ""
+				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 			},
 			"r2_buckets": [
 				{
@@ -149,8 +147,7 @@
 				"CW_EVAL_ORIENT_MAX_SIDE": "1280",
 				"CW_EVAL_MAX_CONSUMERS": "1",
 				"CW_EVAL_MAX_RETRIES": "5",
-				"DECK_IMAGE_PUBLIC_BASE_URL": "",
-				"CLOUDFLARE_ACCOUNT_ID": ""
+				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 			},
 			"r2_buckets": [
 				{

@@ -17,7 +17,7 @@ export {
   type VisionRasterMime,
 } from "./compatible";
 
-/** Defaults aligned with `config.ini` [image_processing] (Python worker). */
+/** Default max decode dimensions for vision (overridable via `CW_EVAL_MAX_IMAGE_SIDE`). */
 export const DEFAULT_MAX_IMAGE_WIDTH = 2048;
 export const DEFAULT_MAX_IMAGE_HEIGHT = 2048;
 

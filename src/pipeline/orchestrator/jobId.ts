@@ -1,4 +1,4 @@
-/** Stable `processing_jobs.id` / legacy Firestore doc id: `u_` + url-safe base64 of `upload_id`. */
+/** Stable `processing_jobs.id`: `u_` + url-safe base64 of `upload_id`. */
 export function processingJobDocIdFromUploadId(uploadId: string): string {
   const s = String(uploadId || "");
   const bytes = new TextEncoder().encode(s);

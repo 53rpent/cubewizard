@@ -17,9 +17,8 @@ describe("visionInputFromJpegBytes", () => {
 
   it("publishes URL when not local", async () => {
     const publisher: VisionImagePublisher = {
-      urlMode: "public",
-      publishOrientStep: vi.fn(async () => "https://cdn.example.com/orient-0.jpg"),
-      publishExtract: vi.fn(async () => "https://cdn.example.com/extract.jpg"),
+      publishOrientStep: vi.fn(async () => "https://example.r2.cloudflarestorage.com/orient-0.jpg"),
+      publishExtract: vi.fn(async () => "https://example.r2.cloudflarestorage.com/extract.jpg"),
     };
     const input = await visionInputFromJpegBytes({
       env: { CWW_ENV: "staging" },
@@ -28,7 +27,7 @@ describe("visionInputFromJpegBytes", () => {
       purpose: "orient",
       step: 0,
     });
-    expect(input).toEqual({ imageUrl: "https://cdn.example.com/orient-0.jpg" });
+    expect(input).toEqual({ imageUrl: "https://example.r2.cloudflarestorage.com/orient-0.jpg" });
     expect(publisher.publishOrientStep).toHaveBeenCalledOnce();
   });
 });

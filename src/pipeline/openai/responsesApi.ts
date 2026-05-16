@@ -30,13 +30,12 @@ export class ModelOutputInvalidError extends Error {
 }
 
 export class OpenAiApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly bodySnippet: string
-  ) {
+  readonly bodySnippet: string;
+
+  constructor(message: string, readonly status: number, bodySnippet: string) {
     super(message);
     this.name = "OpenAiApiError";
+    this.bodySnippet = bodySnippet;
   }
 }
 
@@ -80,7 +79,7 @@ export type VisionJsonCallOptions = {
   fetchImpl?: typeof fetch;
   /**
    * `off`: no extra logs. `low`: one line per call with model structured output only (`openai_model_output` + schema name + JSON text).
-   * `medium`: human-readable lines matching legacy GCP/Python (`image_processor.py`); multi-pass phase labels live in `extractCardNamesFromRgba`.
+   * `medium`: human-readable phase lines; multi-pass labels live in `extractCardNamesFromRgba`.
    * `high`: request metadata, raw JSON (truncated), structured text, parsed object — same as legacy `CW_EVAL_VERBOSE_LOG=1`.
    */
   openAiLogLevel?: EvalOpenAiLogLevel;
@@ -136,7 +135,7 @@ export async function callOpenAiVisionJsonSchema<T>(
 
   const level = opts.openAiLogLevel ?? "off";
   const evalVerbose = level === "high";
-  const gcpStyle = level === "medium";
+  const mediumLog = level === "medium";
 
   if (evalVerbose) {
     console.log("openai_vision_request", {
@@ -210,7 +209,7 @@ export async function callOpenAiVisionJsonSchema<T>(
   if (!parsed.success) {
     throw new ModelOutputInvalidError(parsed.error.message, { cause: parsed.error });
   }
-  if (gcpStyle) {
+  if (mediumLog) {
     if (opts.schemaName === "orientation_result") {
       const r = parsed.data as OrientationResult;
       console.log(

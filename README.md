@@ -2,88 +2,153 @@
 
 Magic: The Gathering cube analytics: deck photos are processed with OpenAI Vision, enriched via Scryfall, stored in Cloudflare D1, and served from a Worker-hosted dashboard (`docs/`).
 
+---
+
 ## Architecture
 
-| Piece | Role |
-|--------|------|
-| **Site Worker** (`src/worker.js`, `wrangler.jsonc`) | Static SPA, REST API, upload → R2, enqueue `EVAL_QUEUE` / `HEDRON_QUEUE`, read D1 |
-| **Eval consumer** (`src/pipeline/entry/evalQueueEntry.ts`, `wrangler-eval-consumer.jsonc`) | Queue consumer: orientation → card extraction → Scryfall → D1 → oriented images on R2 |
-| **Hedron consumer** (`src/hedron-consumer.js`, `wrangler-hedron-consumer.jsonc`) | One message per invocation (`max_batch_size: 1`, `max_concurrency: 1`); ack only after R2 + D1 + eval enqueue |
-| **D1** | Decks, cards, cubes, `processing_jobs` status |
-| **R2** | `decklist-uploads` (staging uploads), `cubewizard-deck-images` (oriented photos + thumbs) |
+### Components
+
+| Piece | Config | Role |
+|--------|--------|------|
+| **Site Worker** | `src/worker.js`, `wrangler.jsonc` | Serves the dashboard (`docs/`), REST API, uploads deck images to R2, enqueues eval jobs |
+| **Eval consumer** | `src/pipeline/entry/evalQueueEntry.ts`, `wrangler-eval-consumer.jsonc` | Queue consumer: orientation → card extraction (OpenAI) → Scryfall → D1 → oriented images on R2 |
+| **Hedron consumer** | `src/hedron-consumer.js`, `wrangler-hedron-consumer.jsonc` | Consumes Hedron sync jobs, stages images in R2, enqueues eval tasks |
+| **Redirect Worker** | `wrangler-redirect.jsonc` | Production only: `cubewizard.org` → `cube-wizard.com` |
+| **D1** | `schema.sql`, `migrations/` | Cubes, decks, cards, stats, `processing_jobs`, Hedron sync state |
+| **R2** | `decklist-uploads`, `cubewizard-deck-images` | Raw uploads + metadata; oriented deck images and thumbnails |
 
 Eval task JSON is defined in `fixtures/pipeline/task-request.schema.json` and validated in `src/pipeline/contracts/taskRequest.zod.ts`.
 
-## Prerequisites
+### Request flow
 
-- Node.js 18+ and `npm install`
-- Cloudflare account (Workers, D1, R2, Queues) for deploy
-- OpenAI API key for the eval consumer
-- Optional: Python 3.11+ and `pip install -r requirements.txt` only if you use the legacy Cloud Run stack under `services/`
+```mermaid
+flowchart LR
+  subgraph ui [Dashboard]
+    U[User upload or Hedron sync]
+  end
+  subgraph site [Site Worker]
+    API["/api/upload or /api/hedron-sync"]
+    R2s[(R2 staging)]
+    D1s[(D1)]
+    Qe[EVAL_QUEUE]
+  end
+  subgraph hedron [Hedron consumer]
+    Qh[HEDRON_QUEUE]
+    Stage[Download + stage to R2]
+  end
+  subgraph eval [Eval consumer]
+    Qev[EVAL_QUEUE]
+    Pipe[OpenAI + Scryfall + D1 write]
+    R2o[(R2 deck images)]
+  end
+  U --> API
+  API --> R2s
+  API --> D1s
+  API --> Qe
+  API --> Qh
+  Qh --> Stage
+  Stage --> Qev
+  Qe --> Qev
+  Qev --> Pipe
+  Pipe --> D1s
+  Pipe --> R2o
+```
+
+**Manual upload:** `POST /api/upload` writes `decklist-uploads`, upserts `processing_jobs` (`queued`), and sends a task to `EVAL_QUEUE`.
+
+**Hedron sync:** `POST /api/hedron-sync/:cubeId` enqueues the Hedron consumer, which fetches deck images from Hedron, stages them under the same R2 layout, then enqueues the eval consumer with `upload_id` prefixed `hedron:`.
+
+**Eval pipeline** (`runEvalTask`): load staging image from R2 → orient (OpenAI) → extract card names (OpenAI, optional multi-pass) → optional CubeCobra list → Scryfall enrichment → D1 deck/cards/stats → upload oriented WebP + thumb to `cubewizard-deck-images` → mark `processing_jobs` done or failed.
+
+### Local vs staging vs production
+
+| | **Local** (`wrangler dev`) | **Staging** (`--env stg`) | **Production** (`--env prod`) |
+|--|---------------------------|---------------------------|-------------------------------|
+| **Trigger** | `npm run dev:all` | Push to `staging` (GitHub Actions) | Push to `main` (GitHub Actions) |
+| **Site Worker** | `cubewizard-cloudflare-worker` @ :8787 | `cubewizard-stg` | `cubewizard-prod` |
+| **Eval consumer** | bundled in dev @ :8788 | `cubewizard-eval-consumer-stg` | `cubewizard-eval-consumer-prod` |
+| **Hedron consumer** | bundled in dev @ :8789 | `cubewizard-hedron-consumer-stg` | `cubewizard-hedron-consumer-prod` |
+| **`CWW_ENV`** | `local` | `staging` | `production` |
+| **D1** | Miniflare under `.wrangler/local-shared` (`npm run d1:bootstrap:local`) | Remote `cubewizard-db-stg` | Remote `cubewizard-db` |
+| **Queues** | `*-local` / `*-local-dlq` (Miniflare only) | `cubewizard-eval-stg`, `cubewizard-hedron-stg`, … | `cubewizard-eval-prod`, `cubewizard-hedron-prod`, … |
+| **R2** | Local Miniflare buckets (same binding names) | Hosted `decklist-uploads`, `cubewizard-deck-images` | Same buckets as staging |
+| **OpenAI vision images** | Inline JPEG base64 (`CWW_ENV=local`) | Presigned R2 GET URLs | Same as staging |
+| **Eval secrets** | `.dev.vars`: `OPENAI_API_KEY` only | + `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Same as staging |
+| **Turnstile** | Optional when `CWW_ENV=local` | `TURNSTILE_SECRET` on site Worker | Same |
+| **Hedron auto-update** | None | None (`scheduled` skipped on stg) | Daily cron on site Worker (`0 7 * * *`) |
+| **Redirect Worker** | N/A | Not deployed by stg workflow | `wrangler-redirect.jsonc` |
+
+Hosted queues and D1 must exist in the Cloudflare account before deploy; local `*-local` queue names are created by Miniflare and do not need dashboard setup.
+
+---
 
 ## Local development
 
+### Prerequisites
+
+- **Node.js 22** (matches [CI](.github/workflows/ci.yml))
+- npm
+- **OpenAI API key** for end-to-end eval testing
+- Optional: [Wrangler login](https://developers.cloudflare.com/workers/wrangler/commands/#login) only if you deploy or use remote D1/R2 from your machine
+
+### First-time setup
+
 ```bash
-npm install
-cp .dev.vars.example .dev.vars   # fill OPENAI_API_KEY and any optional keys
-npm run d1:bootstrap:local       # once per fresh .wrangler/local-shared
-npm run dev:all                  # site + eval + hedron consumers, shared local queue/D1/R2
+git clone <repo-url>
+cd CubeWizard
+npm ci
+cp .dev.vars.example .dev.vars    # set OPENAI_API_KEY (required for eval)
+npm run d1:bootstrap:local        # once per fresh .wrangler/local-shared
+npm run dev:all                   # site + eval + hedron in one Wrangler session
 ```
 
-- Dashboard: **http://127.0.0.1:8787** (site Worker port in `wrangler.jsonc`).
-- Use **one** Wrangler process with all three configs. Separate terminals each running `wrangler dev` do **not** share the in-memory local queue.
-- Persist path: `--persist-to .wrangler/local-shared` (set on all `dev:*` scripts).
+Open the dashboard at **http://127.0.0.1:8787**.
 
-### Environment (`.dev.vars`)
+Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a new window). Running `dev`, `dev:eval-consumer`, and `dev:hedron-consumer` in **separate** terminals does **not** share queues locally—the eval queue will not drain.
 
-| Variable | Used by |
-|----------|---------|
-| `OPENAI_API_KEY` | Eval consumer secret (`.dev.vars` locally; Cloudflare secret when deployed) |
-| `CW_EVAL_LOG_LEVEL` | `off` \| `low` \| `medium` \| `high` (OpenAI logs in eval consumer) |
-| `CW_EVAL_MAX_CONSUMERS` | Expected queue `max_concurrency` (Scryfall throttle; default 1, match wrangler) |
-| `CW_EVAL_MAX_IMAGE_SIDE` | Max decode/extract/upload dimension in px (default 2048; Workers isolate cap is 128 MiB) |
-| `CW_EVAL_ORIENT_MAX_SIDE` | Max side for orientation OpenAI previews only (default 1280; full side used for card extraction) |
-| `CWW_ENV` | Eval consumer: `local` → OpenAI vision uses **inline JPEG (base64)**; `staging` / `production` → R2 HTTPS URLs |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID (eval consumer var) for R2 presigned vision URLs (hosted) |
-| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token with read/write on `cubewizard-deck-images` (eval consumer secrets; hosted) |
-| `DECK_IMAGE_PUBLIC_BASE_URL` | Optional public CDN base for `cubewizard-deck-images`; when set, vision uses public URLs instead of presigned |
-| `CW_EVAL_VERBOSE_LOG` | Legacy: `1`/`true` → `high` if log level unset |
-| `TURNSTILE_SECRET` | Site upload Turnstile (optional locally when `CWW_ENV=local`) |
+### Configuration files
 
-### Eval consumer
+| File | Purpose |
+|------|---------|
+| **`.dev.vars`** | Secrets and vars for **all** `wrangler dev` processes (site, eval, hedron). Copy from [`.dev.vars.example`](.dev.vars.example). |
 
-- Bundled by Wrangler from `src/pipeline/entry/evalQueueEntry.ts` (no separate build step).
-- Dry-run bundle: `npm run build:eval-consumer`
-- **Secrets (hosted):** `OPENAI_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` in `wrangler-eval-consumer.jsonc` `secrets.required` for stg/prod. Local dev only requires `OPENAI_API_KEY` in `.dev.vars`.
-- **Vision:** With `CWW_ENV=local`, OpenAI receives inline JPEG (base64 data URLs) — no R2 presign secrets. Hosted eval publishes to `cubewizard-deck-images` (`tmp/vision/{uploadId}/…`) and uses presigned GET or `DECK_IMAGE_PUBLIC_BASE_URL`.
-- **Deploy checklist (stg/prod eval consumer):** (1) R2 API token for `cubewizard-deck-images`; (2) `wrangler secret put` for `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`; (3) set `CLOUDFLARE_ACCOUNT_ID` in eval consumer vars; (4) redeploy; (5) tail and confirm `vision_url_mode: presigned` on `eval_phase orient_start` (no base64 in logs).
-- **`nodejs_compat`** is enabled for JPEG encoding (`jpeg-js` / `Buffer`).
-- **WebP / WASM:** codec files live in `vendor/jsquash-webp/` and are imported as precompiled `WebAssembly.Module` values (Workers disallow runtime `WebAssembly.compile` on raw bytes).
-- **Throughput:** one deck per invocation (`max_batch_size: 1`); up to **1** concurrent consumer invocations (`max_concurrency: 1`). Each isolate has a **128 MiB** memory cap (paid plan does not raise this). `CW_EVAL_MAX_IMAGE_SIDE=2048` limits RGBA size; raise `max_concurrency` only after profiling memory.
-- **Processing UI:** upload/Hedron enqueue upserts `processing_jobs` in D1 immediately; `GET /api/processing-decks/:cubeId` lists `queued` / `running` / `failed` jobs.
+#### `.dev.vars` (Workers)
 
-### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
+| Variable | Required locally | Notes |
+|----------|------------------|--------|
+| `OPENAI_API_KEY` | Yes (for eval) | Eval consumer secret |
+| `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` — see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
+| `CW_EVAL_MAX_IMAGE_SIDE` | No | Default `2048`; caps decode memory (128 MiB isolate limit) |
+| `CW_EVAL_ORIENT_MAX_SIDE` | No | Default `1280`; orientation preview only |
+| `TURNSTILE_SECRET` | No | Site upload bot check; skipped when `CWW_ENV=local` |
 
-| Level | Behavior |
-|-------|----------|
-| `off` | No extra OpenAI logs |
-| `low` | Model structured JSON text only |
-| `medium` | Human-readable phase lines (orientation, extraction, multi-pass) |
-| `high` | Request metadata, raw JSON (truncated), structured text, parsed objects |
+Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` — see [Deploy](#deploy-cloudflare).
 
-### Tests
+### npm scripts (dev)
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev:all` | Site + eval + hedron consumers, shared local queue/D1/R2. Use this for E2E testing |
+| `npm run dev` | Site Worker only |
+| `npm run dev:eval-consumer` | Eval only |
+| `npm run dev:hedron-consumer` | Hedron only |
+| `npm run d1:bootstrap:local` | Apply `schema.sql` to local D1 |
+| `npm run test:pipeline` | Vitest pipeline unit tests |
+| `npm run wrangler:check` | Dry-run deploy all Wrangler configs |
+
+### Tests and CI parity
 
 ```bash
+npm ci
 npm run test:pipeline
-# Optional visual QA on a folder of images:
-# set PIPELINE_QA_INPUT=/path/to/images then:
-npm run test:pipeline:qa
 ```
 
-Validate fixture JSON against the schema:
+Optional visual QA on a folder of images:
 
 ```bash
-npx --yes ajv-cli validate -s fixtures/pipeline/task-request.schema.json -d fixtures/pipeline/examples/enqueue-r2-staging.example.json
+# PowerShell
+$env:PIPELINE_QA_INPUT="C:\path\to\images"
+npm run test:pipeline:qa
 ```
 
 ### Reset local data
@@ -95,64 +160,75 @@ Remove-Item -Recurse -Force .wrangler\local-shared -ErrorAction SilentlyContinue
 npm run d1:bootstrap:local
 ```
 
-To clear stuck processing rows only:
 
-```bash
-npx wrangler d1 execute cubewizard-db --local --persist-to .wrangler/local-shared --command "DELETE FROM processing_jobs;"
-```
+#### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
 
-## Deploy (Cloudflare)
+| Level | Behavior |
+|-------|----------|
+| `off` | No extra OpenAI logs |
+| `low` | Model structured JSON text only |
+| `medium` | Human-readable phase lines |
+| `high` | Request metadata, raw JSON (truncated), parsed objects |
 
-### Workers
+### Branches and releases
 
-```bash
-npx wrangler deploy --env stg
-npx wrangler deploy --env prod
-npx wrangler deploy --config wrangler-eval-consumer.jsonc --env stg
-npx wrangler deploy --config wrangler-eval-consumer.jsonc --env prod
-npx wrangler deploy --config wrangler-hedron-consumer.jsonc --env stg
-npx wrangler deploy --config wrangler-hedron-consumer.jsonc --env prod
-npx wrangler deploy --config wrangler-redirect.jsonc   # cubewizard.org → cube-wizard.com
-```
+| Branch | Role |
+|--------|------|
+| **`staging`** | Integration branch. Contributor PRs merge here. Pushes deploy the **staging** stack ([`deploy-cloudflare-stg.yml`](.github/workflows/deploy-cloudflare-stg.yml)). |
+| **`main`** | Production. Updated when maintainers **promote** `staging` → `main`. Pushes deploy **production** ([`deploy-cloudflare-prod.yml`](.github/workflows/deploy-cloudflare-prod.yml)). |
 
-Validate configs: `npm run wrangler:check`
+Do not open PRs directly against `main` unless a maintainer requests a hotfix exception.
 
-Create R2 blob bucket once: `npx wrangler r2 bucket create cubewizard-deck-images`
+### Pull request workflow
 
-### Queues (hosted; create once per environment)
+1. Branch from **`staging`**: `git fetch origin`, `git checkout staging`, `git pull`.
+2. Implement focused changes; match style in `src/worker.js` and `src/pipeline/`.
+3. Before review, run the same checks as CI:
+
+   ```bash
+   npm ci
+   npm run test:pipeline
+   ```
+
+4. Open a PR **into `staging`**.
+5. Never commit secrets (`.dev.vars`, API keys). Use `.dev.vars.example` as the template.
+
+After merge to `staging`, the next deploy ships to the staging environment. Production is updated separately when maintainers promote to `main`.
+
+### Maintainer notes
+
+- **Promote to production:** merge `staging` into `main` (PR or direct merge) after staging validation.
+- **Repo secrets (GitHub):** `CLOUDFLARE_API_TOKEN` (Workers, Queues, D1, R2). Optional `CLOUDFLARE_ACCOUNT_ID` if Wrangler cannot infer it from the token.
+
+### Third-party assets
+
+WebP WASM under `vendor/jsquash-webp/` comes from [@jsquash/webp](https://www.npmjs.com/package/@jsquash/webp) (Apache-2.0). See [WebP WASM vendor](#webp-wasm-vendor).
+
+---
+
+
+### GitHub Actions
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [`ci.yml`](.github/workflows/ci.yml) | PR / push to `staging` or `main` | `npm ci`, `test:pipeline`, `wrangler:check` |
+| [`deploy-cloudflare-stg.yml`](.github/workflows/deploy-cloudflare-stg.yml) | Push to `staging` | Deploy site, eval, hedron (`--env stg`) |
+| [`deploy-cloudflare-prod.yml`](.github/workflows/deploy-cloudflare-prod.yml) | Push to `main` | Deploy site, eval, hedron, redirect (`--env prod`) |
+
+Reproduce CI locally: `npm ci && npm run test:pipeline && npm run wrangler:check`
+
+### Queues (hosted; once per environment)
 
 | Env | Eval | Eval DLQ | Hedron | Hedron DLQ |
 |-----|------|----------|--------|------------|
 | Staging | `cubewizard-eval-stg` | `cubewizard-eval-stg-dlq` | `cubewizard-hedron-stg` | `cubewizard-hedron-stg-dlq` |
 | Production | `cubewizard-eval-prod` | `cubewizard-eval-prod-dlq` | `cubewizard-hedron-prod` | `cubewizard-hedron-prod-dlq` |
 
-```bash
-npx wrangler queues create cubewizard-eval-stg
-# …repeat for each name above for stg/prod
-```
+---
 
-Local `*-local` queue names in wrangler configs are Miniflare-only; you do not need to create them in the Cloudflare dashboard for local dev.
+## Reference
 
-### D1 migrations
-
-Apply `schema.sql` for a fresh database, or run files under `migrations/` incrementally on hosted D1 (including `004_processing_jobs.sql`).
-
-```bash
-npx wrangler d1 execute cubewizard-db --env prod --remote --file=./migrations/004_processing_jobs.sql
-```
-
-## WebP WASM vendor
-
-Binaries under `vendor/jsquash-webp/` match `@jsquash/webp` in `package.json`. After bumping that package, re-download (PowerShell example):
-
-```powershell
-$v = "1.5.0"
-Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/enc/webp_enc.wasm" -OutFile vendor/jsquash-webp/webp_enc.wasm
-Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/enc/webp_enc_simd.wasm" -OutFile vendor/jsquash-webp/webp_enc_simd.wasm
-Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/dec/webp_dec.wasm" -OutFile vendor/jsquash-webp/webp_dec.wasm
-```
-
-## Worker API (summary)
+### Worker API (summary)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -167,17 +243,13 @@ Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/dec/webp_dec.wasm" -
 | `/api/validate-cube` | POST | CubeCobra cube check |
 | `/api/add-cube` | POST | Register cube in D1 |
 
-Optional Worker var `DECK_IMAGE_PUBLIC_BASE_URL`: public base URL for deck images (no trailing slash).
+Deck photos and thumbnails are served via the site Worker proxy (`/api/deck/:deckId/photo` and `/thumb`).
 
-## Database (D1)
+### Database (D1)
 
-Tables: `cubes`, `decks`, `deck_cards`, `deck_stats`, `cube_mapping`, `processing_jobs`, Hedron sync tables (see `schema.sql`).
+Tables include `cubes`, `decks`, `deck_cards`, `deck_stats`, `cube_mapping`, `processing_jobs`, and Hedron sync tables (see `schema.sql`).
 
-```bash
-npx wrangler d1 execute cubewizard-db --env prod --remote --command "SELECT COUNT(*) FROM decks;"
-```
-
-## Project layout
+### Project layout
 
 ```
 CubeWizard/
@@ -194,41 +266,23 @@ CubeWizard/
 ├── wrangler.jsonc
 ├── wrangler-eval-consumer.jsonc
 ├── wrangler-hedron-consumer.jsonc
-├── wrangler-redirect.jsonc
-├── services/                     # Optional legacy Cloud Run (GCP)
-└── …                             # Root Python modules used only by services/ Docker image
+└── wrangler-redirect.jsonc
 ```
 
-## GitHub Actions
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| [`ci.yml`](.github/workflows/ci.yml) | PR / push to `staging` or `main` | `npm ci`, `test:pipeline`, `wrangler:check` |
-| [`deploy-cloudflare-stg.yml`](.github/workflows/deploy-cloudflare-stg.yml) | Push to `staging` | Deploy site, eval, and hedron Workers (`--env stg`) |
-| [`deploy-cloudflare-prod.yml`](.github/workflows/deploy-cloudflare-prod.yml) | Push to `main` | Deploy site, eval, hedron, and redirect Workers (`--env prod`) |
+### WebP WASM vendor
 
-**Repo secrets:** `CLOUDFLARE_API_TOKEN` (Workers, Queues, D1, R2). Optional `CLOUDFLARE_ACCOUNT_ID` if Wrangler cannot infer it from the token.
+Binaries under `vendor/jsquash-webp/` match `@jsquash/webp` in `package.json`. After bumping that package:
 
-Local Python CLI (`python main.py`) remains for one-off image debugging against `config.ini`.
+```powershell
+$v = "1.5.0"
+Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/enc/webp_enc.wasm" -OutFile vendor/jsquash-webp/webp_enc.wasm
+Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/enc/webp_enc_simd.wasm" -OutFile vendor/jsquash-webp/webp_enc_simd.wasm
+Invoke-WebRequest "https://unpkg.com/@jsquash/webp@$v/codec/dec/webp_dec.wasm" -OutFile vendor/jsquash-webp/webp_dec.wasm
+```
 
-## Troubleshooting
-
-- **Queue not draining locally:** use `npm run dev:all`, not separate `dev` + `dev:eval-consumer` terminals.
-- **Stale processing card in UI:** row stuck in `processing_jobs` (`running`/`queued`); delete rows or reset `.wrangler/local-shared` (see above).
-- **`WebAssembly.compile` disallowed:** ensure eval consumer uses vendored `.wasm` imports (Wrangler bundle), not runtime compile of wasm bytes.
-- **Scryfall 429:** lower queue `max_concurrency` / `CW_EVAL_MAX_CONSUMERS` or retry.
-- **`exceededCpu`:** eval consumer uses `limits.cpu_ms: 30000` (30s CPU per invocation, one deck each).
-- **`exceededMemory`:** Workers allow **128 MiB per isolate** (not raised on Paid). Peak usage is mostly **RGBA decode** (≈4×width×height bytes). Hosted eval uses HTTPS vision URLs (no base64 in bodies); local `CWW_ENV=local` uses inline base64. Lower `CW_EVAL_MAX_IMAGE_SIDE` / `CW_EVAL_ORIENT_MAX_SIDE` if needed; keep `max_concurrency` at 1.
-- **Vision URL config (hosted):** Stg/prod eval requires R2 presign secrets or `DECK_IMAGE_PUBLIC_BASE_URL`. OpenAI must reach `*.r2.cloudflarestorage.com` for presigned URLs.
-- **`exception`:** Uncaught JS error in the consumer. The queue name in the dashboard is not the cause — run `npx wrangler tail cubewizard-eval-consumer-stg --config wrangler-eval-consumer.jsonc` and look for `eval_consumer_error` (includes `message` + `stack`) or the last `eval_phase_*` line before failure.
-- **DLQ / retries exhausted:** On the last delivery attempt (`attempts >= CW_EVAL_MAX_RETRIES`), the consumer sets `processing_jobs.status = failed` with `retries_exhausted (n/5): …`. Messages that still reach `*-dlq` are consumed by the same Worker (`batch.queue` ends with `-dlq`) and marked `dead_letter_queue (…): …`.
-- **Hedron failures:** When a Hedron eval job fails (`upload_id` prefix `hedron:`), the row is removed from `hedron_synced_decks` so the next sync can retry that deck.
-- **Hedron “staged” burst but no decks:** `hedron_consumer_complete` / `job_staged_and_enqueued` only means **staging + eval enqueue** on the hedron Worker. OpenAI / Scryfall / `decks` rows run on the **eval consumer** — tail both:
-  `npx wrangler tail cubewizard-hedron-consumer-stg --config wrangler-hedron-consumer.jsonc`
-  `npx wrangler tail cubewizard-eval-consumer-stg --config wrangler-eval-consumer.jsonc`
-  Look for `eval_consumer received` → `eval_phase orient_start` → `eval_consumer finished`. If hedron logs succeed but eval never logs `received`, check the `cubewizard-eval-stg` queue depth and that `cubewizard-eval-consumer-stg` is deployed.
-- **Wrangler auth:** `npx wrangler login`
+---
 
 ## License
 
-See [LICENSE](LICENSE) and [CONTRIBUTORS.md](CONTRIBUTORS.md). CubeWizard is licensed under GPL-3.0-or-later.
+CubeWizard is licensed under [GPL-3.0-or-later](LICENSE).

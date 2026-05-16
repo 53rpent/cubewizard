@@ -31,7 +31,7 @@ function frameAsImageDataLike(frame: {
 }
 
 /**
- * Decode → fit inside {@link THUMB_MAX_SIDE} (bilinear) → WebP, matching `oriented_r2.build_thumb_webp_bytes`
+ * Decode → fit inside {@link THUMB_MAX_SIDE} (bilinear) → WebP.
  * intent (Pillow LANCZOS → here bilinear + @jsquash/webp).
  */
 export async function buildThumbWebpBytesFromImageBytes(

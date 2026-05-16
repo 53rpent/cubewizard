@@ -39,7 +39,7 @@ export async function visionUrlFromJpegBytes(
 
 /**
  * Local (`CWW_ENV=local`): inline JPEG as base64 in the OpenAI request.
- * Hosted: R2 publish + presigned or public HTTPS URL.
+ * Hosted: R2 publish + presigned HTTPS GET URL.
  */
 export async function visionInputFromJpegBytes(opts: {
   env: { CWW_ENV?: string };

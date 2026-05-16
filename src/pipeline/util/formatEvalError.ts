@@ -1,3 +1,5 @@
+import { OpenAiApiError } from "../openai/responsesApi";
+
 /** One-line error summary for logs and `processing_jobs.error`. */
 export function formatEvalError(e: unknown): string {
   if (e instanceof Error) {
@@ -11,13 +13,23 @@ export function evalErrorFields(e: unknown): {
   message: string;
   name: string;
   stack?: string;
+  openai_body?: string;
 } {
   if (e instanceof Error) {
-    return {
+    const fields: {
+      name: string;
+      message: string;
+      stack?: string;
+      openai_body?: string;
+    } = {
       name: e.name,
       message: e.message,
       stack: e.stack,
     };
+    if (e instanceof OpenAiApiError && e.bodySnippet.trim()) {
+      fields.openai_body = e.bodySnippet.slice(0, 800);
+    }
+    return fields;
   }
   return { name: "Unknown", message: String(e) };
 }

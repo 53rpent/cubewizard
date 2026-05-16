@@ -29,7 +29,6 @@
 		}
 	],
 	"vars": {
-		"DECK_IMAGE_PUBLIC_BASE_URL": "",
 		"CWW_ENV": "local",
 		"CWW_DEPLOY_VERSION": "dev",
 		"R2_STAGING_BUCKET_NAME": "decklist-uploads"
@@ -85,7 +84,6 @@
 				"enabled": true
 			},
 			"vars": {
-				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
 				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
@@ -137,7 +135,6 @@
 				"enabled": true
 			},
 			"vars": {
-				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
 				"R2_STAGING_BUCKET_NAME": "decklist-uploads"

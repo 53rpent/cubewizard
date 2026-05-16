@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  hasR2PresignCredentials,
-  parseCloudflareAccountId,
-  publicUrlForR2Key,
-} from "./presignedGetUrl";
+import { hasR2PresignCredentials, parseCloudflareAccountId } from "./presignedGetUrl";
 
 describe("presignedGetUrl", () => {
   it("parses account id", () => {
@@ -24,11 +20,5 @@ describe("presignedGetUrl", () => {
         CLOUDFLARE_ACCOUNT_ID: "abc123456789",
       })
     ).toBe(false);
-  });
-
-  it("builds public CDN URLs", () => {
-    expect(publicUrlForR2Key("https://cdn.example.com", "tmp/vision/u1/extract.jpg")).toBe(
-      "https://cdn.example.com/tmp/vision/u1/extract.jpg"
-    );
   });
 });

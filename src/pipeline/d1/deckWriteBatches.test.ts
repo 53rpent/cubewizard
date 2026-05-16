@@ -45,7 +45,7 @@ const minimalDeck = (): DeckPayload => ({
 });
 
 describe("buildDeckWritePlan", () => {
-  it("produces two batch-A statements and a lookup matching d1_writer layout", async () => {
+  it("produces two batch-A statements and a deck lookup", async () => {
     const cubeId = "abc123";
     const plan = await buildDeckWritePlan(cubeId, minimalDeck());
     expect(plan.batchA).toHaveLength(2);
