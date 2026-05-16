@@ -13,10 +13,10 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Configure minimum gap between Scryfall HTTP calls in this isolate.
- * With `parallelDecks` concurrent deck evals, use ~`100 * parallelDecks` ms (5 decks → 500ms → ~10 req/s).
+ * `parallelConsumerInstances` should match queue `max_concurrency` so N isolates × (10/N) req/s ≈ 10 req/s total.
  */
-export function configureScryfallGlobalThrottle(parallelDecks: number): void {
-  const n = Math.max(1, Math.min(10, Math.floor(parallelDecks) || 1));
+export function configureScryfallGlobalThrottle(parallelConsumerInstances: number): void {
+  const n = Math.max(1, Math.min(10, Math.floor(parallelConsumerInstances) || 1));
   minIntervalMs = Math.max(100, Math.ceil((1000 / 10) * n));
 }
 

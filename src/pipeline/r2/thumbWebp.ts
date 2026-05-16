@@ -39,12 +39,21 @@ export async function buildThumbWebpBytesFromImageBytes(
   format: ImageFormatHint,
   encodeImpl: WebpEncodeFn = encodeWebp
 ): Promise<Uint8Array> {
+  let frame = await decodeToRgba(bytes, format);
+  frame = resizeToMaxSide(frame, THUMB_MAX_SIDE, THUMB_MAX_SIDE);
+  return buildThumbWebpBytesFromRgba(frame, encodeImpl);
+}
+
+/** Build thumb from an in-memory RGBA frame (avoids re-decoding the oriented JPEG). */
+export async function buildThumbWebpBytesFromRgba(
+  frame: { width: number; height: number; data: Uint8ClampedArray },
+  encodeImpl: WebpEncodeFn = encodeWebp
+): Promise<Uint8Array> {
   if (encodeImpl === encodeWebp) {
     await ensureJsquashWebpEncoderInit();
   }
-  let frame = await decodeToRgba(bytes, format);
-  frame = resizeToMaxSide(frame, THUMB_MAX_SIDE, THUMB_MAX_SIDE);
-  const imageData = frameAsImageDataLike(frame);
+  const sized = resizeToMaxSide(frame, THUMB_MAX_SIDE, THUMB_MAX_SIDE);
+  const imageData = frameAsImageDataLike(sized);
   const buf = await encodeImpl(imageData, { quality: THUMB_WEBP_QUALITY });
   return new Uint8Array(buf);
 }

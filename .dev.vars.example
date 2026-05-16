@@ -9,8 +9,12 @@
 TURNSTILE_SECRET=
 
 # --- Eval consumer (`wrangler-eval-consumer.jsonc`) ---
-# FILL — required for OpenAI calls inside the eval queue consumer
+# FILL — required locally (Wrangler loads this as the OPENAI_API_KEY secret).
+# Hosted stg/prod: set once with `wrangler secret put OPENAI_API_KEY --config wrangler-eval-consumer.jsonc --env stg` (and `--env prod`).
 OPENAI_API_KEY=
 
 # Optional — OpenAI eval consumer log level: off | low | medium | high
 CW_EVAL_LOG_LEVEL=
+
+# Optional — max decode/orient pixels per side (default 2048 on Workers)
+# CW_EVAL_MAX_IMAGE_SIDE=2048

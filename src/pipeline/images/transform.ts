@@ -56,7 +56,7 @@ export function resizeToMaxSide(
   maxHeight: number
 ): RgbaFrame {
   const { width: w, height: h, data } = frame;
-  if (w <= maxWidth && h <= maxHeight) return cloneFrame(frame);
+  if (w <= maxWidth && h <= maxHeight) return frame;
   const scale = Math.min(maxWidth / w, maxHeight / h);
   const nw = Math.max(1, Math.floor(w * scale));
   const nh = Math.max(1, Math.floor(h * scale));

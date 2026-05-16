@@ -14,7 +14,12 @@ export async function ensureJsquashWebpEncoderInit(): Promise<void> {
   if (encoderInit) return encoderInit;
   encoderInit = (async () => {
     const [{ init: initWebpEncode }] = await Promise.all([import("@jsquash/webp/encode")]);
-    const useSimd = await simd();
+    let useSimd = false;
+    try {
+      useSimd = await simd();
+    } catch {
+      useSimd = false;
+    }
     const mod = useSimd ? webpEncSimdWasm : webpEncWasm;
     await initWebpEncode(mod);
   })();

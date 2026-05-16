@@ -1,6 +1,6 @@
 import { encodeJpeg } from "../images/encode";
 import { orientedObjectKey, orientedThumbObjectKey } from "../r2/orientedKeys";
-import { buildThumbWebpBytesFromImageBytes } from "../r2/thumbWebp";
+import { buildThumbWebpBytesFromRgba } from "../r2/thumbWebp";
 import { normalizeStoredImagePathRelativeToOutput } from "../d1/storedPath";
 
 export interface R2PutBucket {
@@ -27,7 +27,7 @@ export async function uploadOrientedImageAndThumb(opts: {
     httpMetadata: { contentType: "image/jpeg" },
   });
 
-  const thumbBytes = await buildThumbWebpBytesFromImageBytes(orientedBytes, "jpeg");
+  const thumbBytes = await buildThumbWebpBytesFromRgba(opts.orientedRgba);
   const thumbKey = orientedThumbObjectKey(opts.cubeId, opts.imageId);
   await opts.blob.put(thumbKey, thumbBytes, {
     httpMetadata: { contentType: "image/webp" },

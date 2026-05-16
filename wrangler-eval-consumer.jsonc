@@ -4,11 +4,18 @@
 	"main": "src/pipeline/entry/evalQueueEntry.ts",
 	"compatibility_date": "2024-12-01",
 	"compatibility_flags": ["nodejs_compat"],
+	"limits": {
+		"cpu_ms": 30000
+	},
 	"observability": {
 		"enabled": true
 	},
 	"dev": {
 		"port": 8788
+	},
+	// OPENAI_API_KEY: local → `.dev.vars`; stg/prod → `wrangler secret put OPENAI_API_KEY --config wrangler-eval-consumer.jsonc --env <stg|prod>`
+	"secrets": {
+		"required": ["OPENAI_API_KEY"]
 	},
 	"vars": {
 		"CWW_ENV": "local",
@@ -18,7 +25,9 @@
 		"CW_EVAL_USE_MULTI_PASS": "true",
 		"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 		"CW_EVAL_JPEG_QUALITY": "95",
-		"CW_EVAL_QUEUE_CONCURRENCY": "5"
+		"CW_EVAL_MAX_IMAGE_SIDE": "2048",
+		"CW_EVAL_MAX_CONSUMERS": "2",
+		"CW_EVAL_MAX_RETRIES": "5"
 	},
 	"r2_buckets": [
 		{
@@ -42,17 +51,29 @@
 		"consumers": [
 			{
 				"queue": "cubewizard-eval-local",
-				"max_batch_size": 5,
+				"max_batch_size": 1,
 				"max_batch_timeout": 30,
 				"max_retries": 5,
-				"max_concurrency": 1,
+				"max_concurrency": 2,
 				"dead_letter_queue": "cubewizard-eval-local-dlq"
+			},
+			{
+				"queue": "cubewizard-eval-local-dlq",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 1
 			}
 		]
 	},
 	"env": {
 		"stg": {
 			"name": "cubewizard-eval-consumer-stg",
+			"limits": {
+				"cpu_ms": 30000
+			},
+			"secrets": {
+				"required": ["OPENAI_API_KEY"]
+			},
 			"vars": {
 				"CWW_ENV": "staging",
 				"OPENAI_VISION_MODEL": "gpt-5-mini-2025-08-07",
@@ -61,7 +82,9 @@
 				"CW_EVAL_USE_MULTI_PASS": "true",
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 				"CW_EVAL_JPEG_QUALITY": "95",
-				"CW_EVAL_QUEUE_CONCURRENCY": "5"
+				"CW_EVAL_MAX_IMAGE_SIDE": "2048",
+				"CW_EVAL_MAX_CONSUMERS": "2",
+				"CW_EVAL_MAX_RETRIES": "5"
 			},
 			"r2_buckets": [
 				{
@@ -85,17 +108,29 @@
 				"consumers": [
 					{
 						"queue": "cubewizard-eval-stg",
-						"max_batch_size": 5,
+						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 1,
+						"max_concurrency": 2,
 						"dead_letter_queue": "cubewizard-eval-stg-dlq"
+					},
+					{
+						"queue": "cubewizard-eval-stg-dlq",
+						"max_batch_size": 10,
+						"max_batch_timeout": 30,
+						"max_retries": 1
 					}
 				]
 			}
 		},
 		"prod": {
 			"name": "cubewizard-eval-consumer-prod",
+			"limits": {
+				"cpu_ms": 30000
+			},
+			"secrets": {
+				"required": ["OPENAI_API_KEY"]
+			},
 			"vars": {
 				"CWW_ENV": "production",
 				"OPENAI_VISION_MODEL": "gpt-5-mini-2025-08-07",
@@ -104,7 +139,9 @@
 				"CW_EVAL_USE_MULTI_PASS": "true",
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 				"CW_EVAL_JPEG_QUALITY": "95",
-				"CW_EVAL_QUEUE_CONCURRENCY": "5"
+				"CW_EVAL_MAX_IMAGE_SIDE": "2048",
+				"CW_EVAL_MAX_CONSUMERS": "2",
+				"CW_EVAL_MAX_RETRIES": "5"
 			},
 			"r2_buckets": [
 				{
@@ -128,11 +165,17 @@
 				"consumers": [
 					{
 						"queue": "cubewizard-eval-prod",
-						"max_batch_size": 5,
+						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 1,
+						"max_concurrency": 2,
 						"dead_letter_queue": "cubewizard-eval-prod-dlq"
+					},
+					{
+						"queue": "cubewizard-eval-prod-dlq",
+						"max_batch_size": 10,
+						"max_batch_timeout": 30,
+						"max_retries": 1
 					}
 				]
 			}

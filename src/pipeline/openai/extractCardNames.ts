@@ -1,21 +1,15 @@
+import { bytesToBase64 } from "../images/base64";
 import { encodeJpeg } from "../images/encode";
 import { resizeToMaxSide } from "../images/transform";
 import type { RgbaFrame } from "../images/types";
+import { EVAL_MAX_IMAGE_SIDE_DEFAULT } from "../orchestrator/evalImageLimits";
 import { buildExtractionPrompt } from "../openai/prompts";
 import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
 import { CardExtractionResultSchema } from "../openai/schemas";
 import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
 
-function rgbaToJpegBase64(frame: RgbaFrame, quality: number): string {
-  const jpegBytes = encodeJpeg(frame, quality);
-  let bin = "";
-  for (let i = 0; i < jpegBytes.length; i++) {
-    bin += String.fromCharCode(jpegBytes[i]!);
-  }
-  return btoa(bin);
-}
-
 export interface ExtractCardNamesOptions {
+  maxImageSide?: number;
   apiKey: string;
   model: string;
   maxOutputTokens: number;
@@ -63,8 +57,9 @@ export async function extractCardNamesFromRgba(
   frame: RgbaFrame,
   opts: ExtractCardNamesOptions
 ): Promise<string[]> {
-  const sized = resizeToMaxSide(frame, 4000, 4000);
-  const b64 = rgbaToJpegBase64(sized, opts.jpegQuality);
+  const side = opts.maxImageSide ?? EVAL_MAX_IMAGE_SIDE_DEFAULT;
+  const sized = resizeToMaxSide(frame, side, side);
+  const b64 = bytesToBase64(encodeJpeg(sized, opts.jpegQuality));
   const basePrompt = buildExtractionPrompt(opts.cubeCardList, opts.maxCardsInPrompt);
 
   const level = opts.openAiLogLevel ?? "off";

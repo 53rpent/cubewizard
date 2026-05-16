@@ -14,16 +14,15 @@ import {
   type D1DatabaseLike,
 } from "./processingJobRepo";
 import { uploadOrientedImageAndThumb } from "./uploadOriented";
+import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
+import { parseEvalMaxImageSide } from "./evalImageLimits";
+import { PermanentEvalError } from "./evalErrors";
+import { safeMarkJobFailed } from "./safeMarkJobFailed";
+import { formatEvalError } from "../util/formatEvalError";
+
+export { PermanentEvalError } from "./evalErrors";
 
 const HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-
-export class PermanentEvalError extends Error {
-  readonly permanent = true as const;
-  constructor(message: string) {
-    super(message);
-    this.name = "PermanentEvalError";
-  }
-}
 
 export interface R2BucketGetPut {
   get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
@@ -35,7 +34,8 @@ export interface R2BucketGetPut {
 }
 
 export interface RunEvalTaskEnv {
-  OPENAI_API_KEY: string;
+  /** Set via `.dev.vars` locally or `wrangler secret put OPENAI_API_KEY` when deployed. */
+  OPENAI_API_KEY?: string;
   OPENAI_VISION_MODEL?: string;
   OPENAI_MAX_OUTPUT_TOKENS?: string;
   OPENAI_REASONING_EFFORT?: string;
@@ -46,8 +46,12 @@ export interface RunEvalTaskEnv {
   CW_EVAL_LOG_LEVEL?: string;
   /** Legacy: `1` / `true` / `yes` → same as `CW_EVAL_LOG_LEVEL=high` when that var is unset/invalid. */
   CW_EVAL_VERBOSE_LOG?: string;
-  /** Parallel deck evals per queue batch (1–5, default 5). */
-  CW_EVAL_QUEUE_CONCURRENCY?: string;
+  /** Expected queue `max_concurrency` (Scryfall throttle; default 2 — shares 128 MiB isolate). */
+  CW_EVAL_MAX_CONSUMERS?: string;
+  /** Match queue `max_retries` in wrangler (default 5). */
+  CW_EVAL_MAX_RETRIES?: string;
+  /** Max decoded image width/height in px (default 2048; keeps RGBA under Workers memory cap). */
+  CW_EVAL_MAX_IMAGE_SIDE?: string;
   cubewizard_db: D1DatabaseLike;
   BUCKET: R2BucketGetPut;
   DECK_IMAGES_BLOB: R2BucketGetPut;
@@ -179,10 +183,7 @@ export async function runEvalTask(
     throw new PermanentEvalError("cube_id_required");
   }
 
-  const apiKey = String(env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) {
-    throw new PermanentEvalError("OPENAI_API_KEY_missing");
-  }
+  const apiKey = resolveOpenAiApiKey(env);
 
   const model = String(env.OPENAI_VISION_MODEL || "gpt-5-mini-2025-08-07").trim();
   const maxOut = Math.min(
@@ -197,6 +198,7 @@ export async function runEvalTask(
   const jpegQ = Math.min(100, Math.max(60, parseInt(String(env.CW_EVAL_JPEG_QUALITY || "95"), 10) || 95));
 
   const openAiLogLevel = parseEvalOpenAiLogLevel(env);
+  const maxImageSide = parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE);
 
   try {
     await ensureQueuedProcessingJob(env.cubewizard_db, task);
@@ -250,16 +252,20 @@ export async function runEvalTask(
       maxCards: maxCubeCards,
     });
 
+    console.log("eval_phase orient_start", { upload_id: task.upload_id, cube_id: cubeId });
     const { frame: orientedRgba } = await orientDeckImageRgba(imageBytes, undefined, {
       apiKey,
       model,
       maxOutputTokens: 2000,
       reasoningEffort: "medium",
       jpegQuality: jpegQ,
+      maxImageWidth: maxImageSide,
+      maxImageHeight: maxImageSide,
       fetchImpl,
       openAiLogLevel,
     });
 
+    console.log("eval_phase orient_done", { upload_id: task.upload_id });
     const cardNames = await extractCardNamesFromRgba(orientedRgba, {
       apiKey,
       model,
@@ -269,6 +275,7 @@ export async function runEvalTask(
       maxCardsInPrompt: maxCubeCards,
       useMultiPass: useMultiPass,
       jpegQuality: jpegQ,
+      maxImageSide,
       fetchImpl,
       openAiLogLevel,
     });
@@ -277,6 +284,10 @@ export async function runEvalTask(
       throw new PermanentEvalError("no_cards_extracted");
     }
 
+    console.log("eval_phase extract_done", {
+      upload_id: task.upload_id,
+      card_count: cardNames.length,
+    });
     const scryfall = createEvalScryfallClient({ fetchImpl });
     const enriched = await scryfall.enrichCardList(cardNames);
     console.log("eval_scryfall_enrichment", {
@@ -311,6 +322,10 @@ export async function runEvalTask(
       },
     };
 
+    console.log("eval_phase scryfall_done", {
+      upload_id: task.upload_id,
+      total_found: enriched.total_found,
+    });
     const write = await executeDeckWritePlan(env.cubewizard_db, cubeId, deckPayload);
     if (!write.success) {
       throw new PermanentEvalError("d1_deck_write_failed");
@@ -327,6 +342,7 @@ export async function runEvalTask(
     const deckId = write.deckId;
     const imageId = write.imageId;
 
+    console.log("eval_phase d1_done", { upload_id: task.upload_id, deck_id: deckId });
     const uploaded = await uploadOrientedImageAndThumb({
       blob: env.DECK_IMAGES_BLOB,
       cubeId,
@@ -341,6 +357,10 @@ export async function runEvalTask(
       stagingKey: metadata.image_key,
     });
 
+    console.log("eval_phase upload_done", {
+      upload_id: task.upload_id,
+      oriented_key: uploaded.orientedKey,
+    });
     await markJobDone(
       env.cubewizard_db,
       task.upload_id,
@@ -352,9 +372,10 @@ export async function runEvalTask(
         oriented_thumb_r2_key: uploaded.thumbKey,
       })
     );
+    console.log("eval_phase complete", { upload_id: task.upload_id });
   } catch (e) {
     if (e instanceof ModelOutputInvalidError || e instanceof PermanentEvalError) {
-      await markJobFailed(env.cubewizard_db, task.upload_id, (e as Error).message);
+      await safeMarkJobFailed(env.cubewizard_db, task.upload_id, formatEvalError(e));
     }
     throw e;
   }

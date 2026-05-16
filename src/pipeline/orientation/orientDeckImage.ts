@@ -1,5 +1,7 @@
+import { bytesToBase64 } from "../images/base64";
 import { encodeJpeg } from "../images/encode";
 import { decodeToRgba } from "../images/decode";
+import { EVAL_MAX_IMAGE_SIDE_DEFAULT } from "../orchestrator/evalImageLimits";
 import { resizeToMaxSide, rotateClockwise } from "../images/transform";
 import type { ImageFormatHint, RgbaFrame } from "../images/types";
 import { sniffImageFormat } from "../images/sniff";
@@ -7,15 +9,6 @@ import { ORIENTATION_PROMPT } from "../openai/prompts";
 import { orientationJsonSchema } from "../openai/jsonSchemas";
 import { OrientationResultSchema } from "../openai/schemas";
 import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
-
-function rgbaToJpegBase64(frame: Parameters<typeof encodeJpeg>[0], quality: number): string {
-  const jpegBytes = encodeJpeg(frame, quality);
-  let bin = "";
-  for (let i = 0; i < jpegBytes.length; i++) {
-    bin += String.fromCharCode(jpegBytes[i]!);
-  }
-  return btoa(bin);
-}
 
 export interface OrientDeckImageOptions {
   apiKey: string;
@@ -49,8 +42,8 @@ export async function orientDeckImageRgba(
   }
 
   let frame = await decodeToRgba(imageBytes, fmt);
-  const mw = opts.maxImageWidth ?? 4000;
-  const mh = opts.maxImageHeight ?? 4000;
+  const mw = opts.maxImageWidth ?? EVAL_MAX_IMAGE_SIDE_DEFAULT;
+  const mh = opts.maxImageHeight ?? EVAL_MAX_IMAGE_SIDE_DEFAULT;
   frame = resizeToMaxSide(frame, mw, mh);
 
   const maxTok = opts.maxOutputTokens ?? 2000;
@@ -58,7 +51,7 @@ export async function orientDeckImageRgba(
 
   // Mirror Python loop: repeatedly detect rotation on current sample and rotate until 0.
   for (let guard = 0; guard < 8; guard++) {
-    const b64 = rgbaToJpegBase64(frame, q);
+    const b64 = bytesToBase64(encodeJpeg(frame, q));
     const result = await callOpenAiVisionJsonSchema(
       {
         apiKey: opts.apiKey,

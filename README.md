@@ -38,9 +38,10 @@ npm run dev:all                  # site + eval + hedron consumers, shared local 
 
 | Variable | Used by |
 |----------|---------|
-| `OPENAI_API_KEY` | Eval consumer (required for vision) |
+| `OPENAI_API_KEY` | Eval consumer secret (`.dev.vars` locally; Cloudflare secret when deployed) |
 | `CW_EVAL_LOG_LEVEL` | `off` \| `low` \| `medium` \| `high` (OpenAI logs in eval consumer) |
-| `CW_EVAL_QUEUE_CONCURRENCY` | Parallel decks per batch (1–5, default 5) |
+| `CW_EVAL_MAX_CONSUMERS` | Expected queue `max_concurrency` (Scryfall throttle; default 2, match wrangler) |
+| `CW_EVAL_MAX_IMAGE_SIDE` | Max decode/orient dimension in px (default 2048; Workers isolate cap is 128 MiB) |
 | `CW_EVAL_VERBOSE_LOG` | Legacy: `1`/`true` → `high` if log level unset |
 | `TURNSTILE_SECRET` | Site upload Turnstile (optional locally when `CWW_ENV=local`) |
 
@@ -48,10 +49,12 @@ npm run dev:all                  # site + eval + hedron consumers, shared local 
 
 - Bundled by Wrangler from `src/pipeline/entry/evalQueueEntry.ts` (no separate build step).
 - Dry-run bundle: `npm run build:eval-consumer`
-- Secrets (hosted): `npx wrangler secret put OPENAI_API_KEY --config wrangler-eval-consumer.jsonc [--env stg|prod]`
+- **OpenAI key (hosted):** declared in `wrangler-eval-consumer.jsonc` as `secrets.required`; set per environment (not in `vars`):
+  `npx wrangler secret put OPENAI_API_KEY --config wrangler-eval-consumer.jsonc --env stg`
+  and the same with `--env prod`. Redeploying does not change an existing secret.
 - **`nodejs_compat`** is enabled for JPEG encoding (`jpeg-js` / `Buffer`).
 - **WebP / WASM:** codec files live in `vendor/jsquash-webp/` and are imported as precompiled `WebAssembly.Module` values (Workers disallow runtime `WebAssembly.compile` on raw bytes).
-- **Parallelism:** up to `CW_EVAL_QUEUE_CONCURRENCY` decks per queue batch (default 5). Scryfall HTTP is globally throttled (~10 req/s total across parallel work in one isolate).
+- **Throughput:** one deck per invocation (`max_batch_size: 1`); up to **2** concurrent consumer invocations (`max_concurrency: 2`). Each isolate has a **128 MiB** memory cap (paid plan does not raise this). `CW_EVAL_MAX_IMAGE_SIDE=2048` limits RGBA size; raise `max_concurrency` only after profiling memory.
 - **Processing UI:** upload/Hedron enqueue upserts `processing_jobs` in D1 immediately; `GET /api/processing-decks/:cubeId` lists `queued` / `running` / `failed` jobs.
 
 ### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
@@ -202,7 +205,11 @@ Local Python CLI (`python main.py`) remains for one-off image debugging against 
 - **Queue not draining locally:** use `npm run dev:all`, not separate `dev` + `dev:eval-consumer` terminals.
 - **Stale processing card in UI:** row stuck in `processing_jobs` (`running`/`queued`); delete rows or reset `.wrangler/local-shared` (see above).
 - **`WebAssembly.compile` disallowed:** ensure eval consumer uses vendored `.wasm` imports (Wrangler bundle), not runtime compile of wasm bytes.
-- **Scryfall 429:** reduce `CW_EVAL_QUEUE_CONCURRENCY` or retry; global throttle targets ~10 req/s per isolate.
+- **Scryfall 429:** lower queue `max_concurrency` / `CW_EVAL_MAX_CONSUMERS` or retry.
+- **`exceededCpu`:** eval consumer uses `limits.cpu_ms: 30000` (30s CPU per invocation, one deck each).
+- **`exceededMemory`:** Workers allow **128 MiB per isolate** (not raised on Paid). Large photos + 4000px RGBA can exceed this; default `CW_EVAL_MAX_IMAGE_SIDE` is 2048. Concurrent invocations share one isolate’s 128 MiB — keep `max_concurrency` low.
+- **`exception`:** Uncaught JS error in the consumer. The queue name in the dashboard is not the cause — run `npx wrangler tail cubewizard-eval-consumer-stg --config wrangler-eval-consumer.jsonc` and look for `eval_consumer_error` (includes `message` + `stack`) or the last `eval_phase_*` line before failure.
+- **DLQ / retries exhausted:** On the last delivery attempt (`attempts >= CW_EVAL_MAX_RETRIES`), the consumer sets `processing_jobs.status = failed` with `retries_exhausted (n/5): …`. Messages that still reach `*-dlq` are consumed by the same Worker (`batch.queue` ends with `-dlq`) and marked `dead_letter_queue (…): …`.
 - **Wrangler auth:** `npx wrangler login`
 
 ## License
