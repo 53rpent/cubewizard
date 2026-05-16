@@ -1,4 +1,4 @@
-import { isLocalEvalEnv } from "../env/isLocalEvalEnv";
+import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
 import type { R2PutBucket } from "../orchestrator/uploadOriented";
 import {
   createR2PresignedGetUrl,

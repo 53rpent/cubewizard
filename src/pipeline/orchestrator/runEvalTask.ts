@@ -16,7 +16,7 @@ import {
 import { uploadOrientedImageAndThumb } from "./uploadOriented";
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
 import { parseEvalMaxImageSide, parseEvalOrientMaxSide } from "./evalImageLimits";
-import { isLocalEvalEnv } from "../env/isLocalEvalEnv";
+import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
 import {
   assertVisionPublishConfigured,
   createVisionImagePublisher,

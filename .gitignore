@@ -35,6 +35,8 @@ MANIFEST
 venv/
 env/
 ENV/
+# Pipeline TS helpers live under src/pipeline/evalEnv/ (not Python venv)
+!src/pipeline/evalEnv/
 env.bak/
 venv.bak/
 
