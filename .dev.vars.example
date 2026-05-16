@@ -1,0 +1,15 @@
+# =============================================================================
+# COPY THIS FILE TO `.dev.vars` AND FILL EVERY KEY YOU NEED (values may stay
+# empty until you exercise that code path). Wrangler loads `.dev.vars` for any
+# `wrangler dev` run in this repo (site worker, eval consumer, hedron consumer).
+# =============================================================================
+
+# FILL — required locally (Wrangler loads this as the OPENAI_API_KEY secret).
+OPENAI_API_KEY=
+
+# Optional — OpenAI eval consumer log level: off | low | medium | high
+CW_EVAL_LOG_LEVEL=
+
+# Optional — max decode/orient pixels per side (default 2048 on Workers)
+# CW_EVAL_MAX_IMAGE_SIDE=2048
+# CW_EVAL_ORIENT_MAX_SIDE=1280

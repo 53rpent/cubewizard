@@ -1,9 +1,13 @@
 {
+	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "cubewizard-hedron-consumer",
 	"compatibility_date": "2024-09-19",
 	"main": "src/hedron-consumer.js",
 	"observability": {
 		"enabled": true
+	},
+	"dev": {
+		"port": 8789
 	},
 	"vars": {
 		"CWW_ENV": "local",
@@ -15,6 +19,31 @@
 			"bucket_name": "decklist-uploads"
 		}
 	],
+	"d1_databases": [
+		{
+			"binding": "cubewizard_db",
+			"database_name": "cubewizard-db",
+			"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543"
+		}
+	],
+	"queues": {
+		"consumers": [
+			{
+				"queue": "cubewizard-hedron-local",
+				"max_batch_size": 1,
+				"max_batch_timeout": 30,
+				"max_retries": 5,
+				"max_concurrency": 1,
+				"dead_letter_queue": "cubewizard-hedron-local-dlq"
+			}
+		],
+		"producers": [
+			{
+				"binding": "EVAL_QUEUE",
+				"queue": "cubewizard-eval-local"
+			}
+		]
+	},
 	"env": {
 		"stg": {
 			"name": "cubewizard-hedron-consumer-stg",
@@ -23,8 +52,7 @@
 			},
 			"vars": {
 				"CWW_ENV": "staging",
-				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
-				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app"
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
 			},
 			"r2_buckets": [
 				{
@@ -32,14 +60,29 @@
 					"bucket_name": "decklist-uploads"
 				}
 			],
+			"d1_databases": [
+				{
+					"binding": "cubewizard_db",
+					"database_name": "cubewizard-db-stg",
+					"database_id": "3ae6ad5b-d61e-443d-a501-d4cd215dffd5",
+					"remote": true
+				}
+			],
 			"queues": {
 				"consumers": [
 					{
 						"queue": "cubewizard-hedron-stg",
 						"max_batch_size": 1,
-						"max_batch_timeout": 5,
+						"max_batch_timeout": 30,
 						"max_retries": 5,
+						"max_concurrency": 1,
 						"dead_letter_queue": "cubewizard-hedron-stg-dlq"
+					}
+				],
+				"producers": [
+					{
+						"binding": "EVAL_QUEUE",
+						"queue": "cubewizard-eval-stg"
 					}
 				]
 			}
@@ -51,8 +94,7 @@
 			},
 			"vars": {
 				"CWW_ENV": "production",
-				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
-				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app"
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
 			},
 			"r2_buckets": [
 				{
@@ -60,14 +102,29 @@
 					"bucket_name": "decklist-uploads"
 				}
 			],
+			"d1_databases": [
+				{
+					"binding": "cubewizard_db",
+					"database_name": "cubewizard-db",
+					"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
+					"remote": true
+				}
+			],
 			"queues": {
 				"consumers": [
 					{
 						"queue": "cubewizard-hedron-prod",
 						"max_batch_size": 1,
-						"max_batch_timeout": 5,
+						"max_batch_timeout": 30,
 						"max_retries": 5,
+						"max_concurrency": 1,
 						"dead_letter_queue": "cubewizard-hedron-prod-dlq"
+					}
+				],
+				"producers": [
+					{
+						"binding": "EVAL_QUEUE",
+						"queue": "cubewizard-eval-prod"
 					}
 				]
 			}

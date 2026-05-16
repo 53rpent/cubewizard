@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cubewizard.local/schemas/eval-task-request.json",
+  "title": "CubeWizardEvalTaskRequest",
+  "description": "Frozen contract for async deck evaluation: Cloud Tasks POST body today, Cloudflare Queue message JSON tomorrow. Matches TaskRequest/EnqueueRequest: require (r2_bucket AND r2_prefix) OR image_url.",
+  "type": "object",
+  "required": ["upload_id", "schema_version"],
+  "properties": {
+    "upload_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable job id. R2 flow: prefix without trailing slash; worker sends r2_prefix = upload_id + '/'."
+    },
+    "cube_id": { "type": "string" },
+    "pilot_name": { "type": "string" },
+    "submitted_at": {
+      "type": "string",
+      "description": "ISO-8601 from producer."
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
+    "r2_bucket": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Staging bucket (e.g. decklist-uploads)."
+    },
+    "r2_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Prefix under bucket; must include metadata.json and image file(s)."
+    },
+    "image_url": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Deck image URL (Hedron flow)."
+    },
+    "image_source": { "type": "string" },
+    "match_wins": { "type": "integer" },
+    "match_losses": { "type": "integer" },
+    "match_draws": { "type": "integer" }
+  },
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "title": "HasR2Prefix",
+      "required": ["r2_bucket", "r2_prefix"]
+    },
+    {
+      "title": "HasImageUrl",
+      "required": ["image_url"]
+    }
+  ]
+}

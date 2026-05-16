@@ -5,6 +5,8 @@
  * and static assets for the dashboard SPA.
  */
 
+import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -69,7 +71,7 @@ export default {
 
     const hedronSyncMatch = url.pathname.match(/^\/api\/hedron-sync\/([^/]+)$/);
     if (hedronSyncMatch && request.method === "POST") {
-      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx, request);
+      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx);
     }
 
     // --- Existing endpoints ---
@@ -83,11 +85,6 @@ export default {
 
     if (url.pathname === "/api/add-cube" && request.method === "POST") {
       return handleAddCube(request, env, ctx);
-    }
-
-    /** GCP enqueue cleanup: release Hedron D1 dedupe row (same secret as /enqueue). */
-    if (url.pathname === "/api/internal/release-hedron-sync-dedupe" && request.method === "POST") {
-      return handleReleaseHedronSyncDedupe(request, env);
     }
 
     const legacyRedirect = legacyAnalysisToDataViewRedirect(url);
@@ -113,7 +110,7 @@ export default {
     }
   },
 
-  /** Daily Hedron sync: triggered by Cloudflare Cron Triggers (Wrangler `triggers.crons`), not GCP. Skipped on stg (`CWW_ENV`). */
+  /** Daily Hedron sync: Cloudflare Cron Triggers (`triggers.crons`). Skipped on stg (`CWW_ENV`). */
   async scheduled(event, env, ctx) {
     var cwEnv = typeof env.CWW_ENV === "string" ? env.CWW_ENV.trim().toLowerCase() : "";
     if (cwEnv === "staging") {
@@ -139,193 +136,11 @@ export default {
 };
 
 /**
- * After a successful staging upload to R2, notify the GCP enqueue service so it can
- * create a Cloud Task to process the submission.
+ * After a successful staging upload to R2, enqueue eval work on **EVAL_QUEUE** (eval consumer Worker).
+ * `GET /api/processing-decks/:cubeId` reads **`processing_jobs` in D1** (see `schema.sql`; local: `npm run d1:bootstrap:local`).
  *
- * Configure via Wrangler secrets (recommended):
- * - GCP_ENQUEUE_URL: https://<cubewizard-enqueue-host>/enqueue
- * - ENQUEUE_SHARED_SECRET: must match Cloud Run `ENQUEUE_SHARED_SECRET`
- *
- * Optional:
- * - R2_STAGING_BUCKET_NAME: defaults to "decklist-uploads" (must match the R2 bucket behind env.BUCKET)
- *
- * Deck processing status (`/api/processing-decks/:cubeId`) uses Firestore directly from the Worker.
- * Configure:
- * - GCP_FIRESTORE_SA_JSON: full service account JSON (private key) with Firestore read access
- * - GCP_PROJECT_ID: optional if `project_id` is present in the JSON
- * - FIRESTORE_DATABASE_ID: optional (defaults to "(default)"; use e.g. cw-upload-status)
- * - FIRESTORE_COLLECTION: optional (defaults to jobs)
+ * - `R2_STAGING_BUCKET_NAME`: defaults to "decklist-uploads" (must match the R2 bucket behind env.BUCKET).
  */
-var __cwGcpAccessTokenCache = { token: "", expMs: 0 };
-
-function base64UrlEncodeBytes(buf) {
-  var bin = "";
-  var bytes = new Uint8Array(buf);
-  for (var i = 0; i < bytes.byteLength; i++) {
-    bin += String.fromCharCode(bytes[i]);
-  }
-  var b64 = btoa(bin);
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function base64UrlEncodeUtf8(s) {
-  return base64UrlEncodeBytes(new TextEncoder().encode(s));
-}
-
-function pemToPkcs8ArrayBuffer(pem) {
-  var lines = String(pem || "")
-    .trim()
-    .split(/\r?\n/)
-    .filter(function (l) {
-      return l.indexOf("-----") !== 0;
-    });
-  var b64 = lines.join("");
-  var raw = atob(b64);
-  var buf = new Uint8Array(raw.length);
-  for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
-  return buf.buffer;
-}
-
-async function importRsaPrivateKeyFromPem(pem) {
-  return await crypto.subtle.importKey(
-    "pkcs8",
-    pemToPkcs8ArrayBuffer(pem),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-}
-
-async function signJwtRs256(pem, claims) {
-  var header = { alg: "RS256", typ: "JWT" };
-  var h = base64UrlEncodeUtf8(JSON.stringify(header));
-  var p = base64UrlEncodeUtf8(JSON.stringify(claims));
-  var data = h + "." + p;
-  var key = await importRsaPrivateKeyFromPem(pem);
-  var sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    new TextEncoder().encode(data)
-  );
-  return data + "." + base64UrlEncodeBytes(sig);
-}
-
-async function getGoogleAccessTokenFromServiceAccountJson(saJsonText) {
-  var now = Date.now();
-  if (__cwGcpAccessTokenCache.token && now < __cwGcpAccessTokenCache.expMs - 30000) {
-    return __cwGcpAccessTokenCache.token;
-  }
-
-  var sa = JSON.parse(saJsonText);
-  var email = sa.client_email;
-  var pk = sa.private_key;
-  if (!email || !pk) {
-    throw new Error("service account JSON missing client_email/private_key");
-  }
-
-  var iat = Math.floor(now / 1000);
-  var exp = iat + 3600;
-  var jwt = await signJwtRs256(pk, {
-    iss: email,
-    sub: email,
-    aud: "https://oauth2.googleapis.com/token",
-    iat: iat,
-    exp: exp,
-    scope: "https://www.googleapis.com/auth/datastore",
-  });
-
-  var resp = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-  var j = await resp.json().catch(function () {
-    return null;
-  });
-  if (!resp.ok || !j || !j.access_token) {
-    var msg = (j && (j.error_description || j.error)) || "token_exchange_failed";
-    throw new Error(String(msg));
-  }
-
-  var ttlMs = 55 * 60 * 1000;
-  __cwGcpAccessTokenCache.token = j.access_token;
-  __cwGcpAccessTokenCache.expMs = now + ttlMs;
-  return j.access_token;
-}
-
-function firestoreParentPath(projectId, databaseId, collectionId) {
-  var db = databaseId && String(databaseId).trim() ? String(databaseId).trim() : "(default)";
-  return (
-    "projects/" +
-    encodeURIComponent(projectId) +
-    "/databases/" +
-    encodeURIComponent(db) +
-    "/documents"
-  );
-}
-
-function firestoreStringValue(s) {
-  return { stringValue: String(s) };
-}
-
-function unwrapFirestoreValue(v) {
-  if (!v || typeof v !== "object") return null;
-  if ("stringValue" in v) return v.stringValue;
-  if ("integerValue" in v) return v.integerValue;
-  if ("doubleValue" in v) return v.doubleValue;
-  if ("booleanValue" in v) return v.booleanValue;
-  if ("timestampValue" in v) return v.timestampValue;
-  if ("mapValue" in v && v.mapValue && v.mapValue.fields) return v.mapValue.fields;
-  if ("arrayValue" in v && v.arrayValue) return v.arrayValue.values || [];
-  return null;
-}
-
-function unwrapFirestoreDoc(doc) {
-  var fields = (doc && doc.fields) || {};
-  var out = {};
-  for (var k in fields) {
-    if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
-    out[k] = unwrapFirestoreValue(fields[k]);
-  }
-  return out;
-}
-
-async function firestoreRunQuery(accessToken, parentPath, structuredQuery) {
-  var url = "https://firestore.googleapis.com/v1/" + parentPath + ":runQuery";
-  var resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + accessToken,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ structuredQuery: structuredQuery }),
-  });
-  var text = await resp.text();
-  if (!resp.ok) {
-    throw new Error("firestore_runQuery_failed:" + resp.status + ":" + text.slice(0, 500));
-  }
-  return JSON.parse(text);
-}
-
-async function firestoreQueryJobsByCubeAndStatus(accessToken, parentPath, collectionId, cube, status) {
-  return await firestoreRunQuery(accessToken, parentPath, {
-    from: [{ collectionId: collectionId }],
-    where: {
-      compositeFilter: {
-        op: "AND",
-        filters: [
-          { fieldFilter: { field: { fieldPath: "cube_id" }, op: "EQUAL", value: firestoreStringValue(cube) } },
-          { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: firestoreStringValue(status) } },
-        ],
-      },
-    },
-    limit: 50,
-  });
-}
-
 async function handleGetProcessingDecks(cubeId, env) {
   try {
     var cube = String(cubeId || "").trim();
@@ -333,219 +148,55 @@ async function handleGetProcessingDecks(cubeId, env) {
       return jsonResponse({ error: "cube_id is required" }, 400);
     }
 
-    var saJson = env.GCP_FIRESTORE_SA_JSON;
-    if (!saJson || typeof saJson !== "string" || !saJson.trim()) {
-      return jsonResponse({ jobs: [], disabled: true }, 200);
-    }
-
-    var sa = JSON.parse(saJson);
-    var projectId = (env.GCP_PROJECT_ID && String(env.GCP_PROJECT_ID).trim()) || sa.project_id;
-    if (!projectId) {
-      return jsonResponse({ error: "Missing GCP_PROJECT_ID" }, 500);
-    }
-
-    var databaseId = env.FIRESTORE_DATABASE_ID;
-    if (!databaseId || !String(databaseId).trim()) {
-      databaseId = "(default)";
-    } else {
-      databaseId = String(databaseId).trim();
-    }
-
-    var collectionId = env.FIRESTORE_COLLECTION;
-    if (!collectionId || !String(collectionId).trim()) {
-      collectionId = "jobs";
-    } else {
-      collectionId = String(collectionId).trim();
-    }
-
-    var token = await getGoogleAccessTokenFromServiceAccountJson(saJson);
-    var parentPath = firestoreParentPath(projectId, databaseId, collectionId);
-
-    var statuses = ["queued", "running", "failed"];
-    var merged = {};
-    for (var si = 0; si < statuses.length; si++) {
-      var rows = await firestoreQueryJobsByCubeAndStatus(
-        token,
-        parentPath,
-        collectionId,
-        cube,
-        statuses[si]
-      );
-      if (!Array.isArray(rows)) continue;
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        if (!row || !row.document) continue;
-        var name = row.document.name || "";
-        var id = name.split("/").pop() || "";
-        if (!id) continue;
-        merged[id] = row.document;
-      }
-    }
-
+    var stmt = env.cubewizard_db.prepare(
+      "SELECT id, upload_id, cube_id, status, pilot_name, submitted_at, error " +
+        "FROM processing_jobs " +
+        "WHERE cube_id = ? AND status IN ('queued', 'running', 'failed') " +
+        "ORDER BY submitted_at DESC " +
+        "LIMIT 50"
+    );
+    var res = await stmt.bind(cube).all();
+    var rows = res.results || [];
     var jobs = [];
-    for (var k in merged) {
-      if (!Object.prototype.hasOwnProperty.call(merged, k)) continue;
-      var doc = merged[k];
-      var d = unwrapFirestoreDoc(doc);
-      var st = String(d.status || "");
+    for (var ri = 0; ri < rows.length; ri++) {
+      var row = rows[ri] || {};
+      var st = String(row.status || "");
       var ui = "queued";
       if (st === "running") ui = "processing";
       else if (st === "failed") ui = "error";
       jobs.push({
-        job_id: k,
-        upload_id: d.upload_id || "",
-        pilot_name: d.pilot_name || "",
+        job_id: row.id || "",
+        upload_id: row.upload_id != null ? String(row.upload_id) : "",
+        pilot_name: row.pilot_name != null ? String(row.pilot_name) : "",
         status: ui,
         firestore_status: st,
-        error: d.error || "",
-        submitted_at: d.submitted_at || null,
+        error: row.error != null ? String(row.error) : "",
+        submitted_at: row.submitted_at != null ? row.submitted_at : null,
       });
     }
 
-    jobs.sort(function (a, b) {
-      var as = a.submitted_at ? String(a.submitted_at) : "";
-      var bs = b.submitted_at ? String(b.submitted_at) : "";
-      return bs.localeCompare(as);
-    });
-
-    return jsonResponse({ jobs: jobs }, 200);
+    return jsonResponse({ jobs: jobs, disabled: false }, 200);
   } catch (e) {
     console.error("processing-decks error:", e);
     return jsonResponse({ error: "Failed to load processing status" }, 500);
   }
 }
 
-async function handleReleaseHedronSyncDedupe(request, env) {
-  var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
-  var hdr = String(request.headers.get("X-Shared-Secret") || "").trim();
-  if (!secret || hdr !== secret) {
-    return jsonResponse({ error: "unauthorized" }, 401);
-  }
-  var body;
-  try {
-    body = await request.json();
-  } catch (e) {
-    return jsonResponse({ error: "invalid json" }, 400);
-  }
-  var uuid =
-    body && body.deck_image_uuid != null ? String(body.deck_image_uuid).trim() : "";
-  if (!uuid || uuid.length > 200) {
-    return jsonResponse({ error: "invalid deck_image_uuid" }, 400);
+async function enqueueCfEvalJob(env, body) {
+  var q = env.EVAL_QUEUE;
+  if (!q) {
+    console.warn("CF eval queue skipped: missing env.EVAL_QUEUE binding");
+    return { ok: false, skipped: true, reason: "missing_eval_queue" };
   }
   try {
-    var stmt = env.cubewizard_db
-      .prepare("DELETE FROM hedron_synced_decks WHERE deck_image_uuid = ?")
-      .bind(uuid);
-    var result = await stmt.run();
-    var meta = result.meta || {};
-    var changes =
-      meta.changes != null
-        ? meta.changes
-        : meta.rows_written != null
-          ? meta.rows_written
-          : 0;
-    return jsonResponse(
-      { ok: true, deck_image_uuid: uuid, deleted_rows: changes },
-      200
-    );
+    await q.send(body, { contentType: "json" });
+    var uid = body && body.upload_id != null ? String(body.upload_id) : "";
+    var cid = body && body.cube_id != null ? String(body.cube_id) : "";
+    console.log("EVAL_QUEUE send ok", { upload_id: uid, cube_id: cid });
+    return { ok: true, skipped: false };
   } catch (e) {
-    console.error("release hedron dedupe", e);
-    return jsonResponse({ error: "d1 delete failed" }, 500);
-  }
-}
-
-async function enqueueGcpEvalJob(env, prefix, meta) {
-  var baseUrlRaw = env.GCP_ENQUEUE_URL || env.ENQUEUE_URL || "";
-  var baseUrl = String(baseUrlRaw || "").trim();
-  if (!baseUrl) {
-    console.warn("GCP enqueue skipped: missing env.GCP_ENQUEUE_URL (or env.ENQUEUE_URL)");
-    return { ok: false, skipped: true, reason: "missing_url" };
-  }
-
-  var secretRaw = env.ENQUEUE_SHARED_SECRET || "";
-  var secret = String(secretRaw || "").trim();
-  if (!secret) {
-    console.warn("GCP enqueue skipped: missing env.ENQUEUE_SHARED_SECRET");
-    return { ok: false, skipped: true, reason: "missing_secret" };
-  }
-
-  var trimmedBase = baseUrl.replace(/\/+$/, "");
-  var url =
-    trimmedBase.toLowerCase().endsWith("/enqueue")
-      ? trimmedBase
-      : trimmedBase + "/enqueue";
-
-  var body;
-  if (meta && meta.image_url) {
-    var uid = meta.upload_id != null ? String(meta.upload_id).trim() : "";
-    if (!uid) {
-      console.warn("GCP enqueue skipped: missing upload_id for URL-source job");
-      return { ok: false, skipped: true, reason: "missing_upload_id" };
-    }
-    body = {
-      upload_id: uid,
-      cube_id: meta.cube_id ? String(meta.cube_id).trim() : undefined,
-      pilot_name: meta.pilot_name ? String(meta.pilot_name).trim() : undefined,
-      submitted_at: meta.submitted_at ? String(meta.submitted_at) : new Date().toISOString(),
-      schema_version: 1,
-      image_url: String(meta.image_url).trim(),
-      image_source: meta.image_source ? String(meta.image_source) : "hedron",
-      match_wins: meta.match_wins != null ? meta.match_wins : undefined,
-      match_losses: meta.match_losses != null ? meta.match_losses : undefined,
-      match_draws: meta.match_draws != null ? meta.match_draws : undefined,
-    };
-  } else {
-    var bucketRaw = env.R2_STAGING_BUCKET_NAME || "decklist-uploads";
-    var r2_bucket = String(bucketRaw || "").trim();
-    if (!r2_bucket) {
-      console.warn("GCP enqueue skipped: missing/empty env.R2_STAGING_BUCKET_NAME");
-      return { ok: false, skipped: true, reason: "missing_bucket" };
-    }
-
-    var upload_id = String(prefix || "").replace(/\/+$/, "");
-    var r2_prefix = upload_id + "/";
-    var cube_id = meta && meta.cube_id ? String(meta.cube_id).trim() : "";
-    var pilot_name = meta && meta.pilot_name ? String(meta.pilot_name).trim() : "";
-
-    body = {
-      upload_id: upload_id,
-      r2_bucket: r2_bucket,
-      r2_prefix: r2_prefix,
-      cube_id: cube_id || undefined,
-      pilot_name: pilot_name || undefined,
-      submitted_at: new Date().toISOString(),
-      schema_version: 1,
-    };
-  }
-
-  var controller = new AbortController();
-  var tid = setTimeout(function () {
-    controller.abort();
-  }, 15000);
-
-  try {
-    var resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shared-Secret": secret,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    if (!resp.ok) {
-      var t = await resp.text();
-      console.error("GCP enqueue failed:", resp.status, t.slice(0, 500));
-      return { ok: false, skipped: false, status: resp.status };
-    }
-
-    return { ok: true, skipped: false, status: resp.status };
-  } catch (e) {
-    console.error("GCP enqueue error:", e);
+    console.error("CF eval queue send failed:", e);
     return { ok: false, skipped: false };
-  } finally {
-    clearTimeout(tid);
   }
 }
 
@@ -553,7 +204,7 @@ var HEDRON_ORIGIN = "https://hedron.network";
 var HEDRON_SEARCH_URL = "https://hedron.network/cube-results/search";
 /** Defaults; override with Wrangler vars to stay under Workers free-tier subrequest limits (each D1 op + outbound fetch counts). */
 var HEDRON_SYNC_MAX_PAGES_PER_TICK = 6;
-/** Default 250: queue batches replace per-deck GCP calls; D1 writes are grouped after queue publish. */
+/** Default 250: queue batches per deck; D1 writes are grouped after queue publish. */
 var HEDRON_SYNC_MAX_DECKS_PER_TICK = 250;
 /** Cloudflare Queues sendBatch supports up to 100 messages; keep the default lower for message-size headroom. */
 var HEDRON_QUEUE_BATCH_SIZE = 50;
@@ -561,27 +212,10 @@ var HEDRON_QUEUE_BATCH_SIZE = 50;
 var HEDRON_SYNC_CURSOR_UPSERT_EVERY = 5;
 /** Wall-clock budget per Worker invocation chunk (enqueue + Hedron fetches). Cursor stays in D1; continuation picks up. */
 var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
-/** Nested waitUntil continuations when WORKER_PUBLIC_URL is unset (same isolate; limited to avoid spinning). */
+/** Nested waitUntil continuations when WORKER_SELF is unavailable (same isolate; limited to avoid spinning). */
 var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
-/** JSON field for public HTTP Hedron continuations (not sent as a header — avoids secrets in default CF request logs). */
-var HEDRON_CONTINUE_TOKEN_JSON_FIELD = "continuation_token";
 /** Synthetic FQDN for WORKER_SELF.fetch only (.invalid is reserved in RFC 2606). Service bindings ignore the host, but the URL must be fully qualified — a host without a dot caused 500s for some runtimes. */
 var HEDRON_SERVICE_SYNC_HOST = "cubewizard-hedron.invalid";
-
-function isHedronServiceBindingContinuation(request) {
-  try {
-    return new URL(request.url).hostname === HEDRON_SERVICE_SYNC_HOST;
-  } catch (e) {
-    return false;
-  }
-}
-
-/** Secret for public HTTP Hedron continuations only (optional env HEDRON_SYNC_CONTINUE_SECRET). If unset, falls back to ENQUEUE_SHARED_SECRET (sent in JSON body, not headers, to reduce log exposure). */
-function hedronContinuationSharedSecret(env) {
-  var c = String(env.HEDRON_SYNC_CONTINUE_SECRET || "").trim();
-  if (c) return c;
-  return String(env.ENQUEUE_SHARED_SECRET || "").trim();
-}
 
 function hedronEnvInt(env, key, defaultVal, maxVal) {
   var cap = maxVal != null ? maxVal : 200;
@@ -815,12 +449,11 @@ async function hedronSyncShouldContinue(env, cubeId) {
  * Continue Hedron sync in a new logical invocation (fresh subrequest budget).
  *
  * Priority:
- * 1) env.WORKER_SELF (service binding) — no public DNS; no auth header (avoids enqueue secret in CF logs).
- * 2) fetch(WORKER_CONTINUE_URL || WORKER_PUBLIC_URL) — POST JSON { continuation_token } (not headers).
- * 3) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
+ * 1) env.WORKER_SELF (service binding) — no public DNS; no auth header.
+ * 2) ctx.waitUntil(syncHedronCube) — same isolate (limited depth; shared 50 subrequests on free).
  *
  * Callers must use {@link dispatchHedronSyncContinuation}, not await this function from syncHedronCube:
- * awaiting service-binding or HTTP continuation fetch chains parent → child handlers recursively, so the
+ * awaiting the service-binding continuation fetch chains parent → child handlers recursively, so the
  * browser request does not get a response until every chunk finishes (proxy timeouts despite successful work).
  */
 async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
@@ -828,7 +461,6 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
   if (!id) return;
 
   var d = depth != null ? depth : 0;
-  var httpSecret = hedronContinuationSharedSecret(env);
 
   /** @returns {Promise<Response>|null} */
   async function continuationRequest() {
@@ -836,8 +468,7 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
 
     var selfBind = env.WORKER_SELF;
     if (selfBind && typeof selfBind.fetch === "function") {
-      // No shared secret in headers: CF logs request metadata and would expose it. Service binding
-      // is already account-scoped; synthetic host is only used from this Worker.
+      // Service binding is account-scoped; synthetic host is only used from this Worker.
       return selfBind.fetch(
         new Request("https://" + HEDRON_SERVICE_SYNC_HOST + path, {
           method: "POST",
@@ -845,18 +476,7 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
       );
     }
 
-    var continueBase = String(env.WORKER_CONTINUE_URL || "").trim().replace(/\/+$/, "");
-    var publicBase = String(env.WORKER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
-    var base = continueBase || publicBase;
-    if (!base) return null;
-    if (!httpSecret) return null;
-    var payload = {};
-    payload[HEDRON_CONTINUE_TOKEN_JSON_FIELD] = httpSecret;
-    return fetch(base + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    return null;
   }
 
   try {
@@ -891,7 +511,7 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     );
   } else {
     console.error(
-      "hedron sync: continuation depth exceeded; add WORKER_SELF service binding or WORKER_CONTINUE_URL + ENQUEUE_SHARED_SECRET",
+      "hedron sync: continuation depth exceeded; configure WORKER_SELF service binding to this Worker",
       id
     );
   }
@@ -1562,14 +1182,8 @@ function attachSynergyImages(arr, map) {
 //  Deck-by-deck API handlers
 // ============================================================
 
-function buildBlobImageUrl(request, env, deckId, objectKey, pathSegment) {
+function buildBlobImageUrl(request, deckId, objectKey, pathSegment) {
   if (!objectKey) return null;
-  var base = env.DECK_IMAGE_PUBLIC_BASE_URL;
-  if (base && String(base).trim()) {
-    var b = String(base).replace(/\/$/, "");
-    var parts = String(objectKey).split("/");
-    return b + "/" + parts.map(encodeURIComponent).join("/");
-  }
   return new URL(
     "/api/deck/" + encodeURIComponent(String(deckId)) + "/" + pathSegment,
     request.url
@@ -1645,10 +1259,10 @@ async function handleGetDecks(cubeId, env, request) {
   for (var i = 0; i < results.length; i++) {
     var d = results[i];
     d.deck_photo_url = buildBlobImageUrl(
-      request, env, d.deck_id, d.oriented_image_r2_key, "photo"
+      request, d.deck_id, d.oriented_image_r2_key, "photo"
     );
     d.deck_thumb_url = d.oriented_thumb_r2_key
-      ? buildBlobImageUrl(request, env, d.deck_id, d.oriented_thumb_r2_key, "thumb")
+      ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
   }
 
@@ -1684,13 +1298,12 @@ async function handleGetDecksByPilot(url, env, request) {
     var d = results[i];
     d.deck_photo_url = buildBlobImageUrl(
       request,
-      env,
       d.deck_id,
       d.oriented_image_r2_key,
       "photo"
     );
     d.deck_thumb_url = d.oriented_thumb_r2_key
-      ? buildBlobImageUrl(request, env, d.deck_id, d.oriented_thumb_r2_key, "thumb")
+      ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
   }
 
@@ -1709,10 +1322,10 @@ async function handleGetTrophyDecks(cubeId, env, request) {
   for (var j = 0; j < results.length; j++) {
     var t = results[j];
     t.deck_photo_url = buildBlobImageUrl(
-      request, env, t.deck_id, t.oriented_image_r2_key, "photo"
+      request, t.deck_id, t.oriented_image_r2_key, "photo"
     );
     t.deck_thumb_url = t.oriented_thumb_r2_key
-      ? buildBlobImageUrl(request, env, t.deck_id, t.oriented_thumb_r2_key, "thumb")
+      ? buildBlobImageUrl(request, t.deck_id, t.oriented_thumb_r2_key, "thumb")
       : t.deck_photo_url;
   }
 
@@ -1740,7 +1353,6 @@ async function handleGetDeck(deckId, env, request) {
 
   deck.deck_photo_url = buildBlobImageUrl(
     request,
-    env,
     deck.deck_id,
     deck.oriented_image_r2_key,
     "photo"
@@ -1748,7 +1360,6 @@ async function handleGetDeck(deckId, env, request) {
   deck.deck_thumb_url = deck.oriented_thumb_r2_key
     ? buildBlobImageUrl(
         request,
-        env,
         deck.deck_id,
         deck.oriented_thumb_r2_key,
         "thumb"
@@ -1793,37 +1404,10 @@ async function handleGetDeck(deckId, env, request) {
   });
 }
 
-async function handleTriggerHedronSync(cubeId, env, ctx, request) {
+async function handleTriggerHedronSync(cubeId, env, ctx) {
   try {
     var id = String(cubeId || "").trim();
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
-
-    if (!isHedronServiceBindingContinuation(request)) {
-      var contSecret = hedronContinuationSharedSecret(env);
-      var ct =
-        request && request.headers && typeof request.headers.get === "function"
-          ? request.headers.get("Content-Type") || ""
-          : "";
-      var token = null;
-      if (request && request.body && ct.indexOf("application/json") >= 0) {
-        try {
-          var raw = await request.text();
-          if (raw && raw.length > 0 && raw.length < 20000) {
-            var parsed = JSON.parse(raw);
-            if (parsed && typeof parsed[HEDRON_CONTINUE_TOKEN_JSON_FIELD] === "string") {
-              token = parsed[HEDRON_CONTINUE_TOKEN_JSON_FIELD];
-            }
-          }
-        } catch (parseErr) {
-          token = null;
-        }
-      }
-      if (token != null && String(token).length > 0) {
-        if (!contSecret || String(token) !== contSecret) {
-          return jsonResponse({ error: "unauthorized" }, 401);
-        }
-      }
-    }
 
     // Keep manual sync request-bound so the UI spinner reflects the producer phase:
     // Hedron JSON fetch, parse, D1 dedupe, and Cloudflare Queue publishing. Running
@@ -2730,11 +2314,19 @@ function buildColorBarChart(colorStats) {
 //  Existing handlers (unchanged)
 // ============================================================
 
+/** True when `CWW_ENV` is `local` (Wrangler top-level default): skip Turnstile for local `wrangler dev`. */
+function isCwwLocalEnv(env) {
+  var v = env.CWW_ENV;
+  if (v == null || v === "") return false;
+  return String(v).trim().toLowerCase() === "local";
+}
+
 /**
  * Verify a Cloudflare Turnstile token server-side.
- * Returns true if valid, false otherwise.
+ * Returns true if valid, false otherwise. When `CWW_ENV` is `local`, always returns true (no secret or widget required).
  */
 async function verifyTurnstile(token, ip, env) {
+  if (isCwwLocalEnv(env)) return true;
   if (!token) return false;
   var secret = env.TURNSTILE_SECRET;
   if (!secret) {
@@ -2860,13 +2452,31 @@ async function handleUpload(request, env) {
       httpMetadata: { contentType: "application/json" },
     });
 
-    // Best-effort: enqueue remote processing. Do not fail the user upload if GCP is down/misconfigured.
-    var enqueueResult = await enqueueGcpEvalJob(env, prefix, {
+    // Best-effort: enqueue eval on Cloudflare Queue. Do not fail upload if misconfigured.
+    var r2Bucket = String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim();
+    var uploadId = String(prefix || "").replace(/\/+$/, "");
+    var taskBody = {
+      upload_id: uploadId,
+      r2_bucket: r2Bucket,
+      r2_prefix: uploadId + "/",
       cube_id: cubeId,
       pilot_name: pilotName,
-    });
+      submitted_at: now.toISOString(),
+      schema_version: 1,
+      match_wins: wins,
+      match_losses: losses,
+      match_draws: draws,
+    };
+
+    try {
+      await upsertQueuedProcessingJob(env.cubewizard_db, taskBody);
+    } catch (jobErr) {
+      console.error("processing_jobs upsert failed after upload:", jobErr);
+    }
+
+    var enqueueResult = await enqueueCfEvalJob(env, taskBody);
     if (!enqueueResult.ok && !enqueueResult.skipped) {
-      console.error("Upload succeeded but GCP enqueue failed:", enqueueResult);
+      console.error("Upload succeeded but CF eval enqueue failed:", enqueueResult);
     }
 
     return jsonResponse({
