@@ -1,0 +1,9 @@
+{
+  "upload_id": "example-cube/1700000000_ExamplePilot",
+  "r2_bucket": "decklist-uploads",
+  "r2_prefix": "example-cube/1700000000_ExamplePilot/",
+  "cube_id": "example-cube",
+  "pilot_name": "ExamplePilot",
+  "submitted_at": "2026-01-15T12:00:00.000Z",
+  "schema_version": 1
+}

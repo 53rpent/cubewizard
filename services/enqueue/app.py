@@ -8,7 +8,6 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import requests
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
@@ -225,40 +224,16 @@ def _cleanup_verify_task_gone(client: tasks_v2.CloudTasksClient, task_name: Opti
 
 def _release_hedron_dedupe_via_worker(deck_uuid: str) -> bool:
     """
-    DELETE hedron_synced_decks row on Cloudflare D1 via Worker internal API.
+    Previously cleared ``hedron_synced_decks`` on D1 via the site Worker's internal API.
+    That route was removed; cleanup skips D1 release and leaves the Firestore doc until
+    D1 is cleared manually or a replacement path exists.
     """
-    base = (os.environ.get("CUBEWIZARD_WORKER_PUBLIC_URL") or "").strip().rstrip("/")
-    if not base:
-        log.error("cleanup: CUBEWIZARD_WORKER_PUBLIC_URL unset; cannot release D1 dedupe slot")
-        return False
-    secret = _required_env("ENQUEUE_SHARED_SECRET")
-    url = base + "/api/internal/release-hedron-sync-dedupe"
-    try:
-        r = requests.post(
-            url,
-            json={"deck_image_uuid": deck_uuid},
-            headers={"X-Shared-Secret": secret},
-            timeout=30,
-        )
-    except Exception as exc:
-        log.exception("cleanup: Worker D1 release request failed: %s", exc)
-        return False
-    if r.status_code != 200:
-        log.warning(
-            "cleanup: Worker returned HTTP %s for deck_uuid=%s: %s",
-            r.status_code,
-            deck_uuid,
-            (r.text or "")[:500],
-        )
-        return False
-    try:
-        data = r.json()
-    except Exception:
-        data = {}
-    if not data.get("ok"):
-        log.warning("cleanup: Worker JSON not ok for deck_uuid=%s: %s", deck_uuid, data)
-        return False
-    return True
+    log.warning(
+        "cleanup: D1 hedron_synced_decks release via Worker is disabled (deck_uuid=%s); "
+        "not deleting Firestore job doc",
+        deck_uuid,
+    )
+    return False
 
 
 @app.post("/cleanup/stale-hedron-jobs")
@@ -275,7 +250,6 @@ async def cleanup_stale_hedron_jobs(
     Requires Firestore composite index: ``status`` (ASC) + ``lease_expires_at`` (ASC).
 
     Env:
-      - CUBEWIZARD_WORKER_PUBLIC_URL — Worker origin (no trailing slash), e.g. https://your.site
       - CLEANUP_MAX_JOBS_PER_RUN — default 50
       - CLEANUP_LEGACY_WITHOUT_TASK_NAME — if ``1``/``true``, treat running+expired Hedron jobs
         without ``cloud_task_name`` as orphans (risky if a task still exists; prefer index backfill).

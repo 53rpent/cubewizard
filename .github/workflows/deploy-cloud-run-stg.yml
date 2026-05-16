@@ -1,6 +1,6 @@
 name: Deploy Cloud Run services (stg)
 
-# `ENQUEUE_SHARED_SECRET` on enqueue-stg is bound from Secret Manager (see GCP_DEPLOYMENT.md / GCP_STAGING.md).
+# `ENQUEUE_SHARED_SECRET` on enqueue-stg is bound from Secret Manager (see README.md — optional legacy GCP).
 
 on:
   push:

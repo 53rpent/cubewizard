@@ -2,9 +2,11 @@
  * Cloudflare Queue consumer for Hedron deck jobs.
  *
  * The main Worker only parses Hedron JSON and publishes compact queue messages.
- * This Worker does the slower image download, stages the existing R2 upload
- * package shape, and asks the GCP enqueue service to process that R2 prefix.
+ * This Worker downloads the image, stages the R2 upload package shape, and
+ * enqueues the eval task on **EVAL_QUEUE** (same JSON body as the site upload path).
  */
+
+import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 
 var HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 var HEDRON_RETRY_BASE_DELAY_SECONDS = 30;
@@ -84,13 +86,6 @@ function contentTypeToExt(contentType) {
   return extMap[ct] || "jpg";
 }
 
-function gcpEnqueueUrl(env) {
-  var baseUrl = String(env.GCP_ENQUEUE_URL || env.ENQUEUE_URL || "").trim();
-  if (!baseUrl) throw new Error("missing env.GCP_ENQUEUE_URL");
-  var trimmed = baseUrl.replace(/\/+$/, "");
-  return trimmed.toLowerCase().endsWith("/enqueue") ? trimmed : trimmed + "/enqueue";
-}
-
 async function fetchImageStream(imageUrl) {
   var controller = new AbortController();
   var timer = setTimeout(function () {
@@ -149,35 +144,18 @@ async function fetchImageStream(imageUrl) {
   }
 }
 
-async function enqueueGcpR2Job(env, body) {
-  var secret = String(env.ENQUEUE_SHARED_SECRET || "").trim();
-  if (!secret) throw new Error("missing env.ENQUEUE_SHARED_SECRET");
-
-  var controller = new AbortController();
-  var timer = setTimeout(function () {
-    controller.abort();
-  }, 15000);
-
+async function enqueueCfEvalJob(env, body) {
+  var q = env.EVAL_QUEUE;
+  if (!q) {
+    console.warn("CF eval queue skipped: missing env.EVAL_QUEUE binding");
+    return { ok: false, skipped: true, reason: "missing_eval_queue" };
+  }
   try {
-    var resp = await fetch(gcpEnqueueUrl(env), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shared-Secret": secret,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    if (!resp.ok) {
-      var text = "";
-      try {
-        text = (await resp.text()).slice(0, 500);
-      } catch (e) {}
-      throw new Error("GCP enqueue failed: " + resp.status + (text ? " " + text : ""));
-    }
-  } finally {
-    clearTimeout(timer);
+    await q.send(body);
+    return { ok: true, skipped: false };
+  } catch (e) {
+    console.error("CF eval queue send failed:", e);
+    return { ok: false, skipped: false };
   }
 }
 
@@ -226,18 +204,31 @@ async function processHedronMessage(raw, env) {
     httpMetadata: { contentType: "application/json" },
   });
 
-  await enqueueGcpR2Job(env, {
+  var r2Bucket = String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim();
+  var taskBody = {
     upload_id: uploadId,
     cube_id: cubeId,
     pilot_name: pilotName,
     submitted_at: submittedAt,
     schema_version: 1,
-    r2_bucket: String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim(),
+    r2_bucket: r2Bucket,
     r2_prefix: prefix + "/",
+    image_source: metadata.image_source,
     match_wins: wins,
     match_losses: losses,
     match_draws: draws,
-  });
+  };
+
+  try {
+    await upsertQueuedProcessingJob(env.cubewizard_db, taskBody);
+  } catch (jobErr) {
+    console.error("processing_jobs upsert failed (hedron):", jobErr);
+  }
+
+  var cfRes = await enqueueCfEvalJob(env, taskBody);
+  if (!cfRes.ok && !cfRes.skipped) {
+    throw new Error("CF eval enqueue failed");
+  }
 
   console.log("hedron_consumer", {
     event: "job_staged_and_enqueued",

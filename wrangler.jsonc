@@ -1,10 +1,14 @@
 {
+	"$schema": "./node_modules/wrangler/config-schema.json",
 	// Set CWW_DEPLOY_VERSION per deploy, e.g.: wrangler deploy --env prod --var CWW_DEPLOY_VERSION:$(git rev-parse --short HEAD)
 	"name": "cubewizard-cloudflare-worker",
 	"compatibility_date": "2024-09-19",
 	"main": "src/worker.js",
 	"observability": {
 		"enabled": true
+	},
+	"dev": {
+		"port": 8787
 	},
 	"assets": {
 		"directory": "./docs/",
@@ -27,16 +31,35 @@
 	"vars": {
 		"DECK_IMAGE_PUBLIC_BASE_URL": "",
 		"CWW_ENV": "local",
-		"CWW_DEPLOY_VERSION": "dev"
+		"CWW_DEPLOY_VERSION": "dev",
+		"R2_STAGING_BUCKET_NAME": "decklist-uploads"
 	},
 	"d1_databases": [
 		{
 			"binding": "cubewizard_db",
 			"database_name": "cubewizard-db",
 			"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
-			"remote": true
+			// Local dev uses Miniflare D1. To hit the hosted DB instead, add: "remote": true
 		}
 	],
+	"services": [
+		{
+			"binding": "WORKER_SELF",
+			"service": "cubewizard-cloudflare-worker"
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "HEDRON_QUEUE",
+				"queue": "cubewizard-hedron-local"
+			},
+			{
+				"binding": "EVAL_QUEUE",
+				"queue": "cubewizard-eval-local"
+			}
+		]
+	},
 	"env": {
 		"stg": {
 			"name": "cubewizard-stg",
@@ -51,6 +74,10 @@
 					{
 						"binding": "HEDRON_QUEUE",
 						"queue": "cubewizard-hedron-stg"
+					},
+					{
+						"binding": "EVAL_QUEUE",
+						"queue": "cubewizard-eval-stg"
 					}
 				]
 			},
@@ -61,15 +88,7 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
-				// Browser-facing site (optional). Hedron continuation fetch prefers WORKER_CONTINUE_URL to avoid 522 on self-fetch via custom domain.
-				"WORKER_PUBLIC_URL": "https://stg.cube-wizard.com",
-				// Direct Workers URL for continuation POST only: https://cubewizard-stg.<account>.workers.dev (Workers dashboard → this worker). Empty falls back to WORKER_PUBLIC_URL (may 522).
-				"WORKER_CONTINUE_URL": "https://cubewizard-stg.amatveyenko.workers.dev",
-				"FIRESTORE_DATABASE_ID": "cw-upload-status-stg",
-				"FIRESTORE_COLLECTION": "jobs",
-				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-stg-933819958294.us-east1.run.app",
-				// Optional: secret for Hedron HTTP continuations (JSON body continuation_token). If unset, ENQUEUE_SHARED_SECRET is used for that token only.
-				"HEDRON_SYNC_CONTINUE_SECRET": ""
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
 			},
 			"r2_buckets": [
 				{
@@ -107,6 +126,10 @@
 					{
 						"binding": "HEDRON_QUEUE",
 						"queue": "cubewizard-hedron-prod"
+					},
+					{
+						"binding": "EVAL_QUEUE",
+						"queue": "cubewizard-eval-prod"
 					}
 				]
 			},
@@ -117,14 +140,7 @@
 				"DECK_IMAGE_PUBLIC_BASE_URL": "",
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
-				"WORKER_PUBLIC_URL": "https://cube-wizard.com",
-				// See stg: set to https://cubewizard-prod.<account>.workers.dev if continuation 522s against the custom domain.
-				"WORKER_CONTINUE_URL": "https://cubewizard-prod.amatveyenko.workers.dev",
-				"FIRESTORE_DATABASE_ID": "cw-upload-status",
-				"FIRESTORE_COLLECTION": "jobs",
-				"GCP_ENQUEUE_URL": "https://cubewizard-enqueue-933819958294.us-east1.run.app",
-				// Optional: see stg HEDRON_SYNC_CONTINUE_SECRET (JSON body, not headers).
-				"HEDRON_SYNC_CONTINUE_SECRET": ""
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
 			},
 			"r2_buckets": [
 				{

@@ -1,0 +1,141 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "cubewizard-eval-consumer",
+	"main": "src/pipeline/entry/evalQueueEntry.ts",
+	"compatibility_date": "2024-12-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	"dev": {
+		"port": 8788
+	},
+	"vars": {
+		"CWW_ENV": "local",
+		"OPENAI_VISION_MODEL": "gpt-5-mini-2025-08-07",
+		"OPENAI_MAX_OUTPUT_TOKENS": "20000",
+		"OPENAI_REASONING_EFFORT": "medium",
+		"CW_EVAL_USE_MULTI_PASS": "true",
+		"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
+		"CW_EVAL_JPEG_QUALITY": "95",
+		"CW_EVAL_QUEUE_CONCURRENCY": "5"
+	},
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "decklist-uploads"
+		},
+		{
+			"binding": "DECK_IMAGES_BLOB",
+			"bucket_name": "cubewizard-deck-images"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "cubewizard_db",
+			"database_name": "cubewizard-db",
+			"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
+			// Local dev: Miniflare D1. For hosted DB: add "remote": true
+		}
+	],
+	"queues": {
+		"consumers": [
+			{
+				"queue": "cubewizard-eval-local",
+				"max_batch_size": 5,
+				"max_batch_timeout": 30,
+				"max_retries": 5,
+				"max_concurrency": 1,
+				"dead_letter_queue": "cubewizard-eval-local-dlq"
+			}
+		]
+	},
+	"env": {
+		"stg": {
+			"name": "cubewizard-eval-consumer-stg",
+			"vars": {
+				"CWW_ENV": "staging",
+				"OPENAI_VISION_MODEL": "gpt-5-mini-2025-08-07",
+				"OPENAI_MAX_OUTPUT_TOKENS": "20000",
+				"OPENAI_REASONING_EFFORT": "medium",
+				"CW_EVAL_USE_MULTI_PASS": "true",
+				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
+				"CW_EVAL_JPEG_QUALITY": "95",
+				"CW_EVAL_QUEUE_CONCURRENCY": "5"
+			},
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "decklist-uploads"
+				},
+				{
+					"binding": "DECK_IMAGES_BLOB",
+					"bucket_name": "cubewizard-deck-images"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "cubewizard_db",
+					"database_name": "cubewizard-db-stg",
+					"database_id": "3ae6ad5b-d61e-443d-a501-d4cd215dffd5",
+					"remote": true
+				}
+			],
+			"queues": {
+				"consumers": [
+					{
+						"queue": "cubewizard-eval-stg",
+						"max_batch_size": 5,
+						"max_batch_timeout": 30,
+						"max_retries": 5,
+						"max_concurrency": 1,
+						"dead_letter_queue": "cubewizard-eval-stg-dlq"
+					}
+				]
+			}
+		},
+		"prod": {
+			"name": "cubewizard-eval-consumer-prod",
+			"vars": {
+				"CWW_ENV": "production",
+				"OPENAI_VISION_MODEL": "gpt-5-mini-2025-08-07",
+				"OPENAI_MAX_OUTPUT_TOKENS": "20000",
+				"OPENAI_REASONING_EFFORT": "medium",
+				"CW_EVAL_USE_MULTI_PASS": "true",
+				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
+				"CW_EVAL_JPEG_QUALITY": "95",
+				"CW_EVAL_QUEUE_CONCURRENCY": "5"
+			},
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "decklist-uploads"
+				},
+				{
+					"binding": "DECK_IMAGES_BLOB",
+					"bucket_name": "cubewizard-deck-images"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "cubewizard_db",
+					"database_name": "cubewizard-db",
+					"database_id": "be868abb-addf-433a-a0c3-b5ffb5b22543",
+					"remote": true
+				}
+			],
+			"queues": {
+				"consumers": [
+					{
+						"queue": "cubewizard-eval-prod",
+						"max_batch_size": 5,
+						"max_batch_timeout": 30,
+						"max_retries": 5,
+						"max_concurrency": 1,
+						"dead_letter_queue": "cubewizard-eval-prod-dlq"
+					}
+				]
+			}
+		}
+	}
+}

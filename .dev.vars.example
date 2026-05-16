@@ -1,0 +1,16 @@
+# =============================================================================
+# COPY THIS FILE TO `.dev.vars` AND FILL EVERY KEY YOU NEED (values may stay
+# empty until you exercise that code path). Wrangler loads `.dev.vars` for any
+# `wrangler dev` run in this repo (site worker, eval consumer, hedron consumer).
+# =============================================================================
+
+# Optional — when `CWW_ENV` is `local` (default in top-level `wrangler.jsonc`), Turnstile is skipped on upload/add-cube.
+# Set for testing Turnstile locally or if you override `CWW_ENV` away from `local`.
+TURNSTILE_SECRET=
+
+# --- Eval consumer (`wrangler-eval-consumer.jsonc`) ---
+# FILL — required for OpenAI calls inside the eval queue consumer
+OPENAI_API_KEY=
+
+# Optional — OpenAI eval consumer log level: off | low | medium | high
+CW_EVAL_LOG_LEVEL=

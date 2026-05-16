@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Wrangler local secrets (copy from .dev.vars.example)
+.dev.vars
+
 # Python
 __pycache__/
 *.py[cod]
