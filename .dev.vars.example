@@ -18,3 +18,14 @@ CW_EVAL_LOG_LEVEL=
 
 # Optional — max decode/orient pixels per side (default 2048 on Workers)
 # CW_EVAL_MAX_IMAGE_SIDE=2048
+# CW_EVAL_ORIENT_MAX_SIDE=1280
+
+# --- R2 presigned URLs for OpenAI vision (eval consumer, hosted stg/prod only) ---
+# Not needed locally: CWW_ENV=local sends JPEG inline (base64) to OpenAI.
+# For stg/prod (or local URL testing): create an R2 API token with Object Read & Write on cubewizard-deck-images.
+# CLOUDFLARE_ACCOUNT_ID=
+# R2_ACCESS_KEY_ID=
+# R2_SECRET_ACCESS_KEY=
+
+# Optional — public CDN for cubewizard-deck-images (skips presigning when set on eval consumer)
+# DECK_IMAGE_PUBLIC_BASE_URL=

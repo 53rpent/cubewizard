@@ -5,7 +5,11 @@ export type { ImageFormatHint, RgbaFrame } from "./types";
 export { sniffImageFormat } from "./sniff";
 export { decodeToRgba } from "./decode";
 export { encodeJpeg, encodePng, frameHasTransparency } from "./encode";
-export { resizeToMaxSide, rotateClockwise } from "./transform";
+export {
+  combineClockwiseRotations,
+  resizeToMaxSide,
+  rotateClockwise,
+} from "./transform";
 export {
   prepareBytesForOpenAiVision,
   rasterToOpenAiCompatible,

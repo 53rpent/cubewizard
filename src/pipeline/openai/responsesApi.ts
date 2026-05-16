@@ -64,14 +64,15 @@ function extractStructuredText(data: unknown): string | null {
   return null;
 }
 
-export interface VisionJsonCallOptions {
+/** Hosted: HTTPS URL OpenAI fetches (R2 presigned or public CDN). Local: inline base64. */
+export type VisionImageInput = { imageUrl: string } | { imageBase64: string };
+
+export type VisionJsonCallOptions = {
   apiKey: string;
   model: string;
   maxOutputTokens: number;
   reasoningEffort?: "low" | "medium" | "high";
   userText: string;
-  imageBase64: string;
-  imageMime: "image/jpeg" | "image/png" | "image/webp";
   schemaName: string;
   jsonSchema: Record<string, unknown>;
   /** OpenAI `strict` JSON schema mode (requires exhaustive `required`); default false for optional fields. */
@@ -83,6 +84,16 @@ export interface VisionJsonCallOptions {
    * `high`: request metadata, raw JSON (truncated), structured text, parsed object — same as legacy `CW_EVAL_VERBOSE_LOG=1`.
    */
   openAiLogLevel?: EvalOpenAiLogLevel;
+} & VisionImageInput;
+
+function resolveInputImageUrl(opts: VisionJsonCallOptions): string {
+  const url = opts.imageUrl?.trim();
+  if (url) return url;
+  const b64 = opts.imageBase64?.trim();
+  if (b64) {
+    return b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+  }
+  throw new ModelOutputInvalidError("vision call requires imageUrl or imageBase64");
 }
 
 /**
@@ -104,7 +115,7 @@ export async function callOpenAiVisionJsonSchema<T>(
           { type: "input_text", text: opts.userText },
           {
             type: "input_image",
-            image_url: `data:${opts.imageMime};base64,${opts.imageBase64}`,
+            image_url: resolveInputImageUrl(opts),
           },
         ],
       },
@@ -133,8 +144,8 @@ export async function callOpenAiVisionJsonSchema<T>(
       model: opts.model,
       max_output_tokens: opts.maxOutputTokens,
       reasoning_effort: opts.reasoningEffort ?? null,
-      image_mime: opts.imageMime,
-      image_base64_len: opts.imageBase64.length,
+      image_url: opts.imageUrl ?? null,
+      image_base64_len: opts.imageBase64?.length ?? null,
       user_text_len: opts.userText.length,
     });
   }

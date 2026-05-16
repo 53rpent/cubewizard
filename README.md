@@ -8,7 +8,7 @@ Magic: The Gathering cube analytics: deck photos are processed with OpenAI Visio
 |--------|------|
 | **Site Worker** (`src/worker.js`, `wrangler.jsonc`) | Static SPA, REST API, upload → R2, enqueue `EVAL_QUEUE` / `HEDRON_QUEUE`, read D1 |
 | **Eval consumer** (`src/pipeline/entry/evalQueueEntry.ts`, `wrangler-eval-consumer.jsonc`) | Queue consumer: orientation → card extraction → Scryfall → D1 → oriented images on R2 |
-| **Hedron consumer** (`src/hedron-consumer.js`, `wrangler-hedron-consumer.jsonc`) | Fetches Hedron images, stages R2, enqueues eval tasks |
+| **Hedron consumer** (`src/hedron-consumer.js`, `wrangler-hedron-consumer.jsonc`) | One message per invocation (`max_batch_size: 1`, `max_concurrency: 1`); ack only after R2 + D1 + eval enqueue |
 | **D1** | Decks, cards, cubes, `processing_jobs` status |
 | **R2** | `decklist-uploads` (staging uploads), `cubewizard-deck-images` (oriented photos + thumbs) |
 
@@ -40,8 +40,13 @@ npm run dev:all                  # site + eval + hedron consumers, shared local 
 |----------|---------|
 | `OPENAI_API_KEY` | Eval consumer secret (`.dev.vars` locally; Cloudflare secret when deployed) |
 | `CW_EVAL_LOG_LEVEL` | `off` \| `low` \| `medium` \| `high` (OpenAI logs in eval consumer) |
-| `CW_EVAL_MAX_CONSUMERS` | Expected queue `max_concurrency` (Scryfall throttle; default 2, match wrangler) |
-| `CW_EVAL_MAX_IMAGE_SIDE` | Max decode/orient dimension in px (default 2048; Workers isolate cap is 128 MiB) |
+| `CW_EVAL_MAX_CONSUMERS` | Expected queue `max_concurrency` (Scryfall throttle; default 1, match wrangler) |
+| `CW_EVAL_MAX_IMAGE_SIDE` | Max decode/extract/upload dimension in px (default 2048; Workers isolate cap is 128 MiB) |
+| `CW_EVAL_ORIENT_MAX_SIDE` | Max side for orientation OpenAI previews only (default 1280; full side used for card extraction) |
+| `CWW_ENV` | Eval consumer: `local` → OpenAI vision uses **inline JPEG (base64)**; `staging` / `production` → R2 HTTPS URLs |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID (eval consumer var) for R2 presigned vision URLs (hosted) |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token with read/write on `cubewizard-deck-images` (eval consumer secrets; hosted) |
+| `DECK_IMAGE_PUBLIC_BASE_URL` | Optional public CDN base for `cubewizard-deck-images`; when set, vision uses public URLs instead of presigned |
 | `CW_EVAL_VERBOSE_LOG` | Legacy: `1`/`true` → `high` if log level unset |
 | `TURNSTILE_SECRET` | Site upload Turnstile (optional locally when `CWW_ENV=local`) |
 
@@ -49,12 +54,12 @@ npm run dev:all                  # site + eval + hedron consumers, shared local 
 
 - Bundled by Wrangler from `src/pipeline/entry/evalQueueEntry.ts` (no separate build step).
 - Dry-run bundle: `npm run build:eval-consumer`
-- **OpenAI key (hosted):** declared in `wrangler-eval-consumer.jsonc` as `secrets.required`; set per environment (not in `vars`):
-  `npx wrangler secret put OPENAI_API_KEY --config wrangler-eval-consumer.jsonc --env stg`
-  and the same with `--env prod`. Redeploying does not change an existing secret.
+- **Secrets (hosted):** `OPENAI_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` in `wrangler-eval-consumer.jsonc` `secrets.required` for stg/prod. Local dev only requires `OPENAI_API_KEY` in `.dev.vars`.
+- **Vision:** With `CWW_ENV=local`, OpenAI receives inline JPEG (base64 data URLs) — no R2 presign secrets. Hosted eval publishes to `cubewizard-deck-images` (`tmp/vision/{uploadId}/…`) and uses presigned GET or `DECK_IMAGE_PUBLIC_BASE_URL`.
+- **Deploy checklist (stg/prod eval consumer):** (1) R2 API token for `cubewizard-deck-images`; (2) `wrangler secret put` for `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`; (3) set `CLOUDFLARE_ACCOUNT_ID` in eval consumer vars; (4) redeploy; (5) tail and confirm `vision_url_mode: presigned` on `eval_phase orient_start` (no base64 in logs).
 - **`nodejs_compat`** is enabled for JPEG encoding (`jpeg-js` / `Buffer`).
 - **WebP / WASM:** codec files live in `vendor/jsquash-webp/` and are imported as precompiled `WebAssembly.Module` values (Workers disallow runtime `WebAssembly.compile` on raw bytes).
-- **Throughput:** one deck per invocation (`max_batch_size: 1`); up to **2** concurrent consumer invocations (`max_concurrency: 2`). Each isolate has a **128 MiB** memory cap (paid plan does not raise this). `CW_EVAL_MAX_IMAGE_SIDE=2048` limits RGBA size; raise `max_concurrency` only after profiling memory.
+- **Throughput:** one deck per invocation (`max_batch_size: 1`); up to **1** concurrent consumer invocations (`max_concurrency: 1`). Each isolate has a **128 MiB** memory cap (paid plan does not raise this). `CW_EVAL_MAX_IMAGE_SIDE=2048` limits RGBA size; raise `max_concurrency` only after profiling memory.
 - **Processing UI:** upload/Hedron enqueue upserts `processing_jobs` in D1 immediately; `GET /api/processing-decks/:cubeId` lists `queued` / `running` / `failed` jobs.
 
 ### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
@@ -207,9 +212,15 @@ Local Python CLI (`python main.py`) remains for one-off image debugging against 
 - **`WebAssembly.compile` disallowed:** ensure eval consumer uses vendored `.wasm` imports (Wrangler bundle), not runtime compile of wasm bytes.
 - **Scryfall 429:** lower queue `max_concurrency` / `CW_EVAL_MAX_CONSUMERS` or retry.
 - **`exceededCpu`:** eval consumer uses `limits.cpu_ms: 30000` (30s CPU per invocation, one deck each).
-- **`exceededMemory`:** Workers allow **128 MiB per isolate** (not raised on Paid). Large photos + 4000px RGBA can exceed this; default `CW_EVAL_MAX_IMAGE_SIDE` is 2048. Concurrent invocations share one isolate’s 128 MiB — keep `max_concurrency` low.
+- **`exceededMemory`:** Workers allow **128 MiB per isolate** (not raised on Paid). Peak usage is mostly **RGBA decode** (≈4×width×height bytes). Hosted eval uses HTTPS vision URLs (no base64 in bodies); local `CWW_ENV=local` uses inline base64. Lower `CW_EVAL_MAX_IMAGE_SIDE` / `CW_EVAL_ORIENT_MAX_SIDE` if needed; keep `max_concurrency` at 1.
+- **Vision URL config (hosted):** Stg/prod eval requires R2 presign secrets or `DECK_IMAGE_PUBLIC_BASE_URL`. OpenAI must reach `*.r2.cloudflarestorage.com` for presigned URLs.
 - **`exception`:** Uncaught JS error in the consumer. The queue name in the dashboard is not the cause — run `npx wrangler tail cubewizard-eval-consumer-stg --config wrangler-eval-consumer.jsonc` and look for `eval_consumer_error` (includes `message` + `stack`) or the last `eval_phase_*` line before failure.
 - **DLQ / retries exhausted:** On the last delivery attempt (`attempts >= CW_EVAL_MAX_RETRIES`), the consumer sets `processing_jobs.status = failed` with `retries_exhausted (n/5): …`. Messages that still reach `*-dlq` are consumed by the same Worker (`batch.queue` ends with `-dlq`) and marked `dead_letter_queue (…): …`.
+- **Hedron failures:** When a Hedron eval job fails (`upload_id` prefix `hedron:`), the row is removed from `hedron_synced_decks` so the next sync can retry that deck.
+- **Hedron “staged” burst but no decks:** `hedron_consumer_complete` / `job_staged_and_enqueued` only means **staging + eval enqueue** on the hedron Worker. OpenAI / Scryfall / `decks` rows run on the **eval consumer** — tail both:
+  `npx wrangler tail cubewizard-hedron-consumer-stg --config wrangler-hedron-consumer.jsonc`
+  `npx wrangler tail cubewizard-eval-consumer-stg --config wrangler-eval-consumer.jsonc`
+  Look for `eval_consumer received` → `eval_phase orient_start` → `eval_consumer finished`. If hedron logs succeed but eval never logs `received`, check the `cubewizard-eval-stg` queue depth and that `cubewizard-eval-consumer-stg` is deployed.
 - **Wrangler auth:** `npx wrangler login`
 
 ## License

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  combineClockwiseRotations,
   decodeToRgba,
   encodeJpeg,
   prepareBytesForOpenAiVision,
@@ -43,13 +44,29 @@ describe("rotateClockwise", () => {
     expect(Array.from(r.data.slice(8, 12))).toEqual([0, 0, 255, 255]);
   });
 
-  it("is identity for 0° (clone)", async () => {
+  it("is identity for 0° (no copy)", async () => {
     const png = minimalRedPng();
     const frame = await decodeToRgba(png, "png");
-    const a = rotateClockwise(frame, 0);
-    expect(a.width).toBe(frame.width);
-    expect(a.data).not.toBe(frame.data);
-    expect(Array.from(a.data)).toEqual(Array.from(frame.data));
+    expect(rotateClockwise(frame, 0)).toBe(frame);
+  });
+
+  it("270° CW matches three 90° steps", () => {
+    const data = new Uint8ClampedArray([
+      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
+    ]);
+    const frame = { width: 3, height: 1, data };
+    const once = rotateClockwise(rotateClockwise(rotateClockwise(frame, 90), 90), 90);
+    const direct = rotateClockwise(frame, 270);
+    expect(direct.width).toBe(once.width);
+    expect(direct.height).toBe(once.height);
+    expect(Array.from(direct.data)).toEqual(Array.from(once.data));
+  });
+});
+
+describe("combineClockwiseRotations", () => {
+  it("sums modulo 360", () => {
+    expect(combineClockwiseRotations(90, 90)).toBe(180);
+    expect(combineClockwiseRotations(90, 270)).toBe(0);
   });
 });
 

@@ -14,6 +14,7 @@ import {
 } from "../orchestrator/evalQueueRetries";
 import { PermanentEvalError, runEvalTask, type RunEvalTaskEnv } from "../orchestrator/runEvalTask";
 import { evalErrorFields, formatEvalError } from "../util/formatEvalError";
+import { parseEvalTaskBody } from "../util/queueMessageBody";
 
 type QueueMessage = {
   id: string;
@@ -28,7 +29,8 @@ async function processEvalDlqMessage(
   env: RunEvalTaskEnv,
   queueName: string
 ): Promise<void> {
-  const uploadId = uploadIdFromEvalTaskBody(message.body);
+  const taskBody = parseEvalTaskBody(message.body);
+  const uploadId = uploadIdFromEvalTaskBody(taskBody ?? message.body);
   const error = buildDlqError(queueName, message.attempts, message.id);
   console.error("eval_consumer_dlq", {
     message_id: message.id,
@@ -53,9 +55,12 @@ async function processEvalQueueMessage(
   env: RunEvalTaskEnv,
   maxRetries: number
 ): Promise<void> {
-  const uploadId = uploadIdFromEvalTaskBody(message.body);
-  const raw = message.body as Record<string, unknown> | null;
-  const cubeId = raw && typeof raw.cube_id === "string" ? raw.cube_id : undefined;
+  const taskBody = parseEvalTaskBody(message.body);
+  if (!taskBody) {
+    throw new PermanentEvalError("invalid_task_request: queue body must be a JSON object");
+  }
+  const uploadId = uploadIdFromEvalTaskBody(taskBody);
+  const cubeId = typeof taskBody.cube_id === "string" ? taskBody.cube_id : undefined;
   console.log("eval_consumer received", {
     message_id: message.id,
     upload_id: uploadId,
@@ -63,7 +68,7 @@ async function processEvalQueueMessage(
     attempts: message.attempts,
   });
   try {
-    await runEvalTask(message.body, env);
+    await runEvalTask(taskBody, env);
     console.log("eval_consumer finished", {
       message_id: message.id,
       upload_id: uploadId,

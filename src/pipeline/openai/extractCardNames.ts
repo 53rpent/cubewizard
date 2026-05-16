@@ -1,6 +1,8 @@
-import { bytesToBase64 } from "../images/base64";
 import { encodeJpeg } from "../images/encode";
 import { resizeToMaxSide } from "../images/transform";
+import { visionInputFromJpegBytes } from "../images/visionImageInput";
+import type { VisionImagePublisher } from "../images/visionPublish";
+import type { VisionImageInput } from "./responsesApi";
 import type { RgbaFrame } from "../images/types";
 import { EVAL_MAX_IMAGE_SIDE_DEFAULT } from "../orchestrator/evalImageLimits";
 import { buildExtractionPrompt } from "../openai/prompts";
@@ -21,10 +23,12 @@ export interface ExtractCardNamesOptions {
   expectedDeckSize?: number;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
+  visionEnv: { CWW_ENV?: string };
+  vision?: VisionImagePublisher;
 }
 
 async function singlePass(
-  b64: string,
+  imageInput: VisionImageInput,
   prompt: string,
   opts: Pick<
     ExtractCardNamesOptions,
@@ -38,8 +42,7 @@ async function singlePass(
       maxOutputTokens: opts.maxOutputTokens,
       reasoningEffort: opts.reasoningEffort ?? "medium",
       userText: prompt,
-      imageBase64: b64,
-      imageMime: "image/jpeg",
+      ...imageInput,
       schemaName: "card_extraction",
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
       fetchImpl: opts.fetchImpl,
@@ -59,18 +62,24 @@ export async function extractCardNamesFromRgba(
 ): Promise<string[]> {
   const side = opts.maxImageSide ?? EVAL_MAX_IMAGE_SIDE_DEFAULT;
   const sized = resizeToMaxSide(frame, side, side);
-  const b64 = bytesToBase64(encodeJpeg(sized, opts.jpegQuality));
+  const jpegBytes = encodeJpeg(sized, opts.jpegQuality);
+  const imageInput = await visionInputFromJpegBytes({
+    env: opts.visionEnv,
+    publisher: opts.vision,
+    jpegBytes,
+    purpose: "extract",
+  });
   const basePrompt = buildExtractionPrompt(opts.cubeCardList, opts.maxCardsInPrompt);
 
   const level = opts.openAiLogLevel ?? "off";
   const gcpStyle = level === "medium";
 
   if (!opts.useMultiPass || !opts.cubeCardList) {
-    return singlePass(b64, basePrompt, opts);
+    return singlePass(imageInput, basePrompt, opts);
   }
 
   if (gcpStyle) console.log("Pass 1: General aggressive detection...");
-  const first = await singlePass(b64, basePrompt, opts);
+  const first = await singlePass(imageInput, basePrompt, opts);
   if (first.length === 0) {
     return first;
   }
@@ -93,7 +102,7 @@ Return JSON via the schema with ONLY the additional card_names found in this pas
 `.trim();
 
   if (gcpStyle) console.log("Pass 2: Focused detection on potentially missed cards...");
-  const second = await singlePass(b64, missedPrompt, opts);
+  const second = await singlePass(imageInput, missedPrompt, opts);
   for (const c of second) all.add(c);
 
   const expected = opts.expectedDeckSize ?? 40;
@@ -112,7 +121,7 @@ ${slice.join(", ")}
 Return JSON via the schema with additional card_names only.
 `.trim();
       if (gcpStyle) console.log("Pass 3: Validation pass for specific missing cards...");
-      const third = await singlePass(b64, validationPrompt, opts);
+      const third = await singlePass(imageInput, validationPrompt, opts);
       for (const c of third) all.add(c);
     }
   }

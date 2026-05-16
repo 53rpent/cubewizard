@@ -1,8 +1,16 @@
-import { bytesToBase64 } from "../images/base64";
-import { encodeJpeg } from "../images/encode";
 import { decodeToRgba } from "../images/decode";
-import { EVAL_MAX_IMAGE_SIDE_DEFAULT } from "../orchestrator/evalImageLimits";
-import { resizeToMaxSide, rotateClockwise } from "../images/transform";
+import { encodeJpeg } from "../images/encode";
+import { visionInputFromJpegBytes } from "../images/visionImageInput";
+import type { VisionImagePublisher } from "../images/visionPublish";
+import {
+  EVAL_MAX_IMAGE_SIDE_DEFAULT,
+  EVAL_ORIENT_MAX_SIDE_DEFAULT,
+} from "../orchestrator/evalImageLimits";
+import {
+  combineClockwiseRotations,
+  resizeToMaxSide,
+  rotateClockwise,
+} from "../images/transform";
 import type { ImageFormatHint, RgbaFrame } from "../images/types";
 import { sniffImageFormat } from "../images/sniff";
 import { ORIENTATION_PROMPT } from "../openai/prompts";
@@ -18,13 +26,16 @@ export interface OrientDeckImageOptions {
   jpegQuality?: number;
   maxImageWidth?: number;
   maxImageHeight?: number;
+  orientMaxSide?: number;
+  visionEnv: { CWW_ENV?: string };
+  vision?: VisionImagePublisher;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
 }
 
 /**
- * Iteratively detect orientation and rotate in-memory until model returns 0°,
- * OpenAI vision orientation pass before card-name extraction.
+ * Iteratively detect orientation and rotate until the model returns 0°.
+ * Hosted: each OpenAI call uses a fresh R2 JPEG + HTTPS URL. Local: inline base64 per step.
  */
 export async function orientDeckImageRgba(
   imageBytes: Uint8Array,
@@ -46,12 +57,26 @@ export async function orientDeckImageRgba(
   const mh = opts.maxImageHeight ?? EVAL_MAX_IMAGE_SIDE_DEFAULT;
   frame = resizeToMaxSide(frame, mw, mh);
 
+  const orientSide = opts.orientMaxSide ?? EVAL_ORIENT_MAX_SIDE_DEFAULT;
+  const previewIsFull =
+    frame.width <= orientSide && frame.height <= orientSide;
+  let preview = previewIsFull
+    ? frame
+    : resizeToMaxSide(frame, orientSide, orientSide);
+
   const maxTok = opts.maxOutputTokens ?? 2000;
   const q = opts.jpegQuality ?? 95;
+  let cumulativeRotation = 0;
 
-  // Mirror Python loop: repeatedly detect rotation on current sample and rotate until 0.
   for (let guard = 0; guard < 8; guard++) {
-    const b64 = bytesToBase64(encodeJpeg(frame, q));
+    const jpegBytes = encodeJpeg(preview, q);
+    const imageInput = await visionInputFromJpegBytes({
+      env: opts.visionEnv,
+      publisher: opts.vision,
+      jpegBytes,
+      purpose: "orient",
+      step: guard,
+    });
     const result = await callOpenAiVisionJsonSchema(
       {
         apiKey: opts.apiKey,
@@ -59,8 +84,7 @@ export async function orientDeckImageRgba(
         maxOutputTokens: maxTok,
         reasoningEffort: opts.reasoningEffort ?? "medium",
         userText: ORIENTATION_PROMPT,
-        imageBase64: b64,
-        imageMime: "image/jpeg",
+        ...imageInput,
         schemaName: "orientation_result",
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: opts.fetchImpl,
@@ -71,7 +95,14 @@ export async function orientDeckImageRgba(
 
     const rot = result.rotation_needed;
     if (rot === 0) break;
-    frame = rotateClockwise(frame, rot);
+    cumulativeRotation = combineClockwiseRotations(cumulativeRotation, rot);
+    preview = rotateClockwise(preview, rot);
+  }
+
+  if (cumulativeRotation !== 0 && !previewIsFull) {
+    frame = rotateClockwise(frame, cumulativeRotation);
+  } else if (previewIsFull) {
+    frame = preview;
   }
 
   return { frame, sniffed: fmt };

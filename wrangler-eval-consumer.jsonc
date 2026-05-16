@@ -13,7 +13,7 @@
 	"dev": {
 		"port": 8788
 	},
-	// OPENAI_API_KEY: local → `.dev.vars`; stg/prod → `wrangler secret put OPENAI_API_KEY --config wrangler-eval-consumer.jsonc --env <stg|prod>`
+	// Secrets: local → `.dev.vars`; stg/prod → `wrangler secret put … --config wrangler-eval-consumer.jsonc --env <stg|prod>`
 	"secrets": {
 		"required": ["OPENAI_API_KEY"]
 	},
@@ -26,8 +26,11 @@
 		"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 		"CW_EVAL_JPEG_QUALITY": "95",
 		"CW_EVAL_MAX_IMAGE_SIDE": "2048",
-		"CW_EVAL_MAX_CONSUMERS": "2",
-		"CW_EVAL_MAX_RETRIES": "5"
+		"CW_EVAL_ORIENT_MAX_SIDE": "1280",
+		"CW_EVAL_MAX_CONSUMERS": "1",
+		"CW_EVAL_MAX_RETRIES": "5",
+		"DECK_IMAGE_PUBLIC_BASE_URL": "",
+		"CLOUDFLARE_ACCOUNT_ID": ""
 	},
 	"r2_buckets": [
 		{
@@ -54,7 +57,7 @@
 				"max_batch_size": 1,
 				"max_batch_timeout": 30,
 				"max_retries": 5,
-				"max_concurrency": 2,
+				"max_concurrency": 1,
 				"dead_letter_queue": "cubewizard-eval-local-dlq"
 			},
 			{
@@ -72,7 +75,7 @@
 				"cpu_ms": 30000
 			},
 			"secrets": {
-				"required": ["OPENAI_API_KEY"]
+				"required": ["OPENAI_API_KEY", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
 			},
 			"vars": {
 				"CWW_ENV": "staging",
@@ -83,8 +86,11 @@
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 				"CW_EVAL_JPEG_QUALITY": "95",
 				"CW_EVAL_MAX_IMAGE_SIDE": "2048",
-				"CW_EVAL_MAX_CONSUMERS": "2",
-				"CW_EVAL_MAX_RETRIES": "5"
+				"CW_EVAL_ORIENT_MAX_SIDE": "1280",
+				"CW_EVAL_MAX_CONSUMERS": "1",
+				"CW_EVAL_MAX_RETRIES": "5",
+				"DECK_IMAGE_PUBLIC_BASE_URL": "",
+				"CLOUDFLARE_ACCOUNT_ID": ""
 			},
 			"r2_buckets": [
 				{
@@ -111,7 +117,7 @@
 						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 2,
+						"max_concurrency": 1,
 						"dead_letter_queue": "cubewizard-eval-stg-dlq"
 					},
 					{
@@ -129,7 +135,7 @@
 				"cpu_ms": 30000
 			},
 			"secrets": {
-				"required": ["OPENAI_API_KEY"]
+				"required": ["OPENAI_API_KEY", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
 			},
 			"vars": {
 				"CWW_ENV": "production",
@@ -140,8 +146,11 @@
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 				"CW_EVAL_JPEG_QUALITY": "95",
 				"CW_EVAL_MAX_IMAGE_SIDE": "2048",
-				"CW_EVAL_MAX_CONSUMERS": "2",
-				"CW_EVAL_MAX_RETRIES": "5"
+				"CW_EVAL_ORIENT_MAX_SIDE": "1280",
+				"CW_EVAL_MAX_CONSUMERS": "1",
+				"CW_EVAL_MAX_RETRIES": "5",
+				"DECK_IMAGE_PUBLIC_BASE_URL": "",
+				"CLOUDFLARE_ACCOUNT_ID": ""
 			},
 			"r2_buckets": [
 				{
@@ -168,7 +177,7 @@
 						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 2,
+						"max_concurrency": 1,
 						"dead_letter_queue": "cubewizard-eval-prod-dlq"
 					},
 					{

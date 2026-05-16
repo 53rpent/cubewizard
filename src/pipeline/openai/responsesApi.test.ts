@@ -42,8 +42,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         model: "gpt-test",
         maxOutputTokens: 100,
         userText: "hi",
-        imageBase64: "AAAA",
-        imageMime: "image/jpeg",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient-0.jpg",
         schemaName: "orientation_result",
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,
@@ -52,6 +51,77 @@ describe("callOpenAiVisionJsonSchema", () => {
     );
     expect(r.rotation_needed).toBe(0);
     expect(r.confidence).toBe("high");
+  });
+
+  it("sends HTTPS image_url in request body", async () => {
+    const payload = {
+      output: [
+        {
+          content: [{ type: "output_text", text: '{"rotation_needed":90,"confidence":"high"}' }],
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        input: { content: { image_url?: string }[] }[];
+      };
+      const img = body.input[0]?.content[1]?.image_url;
+      expect(img).toBe("https://cdn.example.com/tmp/vision/u1/orient.jpg");
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const r = await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gpt-test",
+        maxOutputTokens: 100,
+        userText: "hi",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient.jpg",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+      OrientationResultSchema
+    );
+    expect(r.rotation_needed).toBe(90);
+  });
+
+  it("sends data URL when imageBase64 is set", async () => {
+    const payload = {
+      output: [
+        {
+          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        input: { content: { image_url?: string }[] }[];
+      };
+      const img = body.input[0]?.content[1]?.image_url;
+      expect(img).toMatch(/^data:image\/jpeg;base64,/);
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gpt-test",
+        maxOutputTokens: 100,
+        userText: "hi",
+        imageBase64: "YWJj",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+      OrientationResultSchema
+    );
   });
 
   it("with openAiLogLevel low logs only model output text", async () => {
@@ -76,8 +146,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         model: "gpt-test",
         maxOutputTokens: 100,
         userText: "hi",
-        imageBase64: "AAAA",
-        imageMime: "image/jpeg",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient-0.jpg",
         schemaName: "orientation_result",
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,

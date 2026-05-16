@@ -1,3 +1,4 @@
+import { safeReleaseHedronSyncedDeckForUpload } from "./hedronSyncedDeckRepo";
 import { markJobFailed, type D1DatabaseLike } from "./processingJobRepo";
 import { evalErrorFields } from "../util/formatEvalError";
 
@@ -14,4 +15,5 @@ export async function safeMarkJobFailed(
       ...evalErrorFields(e),
     });
   }
+  await safeReleaseHedronSyncedDeckForUpload(db, uploadId);
 }

@@ -189,7 +189,7 @@ async function enqueueCfEvalJob(env, body) {
     return { ok: false, skipped: true, reason: "missing_eval_queue" };
   }
   try {
-    await q.send(body);
+    await q.send(body, { contentType: "json" });
     var uid = body && body.upload_id != null ? String(body.upload_id) : "";
     var cid = body && body.cube_id != null ? String(body.cube_id) : "";
     console.log("EVAL_QUEUE send ok", { upload_id: uid, cube_id: cid });

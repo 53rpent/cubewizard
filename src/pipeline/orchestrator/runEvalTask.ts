@@ -15,7 +15,13 @@ import {
 } from "./processingJobRepo";
 import { uploadOrientedImageAndThumb } from "./uploadOriented";
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
-import { parseEvalMaxImageSide } from "./evalImageLimits";
+import { parseEvalMaxImageSide, parseEvalOrientMaxSide } from "./evalImageLimits";
+import { isLocalEvalEnv } from "../env/isLocalEvalEnv";
+import {
+  assertVisionPublishConfigured,
+  createVisionImagePublisher,
+  type VisionImagePublisher,
+} from "../images/visionPublish";
 import { PermanentEvalError } from "./evalErrors";
 import { safeMarkJobFailed } from "./safeMarkJobFailed";
 import { formatEvalError } from "../util/formatEvalError";
@@ -34,6 +40,8 @@ export interface R2BucketGetPut {
 }
 
 export interface RunEvalTaskEnv {
+  /** `local` in default wrangler eval config; `staging` / `production` in hosted envs. */
+  CWW_ENV?: string;
   /** Set via `.dev.vars` locally or `wrangler secret put OPENAI_API_KEY` when deployed. */
   OPENAI_API_KEY?: string;
   OPENAI_VISION_MODEL?: string;
@@ -46,12 +54,21 @@ export interface RunEvalTaskEnv {
   CW_EVAL_LOG_LEVEL?: string;
   /** Legacy: `1` / `true` / `yes` → same as `CW_EVAL_LOG_LEVEL=high` when that var is unset/invalid. */
   CW_EVAL_VERBOSE_LOG?: string;
-  /** Expected queue `max_concurrency` (Scryfall throttle; default 2 — shares 128 MiB isolate). */
+  /** Expected queue `max_concurrency` (Scryfall throttle; default 1 — shares 128 MiB isolate). */
   CW_EVAL_MAX_CONSUMERS?: string;
   /** Match queue `max_retries` in wrangler (default 5). */
   CW_EVAL_MAX_RETRIES?: string;
   /** Max decoded image width/height in px (default 2048; keeps RGBA under Workers memory cap). */
   CW_EVAL_MAX_IMAGE_SIDE?: string;
+  /** Max side for orientation OpenAI previews only (default 1280; extraction uses full side). */
+  CW_EVAL_ORIENT_MAX_SIDE?: string;
+  /** Public base URL for `cubewizard-deck-images` (optional; else R2 presigned GET URLs). */
+  DECK_IMAGE_PUBLIC_BASE_URL?: string;
+  CW_EVAL_VISION_PUBLIC_BASE_URL?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  CW_EVAL_VISION_R2_BUCKET?: string;
   cubewizard_db: D1DatabaseLike;
   BUCKET: R2BucketGetPut;
   DECK_IMAGES_BLOB: R2BucketGetPut;
@@ -199,6 +216,16 @@ export async function runEvalTask(
 
   const openAiLogLevel = parseEvalOpenAiLogLevel(env);
   const maxImageSide = parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE);
+  const orientMaxSide = parseEvalOrientMaxSide(env.CW_EVAL_ORIENT_MAX_SIDE);
+  const localVision = isLocalEvalEnv(env);
+  if (!localVision) assertVisionPublishConfigured(env);
+  const vision: VisionImagePublisher | undefined = localVision
+    ? undefined
+    : createVisionImagePublisher({
+        uploadId: task.upload_id,
+        blob: env.DECK_IMAGES_BLOB,
+        env,
+      });
 
   try {
     await ensureQueuedProcessingJob(env.cubewizard_db, task);
@@ -252,7 +279,11 @@ export async function runEvalTask(
       maxCards: maxCubeCards,
     });
 
-    console.log("eval_phase orient_start", { upload_id: task.upload_id, cube_id: cubeId });
+    console.log("eval_phase orient_start", {
+      upload_id: task.upload_id,
+      cube_id: cubeId,
+      vision_mode: localVision ? "inline" : vision!.urlMode,
+    });
     const { frame: orientedRgba } = await orientDeckImageRgba(imageBytes, undefined, {
       apiKey,
       model,
@@ -261,9 +292,13 @@ export async function runEvalTask(
       jpegQuality: jpegQ,
       maxImageWidth: maxImageSide,
       maxImageHeight: maxImageSide,
+      orientMaxSide,
+      visionEnv: env,
+      vision,
       fetchImpl,
       openAiLogLevel,
     });
+    imageBytes = new Uint8Array(0);
 
     console.log("eval_phase orient_done", { upload_id: task.upload_id });
     const cardNames = await extractCardNamesFromRgba(orientedRgba, {
@@ -276,6 +311,8 @@ export async function runEvalTask(
       useMultiPass: useMultiPass,
       jpegQuality: jpegQ,
       maxImageSide,
+      visionEnv: env,
+      vision,
       fetchImpl,
       openAiLogLevel,
     });

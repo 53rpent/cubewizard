@@ -31,8 +31,9 @@
 			{
 				"queue": "cubewizard-hedron-local",
 				"max_batch_size": 1,
-				"max_batch_timeout": 5,
+				"max_batch_timeout": 30,
 				"max_retries": 5,
+				"max_concurrency": 1,
 				"dead_letter_queue": "cubewizard-hedron-local-dlq"
 			}
 		],
@@ -72,8 +73,9 @@
 					{
 						"queue": "cubewizard-hedron-stg",
 						"max_batch_size": 1,
-						"max_batch_timeout": 5,
+						"max_batch_timeout": 30,
 						"max_retries": 5,
+						"max_concurrency": 1,
 						"dead_letter_queue": "cubewizard-hedron-stg-dlq"
 					}
 				],
@@ -113,8 +115,9 @@
 					{
 						"queue": "cubewizard-hedron-prod",
 						"max_batch_size": 1,
-						"max_batch_timeout": 5,
+						"max_batch_timeout": 30,
 						"max_retries": 5,
+						"max_concurrency": 1,
 						"dead_letter_queue": "cubewizard-hedron-prod-dlq"
 					}
 				],

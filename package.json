@@ -14,11 +14,12 @@
     "wrangler:check": "wrangler deploy --dry-run --outdir=.wrangler/check-main --env=\"\" && wrangler deploy --dry-run --config wrangler-eval-consumer.jsonc --outdir=.wrangler/check-eval --env=\"\" && wrangler deploy --dry-run --config wrangler-hedron-consumer.jsonc --outdir=.wrangler/check-hedron --env=\"\" && wrangler deploy --dry-run --config wrangler-redirect.jsonc --outdir=.wrangler/check-redirect --env=\"\""
   },
   "dependencies": {
-    "zod": "^3.24.1",
     "@jsquash/webp": "^1.5.0",
+    "aws4fetch": "^1.0.20",
     "jpeg-js": "^0.4.4",
     "libheif-js": "^1.19.8",
-    "upng-js": "^2.1.0"
+    "upng-js": "^2.1.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",

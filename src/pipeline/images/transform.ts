@@ -1,13 +1,5 @@
 import type { RgbaFrame } from "./types";
 
-function cloneFrame(frame: RgbaFrame): RgbaFrame {
-  return {
-    width: frame.width,
-    height: frame.height,
-    data: new Uint8ClampedArray(frame.data),
-  };
-}
-
 function sampleBilinear(
   src: RgbaFrame,
   sx: number,
@@ -76,6 +68,11 @@ export function resizeToMaxSide(
   return { width: nw, height: nh, data: out };
 }
 
+/** Sum clockwise rotation steps (each 0|90|180|270). */
+export function combineClockwiseRotations(a: number, b: number): number {
+  return (((a + b) % 360) + 360) % 360;
+}
+
 /** One 90° clockwise step: new size (H×W), maps old (x,y) → new (y, x). */
 function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
   const w = frame.width;
@@ -99,15 +96,53 @@ function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
   return { width: nw, height: nh, data: out };
 }
 
+function rotate180(frame: RgbaFrame): RgbaFrame {
+  const w = frame.width;
+  const h = frame.height;
+  const src = frame.data;
+  const out = new Uint8ClampedArray(w * h * 4);
+  const n = w * h;
+  for (let i = 0; i < n; i++) {
+    const si = i * 4;
+    const di = (n - 1 - i) * 4;
+    out[di] = src[si]!;
+    out[di + 1] = src[si + 1]!;
+    out[di + 2] = src[si + 2]!;
+    out[di + 3] = src[si + 3]!;
+  }
+  return { width: w, height: h, data: out };
+}
+
+function rotate270ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
+  const w = frame.width;
+  const h = frame.height;
+  const src = frame.data;
+  const nw = h;
+  const nh = w;
+  const out = new Uint8ClampedArray(nw * nh * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = h - 1 - y;
+      const ny = x;
+      const si = (y * w + x) * 4;
+      const di = (ny * nw + nx) * 4;
+      out[di] = src[si]!;
+      out[di + 1] = src[si + 1]!;
+      out[di + 2] = src[si + 2]!;
+      out[di + 3] = src[si + 3]!;
+    }
+  }
+  return { width: nw, height: nh, data: out };
+}
+
 /**
  * Clockwise rotation (0, 90, 180, 270), expand canvas like PIL `rotate(..., expand=True)`.
+ * Uses one output buffer per call (no chained 90° steps for 180/270).
  */
 export function rotateClockwise(frame: RgbaFrame, degrees: number): RgbaFrame {
-  const steps = (((degrees % 360) + 360) % 360) / 90;
-  if (steps === 0) return cloneFrame(frame);
-  let f = frame;
-  for (let i = 0; i < steps; i++) {
-    f = rotate90ClockwiseOnce(f);
-  }
-  return f;
+  const d = (((degrees % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+  if (d === 0) return frame;
+  if (d === 90) return rotate90ClockwiseOnce(frame);
+  if (d === 180) return rotate180(frame);
+  return rotate270ClockwiseOnce(frame);
 }

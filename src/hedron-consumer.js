@@ -1,48 +1,17 @@
 /**
  * Cloudflare Queue consumer for Hedron deck jobs.
  *
- * The main Worker only parses Hedron JSON and publishes compact queue messages.
- * This Worker downloads the image, stages the R2 upload package shape, and
- * enqueues the eval task on **EVAL_QUEUE** (same JSON body as the site upload path).
+ * Stages R2 (image + metadata), upserts processing_jobs, enqueues eval on EVAL_QUEUE.
+ * OpenAI / Scryfall / deck writes run on the **eval consumer** Worker — tail that separately.
+ *
+ * Queue: max_batch_size 1, max_concurrency 1.
  */
 
+import { parseQueueJsonBody } from "./queueMessageBody.js";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 
 var HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 var HEDRON_RETRY_BASE_DELAY_SECONDS = 30;
-
-export default {
-  async queue(batch, env) {
-    for (var i = 0; i < batch.messages.length; i++) {
-      var message = batch.messages[i];
-      try {
-        await processHedronMessage(message.body, env);
-        message.ack();
-      } catch (e) {
-        if (e && e.permanent) {
-          console.error("hedron consumer permanent failure", {
-            message_id: message.id,
-            error: e.message || String(e),
-          });
-          message.ack();
-          continue;
-        }
-
-        var delay = Math.min(
-          300,
-          HEDRON_RETRY_BASE_DELAY_SECONDS * Math.max(1, message.attempts || 1)
-        );
-        console.error("hedron consumer retry", {
-          message_id: message.id,
-          attempts: message.attempts,
-          delay_seconds: delay,
-          error: e && e.message ? e.message : String(e),
-        });
-        message.retry({ delaySeconds: delay });
-      }
-    }
-  },
-};
 
 function PermanentError(message) {
   var e = new Error(message);
@@ -86,7 +55,20 @@ function contentTypeToExt(contentType) {
   return extMap[ct] || "jpg";
 }
 
-async function fetchImageStream(imageUrl) {
+function assertConsumerBindings(env) {
+  if (!env.BUCKET || typeof env.BUCKET.put !== "function") {
+    throw new Error("missing_bucket_binding");
+  }
+  if (!env.cubewizard_db || typeof env.cubewizard_db.prepare !== "function") {
+    throw new Error("missing_cubewizard_db_binding");
+  }
+  if (!env.EVAL_QUEUE || typeof env.EVAL_QUEUE.send !== "function") {
+    throw new Error("missing_eval_queue_binding");
+  }
+}
+
+/** Always buffer so R2 gets known-length bytes (streaming puts can complete without real data). */
+async function fetchImageBytes(imageUrl) {
   var controller = new AbortController();
   var timer = setTimeout(function () {
     controller.abort();
@@ -108,25 +90,7 @@ async function fetchImageStream(imageUrl) {
       throw new Error("hedron image fetch failed with status " + resp.status);
     }
 
-    var contentLength = parseInt(resp.headers.get("Content-Length") || "0", 10);
-    if (contentLength > HEDRON_MAX_IMAGE_BYTES) {
-      throw PermanentError("hedron image exceeds max size from content-length");
-    }
-
     var contentType = resp.headers.get("Content-Type") || "image/jpeg";
-    if (!resp.body) throw new Error("hedron image response has no body");
-
-    if (contentLength > 0) {
-      return {
-        body: resp.body,
-        byteCount: Promise.resolve(contentLength),
-        contentType: contentType,
-        ext: contentTypeToExt(contentType),
-      };
-    }
-
-    // R2 requires a known-length stream. If Hedron omits Content-Length, buffer
-    // this single queue message with the same 20 MB guard before writing to R2.
     var arr = await resp.arrayBuffer();
     if (arr.byteLength <= 0) throw PermanentError("hedron image is empty");
     if (arr.byteLength > HEDRON_MAX_IMAGE_BYTES) {
@@ -134,8 +98,8 @@ async function fetchImageStream(imageUrl) {
     }
 
     return {
-      body: new Blob([arr], { type: contentType }),
-      byteCount: Promise.resolve(arr.byteLength),
+      bytes: new Uint8Array(arr),
+      byteLength: arr.byteLength,
       contentType: contentType,
       ext: contentTypeToExt(contentType),
     };
@@ -144,24 +108,43 @@ async function fetchImageStream(imageUrl) {
   }
 }
 
-async function enqueueCfEvalJob(env, body) {
-  var q = env.EVAL_QUEUE;
-  if (!q) {
-    console.warn("CF eval queue skipped: missing env.EVAL_QUEUE binding");
-    return { ok: false, skipped: true, reason: "missing_eval_queue" };
+async function verifyR2Staging(env, metadataKey, imageKey, expectedImageBytes) {
+  if (typeof env.BUCKET.head !== "function") {
+    console.warn("hedron_r2_verify_skipped", { reason: "bucket_head_unavailable" });
+    return;
   }
-  try {
-    await q.send(body);
-    return { ok: true, skipped: false };
-  } catch (e) {
-    console.error("CF eval queue send failed:", e);
-    return { ok: false, skipped: false };
+  var metaHead = await env.BUCKET.head(metadataKey);
+  if (!metaHead) throw new Error("r2_metadata_missing_after_put");
+  var imgHead = await env.BUCKET.head(imageKey);
+  if (!imgHead) throw new Error("r2_image_missing_after_put");
+  var stored =
+    imgHead.size != null
+      ? imgHead.size
+      : imgHead.contentLength != null
+        ? imgHead.contentLength
+        : null;
+  if (stored != null && stored <= 0) {
+    throw new Error("r2_image_empty_after_put");
+  }
+  if (expectedImageBytes > 0 && stored != null && stored !== expectedImageBytes) {
+    console.warn("hedron_r2_size_mismatch", {
+      expected: expectedImageBytes,
+      stored: stored,
+      image_key: imageKey,
+    });
   }
 }
 
-async function processHedronMessage(raw, env) {
-  var job = raw && typeof raw === "object" ? raw : null;
-  if (!job) throw PermanentError("queue body must be an object");
+async function enqueueCfEvalJob(env, body) {
+  await env.EVAL_QUEUE.send(body, { contentType: "json" });
+}
+
+async function processHedronMessage(raw, env, messageId) {
+  var t0 = Date.now();
+  assertConsumerBindings(env);
+
+  var job = parseQueueJsonBody(raw);
+  if (!job) throw PermanentError("queue body must be a JSON object");
 
   var deckImageUuid = requiredString(job, "deck_image_uuid");
   var cubeId = requiredString(job, "cube_id");
@@ -175,13 +158,14 @@ async function processHedronMessage(raw, env) {
   var draws = optionalInt(job, "match_draws");
   var winRate = wins + losses > 0 ? wins / (wins + losses) : 0;
 
-  var image = await fetchImageStream(imageUrl);
+  var image = await fetchImageBytes(imageUrl);
   var imageKey = prefix + "/image." + image.ext;
-  await env.BUCKET.put(imageKey, image.body, {
+  var metadataKey = prefix + "/metadata.json";
+
+  await env.BUCKET.put(imageKey, image.bytes, {
     httpMetadata: { contentType: image.contentType },
     customMetadata: { pilotName: pilotName, cubeId: cubeId, source: "hedron" },
   });
-  var downloadedBytes = await image.byteCount;
 
   var metadata = {
     cube_id: cubeId,
@@ -198,11 +182,13 @@ async function processHedronMessage(raw, env) {
     upload_id: uploadId,
     draft_id: job.draft_id ? String(job.draft_id) : "",
     player_id: job.player_id ? String(job.player_id) : "",
-    downloaded_bytes: downloadedBytes,
+    downloaded_bytes: image.byteLength,
   };
-  await env.BUCKET.put(prefix + "/metadata.json", JSON.stringify(metadata, null, 2), {
+  await env.BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
     httpMetadata: { contentType: "application/json" },
   });
+
+  await verifyR2Staging(env, metadataKey, imageKey, image.byteLength);
 
   var r2Bucket = String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim();
   var taskBody = {
@@ -219,24 +205,59 @@ async function processHedronMessage(raw, env) {
     match_draws: draws,
   };
 
-  try {
-    await upsertQueuedProcessingJob(env.cubewizard_db, taskBody);
-  } catch (jobErr) {
-    console.error("processing_jobs upsert failed (hedron):", jobErr);
-  }
+  await upsertQueuedProcessingJob(env.cubewizard_db, taskBody);
+  await enqueueCfEvalJob(env, taskBody);
 
-  var cfRes = await enqueueCfEvalJob(env, taskBody);
-  if (!cfRes.ok && !cfRes.skipped) {
-    throw new Error("CF eval enqueue failed");
-  }
-
-  console.log("hedron_consumer", {
-    event: "job_staged_and_enqueued",
+  console.log("hedron_consumer_complete", {
+    message_id: messageId || null,
+    upload_id: uploadId,
     cube_id: cubeId,
     deck_image_uuid: deckImageUuid,
-    upload_id: uploadId,
     r2_prefix: prefix + "/",
     image_key: imageKey,
-    downloaded_bytes: downloadedBytes,
+    downloaded_bytes: image.byteLength,
+    elapsed_ms: Date.now() - t0,
+    eval_enqueued: true,
+    eval_worker: "cubewizard-eval-consumer — tail separately for OpenAI/Scryfall",
   });
 }
+
+export default {
+  async queue(batch, env) {
+    if (!batch.messages || batch.messages.length === 0) return;
+
+    if (batch.messages.length > 1) {
+      console.warn("hedron_consumer_unexpected_batch_size", {
+        size: batch.messages.length,
+        queue: batch.queue,
+      });
+    }
+
+    var message = batch.messages[0];
+    try {
+      await processHedronMessage(message.body, env, message.id);
+      message.ack();
+    } catch (e) {
+      if (e && e.permanent) {
+        console.error("hedron_consumer_poison", {
+          message_id: message.id,
+          error: e.message || String(e),
+        });
+        message.ack();
+        return;
+      }
+
+      var delay = Math.min(
+        300,
+        HEDRON_RETRY_BASE_DELAY_SECONDS * Math.max(1, message.attempts || 1)
+      );
+      console.error("hedron_consumer_retry", {
+        message_id: message.id,
+        attempts: message.attempts,
+        delay_seconds: delay,
+        error: e && e.message ? e.message : String(e),
+      });
+      message.retry({ delaySeconds: delay });
+    }
+  },
+};
