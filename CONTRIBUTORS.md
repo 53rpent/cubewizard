@@ -10,7 +10,7 @@ Copyright © 2026 CubeWizard contributors.
 
 | Branch | Role |
 |--------|------|
-| **`staging`** | Integration branch. All contributor PRs merge here. Pushes deploy the **staging** Cloudflare stack (`--env stg`) and optional legacy GCP staging services. |
+| **`staging`** | Integration branch. All contributor PRs merge here. Pushes deploy the **staging** Cloudflare stack via GitHub Actions (`deploy-cloudflare-stg.yml`). |
 | **`main`** | Production branch. Updated when maintainers **promote** `staging` to production (merge or PR from `staging` → `main`). Pushes deploy **production** (`--env prod`). |
 
 Contributors do not open PRs directly against `main` unless a maintainer asks for a hotfix exception.
@@ -29,7 +29,7 @@ After your PR merges to `staging`, it will ship to the staging environment on th
 
 - **Promote to production:** merge `staging` into `main` (via PR or direct merge) when staging is validated; CI on `main` deploys prod Workers and related services.
 - **Production path:** Cloudflare Workers, D1, R2, and Queues (`EVAL_QUEUE`, `HEDRON_QUEUE`). See [README.md](README.md).
-- **Optional legacy GCP:** Cloud Run services under `services/` deploy via `.github/workflows/deploy-cloud-run*.yml` (staging on `staging`, production on `main`); not required for the Cloudflare pipeline.
+- **CI/CD:** `.github/workflows/ci.yml` on PRs; Cloudflare deploy workflows on `staging` / `main` (see [README.md](README.md#github-actions)).
 
 ## Third-party assets
 

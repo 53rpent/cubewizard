@@ -199,9 +199,15 @@ CubeWizard/
 └── …                             # Root Python modules used only by services/ Docker image
 ```
 
-## Optional legacy GCP (Cloud Run)
+## GitHub Actions
 
-Not used by the Cloudflare upload path. Deploy via GitHub Actions (`.github/workflows/deploy-cloud-run.yml`, `deploy-cloud-run-stg.yml`) and `services/enqueue`, `services/worker`. Enqueue secrets live in Google Secret Manager; the site Worker does not read them.
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [`ci.yml`](.github/workflows/ci.yml) | PR / push to `staging` or `main` | `npm ci`, `test:pipeline`, `wrangler:check` |
+| [`deploy-cloudflare-stg.yml`](.github/workflows/deploy-cloudflare-stg.yml) | Push to `staging` | Deploy site, eval, and hedron Workers (`--env stg`) |
+| [`deploy-cloudflare-prod.yml`](.github/workflows/deploy-cloudflare-prod.yml) | Push to `main` | Deploy site, eval, hedron, and redirect Workers (`--env prod`) |
+
+**Repo secrets:** `CLOUDFLARE_API_TOKEN` (Workers, Queues, D1, R2). Optional `CLOUDFLARE_ACCOUNT_ID` if Wrangler cannot infer it from the token.
 
 Local Python CLI (`python main.py`) remains for one-off image debugging against `config.ini`.
 

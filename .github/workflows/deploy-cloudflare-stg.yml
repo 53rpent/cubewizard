@@ -1,0 +1,55 @@
+name: Deploy Cloudflare (staging)
+
+# Requires repo secrets: CLOUDFLARE_API_TOKEN (Workers Scripts, Queues, D1, R2).
+# Optional: CLOUDFLARE_ACCOUNT_ID if Wrangler cannot infer the account from the token.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch: {}
+
+env:
+  DEPLOY_VERSION: ${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pipeline tests
+        run: npm run test:pipeline
+
+      - name: Deploy site Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy --env stg --var CWW_DEPLOY_VERSION:${{ env.DEPLOY_VERSION }}
+
+      - name: Deploy eval consumer
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy --config wrangler-eval-consumer.jsonc --env stg
+
+      - name: Deploy hedron consumer
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy --config wrangler-hedron-consumer.jsonc --env stg
