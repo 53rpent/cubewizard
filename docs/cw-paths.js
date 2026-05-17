@@ -33,6 +33,24 @@
     synergies: 1,
   };
 
+  /** Cube ids from URL, query, or storage (letters, digits, hyphen, underscore). */
+  var CUBE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
+
+  function normalizeCubeId(raw) {
+    var id = String(raw || "").trim();
+    if (!id || isReservedSegment(id)) return "";
+    if (!CUBE_ID_RE.test(id)) return "";
+    return id;
+  }
+
+  /** Same-origin relative path only (blocks open redirects via `//` or schemes). */
+  function safeAppPath(path) {
+    var p = String(path || "").trim();
+    if (!p || p.charAt(0) !== "/" || p.indexOf("//") === 0) return "/";
+    if (/[\x00-\x1f\x7f]/.test(p)) return "/";
+    return p;
+  }
+
   function isReservedSegment(seg) {
     if (seg === undefined || seg === null || seg === "") return false;
     return !!RESERVED_FIRST[String(seg).toLowerCase()];
@@ -51,25 +69,28 @@
   }
 
   function cubePath(cubeId, tail) {
-    var c = String(cubeId || "").trim();
-    if (!c || isReservedSegment(c)) return "/";
+    var c = normalizeCubeId(cubeId);
+    if (!c) return "/";
     return "/" + encSeg(c) + tail;
   }
 
   global.CWPaths = {
+    normalizeCubeId: normalizeCubeId,
+    safeAppPath: safeAppPath,
+    DATA_VIEWS: DATA_VIEWS,
     home: function () {
       return "/";
     },
     dashboard: function (cubeId) {
-      var c = String(cubeId || "").trim();
-      if (!c || isReservedSegment(c)) return "/";
-      return "/" + encSeg(c);
+      var c = normalizeCubeId(cubeId);
+      if (!c) return "/";
+      return safeAppPath("/" + encSeg(c));
     },
     /** @param {'decks'|'cards'|'colors'|'synergies'} view */
     dataPath: function (cubeId, view) {
       var v = String(view || "").toLowerCase().trim();
       if (!DATA_VIEWS[v]) return "/";
-      return cubePath(cubeId, "/" + v);
+      return safeAppPath(cubePath(cubeId, "/" + v));
     },
     decks: function (cubeId) {
       return this.dataPath(cubeId, "decks");
@@ -111,9 +132,9 @@
       if (parts.length === 1 && RESERVED_FIRST[seg0.toLowerCase()]) return {};
       if (parts.length === 1) {
         try {
-          return { cubeId: decSeg(seg0).trim() };
+          return { cubeId: normalizeCubeId(decSeg(seg0)) };
         } catch (e) {
-          return { cubeId: String(seg0).trim() };
+          return { cubeId: normalizeCubeId(seg0) };
         }
       }
       if (parts.length === 2) {
@@ -121,9 +142,9 @@
         if (DATA_VIEWS[seg1]) {
           if (isReservedSegment(seg0)) return {};
           try {
-            return { cubeId: decSeg(seg0).trim(), dataView: seg1 };
+            return { cubeId: normalizeCubeId(decSeg(seg0)), dataView: seg1 };
           } catch (e2) {
-            return { cubeId: String(seg0).trim(), dataView: seg1 };
+            return { cubeId: normalizeCubeId(seg0), dataView: seg1 };
           }
         }
       }
@@ -136,13 +157,13 @@
         if (legacyMap[at]) {
           try {
             return {
-              cubeId: decSeg(seg0).trim(),
+              cubeId: normalizeCubeId(decSeg(seg0)),
               dataView: legacyMap[at],
               legacyAnalysisType: at,
             };
           } catch (e3) {
             return {
-              cubeId: String(seg0).trim(),
+              cubeId: normalizeCubeId(seg0),
               dataView: legacyMap[at],
               legacyAnalysisType: at,
             };
@@ -157,23 +178,21 @@
       if (!id) {
         try {
           var q = new URLSearchParams(window.location.search).get("cube");
-          if (q) id = String(q).trim();
+          if (q) id = normalizeCubeId(q);
         } catch (e) {}
       }
       if (!id) {
         try {
-          id = (localStorage.getItem("selectedCubeId") || "").trim();
+          id = normalizeCubeId(localStorage.getItem("selectedCubeId") || "");
         } catch (e2) {
           id = "";
         }
       }
-      if (id && isReservedSegment(id)) {
+      if (!id) {
         try {
           localStorage.removeItem("selectedCubeId");
         } catch (e4) {}
-        id = "";
-      }
-      if (id) {
+      } else {
         try {
           localStorage.setItem("selectedCubeId", id);
         } catch (e3) {}

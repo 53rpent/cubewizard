@@ -14,6 +14,17 @@
       .replace(/"/g, "&quot;");
   }
 
+  /** Only http(s) image URLs (blocks javascript: and other schemes in tooltip img src). */
+  function safeHttpImageUrl(raw) {
+    var s = String(raw || "").trim();
+    if (!s) return "";
+    try {
+      var u = new URL(s, window.location.href);
+      if (u.protocol === "https:" || u.protocol === "http:") return u.href;
+    } catch (e) {}
+    return "";
+  }
+
   function getTooltip() {
     if (!tooltip) {
       tooltip = document.createElement("div");
@@ -67,12 +78,13 @@
       if (!el) return;
       var enc = el.getAttribute("data-cw-img");
       if (!enc) return;
-      var url;
+      var decoded;
       try {
-        url = decodeURIComponent(enc);
+        decoded = decodeURIComponent(enc);
       } catch (e) {
-        url = enc;
+        decoded = enc;
       }
+      var url = safeHttpImageUrl(decoded);
       if (!url) return;
       active = true;
       var t = getTooltip();
