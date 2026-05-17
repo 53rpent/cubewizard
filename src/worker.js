@@ -1417,7 +1417,7 @@ async function handleTriggerHedronSync(cubeId, env, ctx) {
   } catch (e) {
     var msg = e && e.message ? String(e.message) : String(e);
     console.error("hedron manual sync handler", msg, e && e.stack ? e.stack : "");
-    return jsonResponse({ error: "Failed to start Hedron sync", detail: msg.slice(0, 200) }, 500);
+    return jsonResponse({ error: "Failed to start Hedron sync" }, 500);
   }
 }
 
