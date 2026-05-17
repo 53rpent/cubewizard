@@ -118,8 +118,7 @@ Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a
 |----------|------------------|--------|
 | `OPENAI_API_KEY` | Yes (for eval) | Eval consumer secret |
 | `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` — see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
-| `CW_EVAL_MAX_IMAGE_SIDE` | No | Default `2048`; caps decode memory (128 MiB isolate limit) |
-| `CW_EVAL_ORIENT_MAX_SIDE` | No | Default `1280`; orientation preview only |
+| `CW_EVAL_MAX_IMAGE_SIDE` | No | Unset/`0`/`full` = source resolution for orient + extract; set px only to cap Workers memory |
 | `TURNSTILE_SECRET` | No | Site upload bot check; skipped when `CWW_ENV=local` |
 
 Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` — see [Deploy](#deploy-cloudflare).
@@ -134,9 +133,8 @@ Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 AP
 | `npm run dev:hedron-consumer` | Hedron only |
 | `npm run d1:bootstrap:local` | Apply `schema.sql` to local D1 |
 | `npm run test:pipeline` | Vitest pipeline unit tests |
-| `npm run golden:eval` | Golden-set run (eval consumer + live OpenAI); writes `fixtures/eval-golden/scores/` |
-| `npm run golden:baseline` | Same as `golden:eval`, also saves `scores/baseline.json` (Windows script) |
-| `npm run golden:regression` | Live regression vs baseline (`GOLDEN_EVAL_RUN=1` + API key) |
+| `npm run golden:eval` | Golden-set run (eval consumer + live OpenAI); writes `scores/latest.json` and compares to baseline |
+| `npm run golden:baseline` | Promote `scores/latest.json` → `scores/baseline.json` after confirmation (`--yes` to skip prompt) |
 | `npm run wrangler:check` | Dry-run deploy all Wrangler configs |
 
 ### Tests and CI parity
@@ -154,7 +152,7 @@ $env:PIPELINE_QA_INPUT="C:\path\to\images"
 npm run test:pipeline:qa
 ```
 
-**Golden-set eval** (deck photos + expected card names): see [`fixtures/eval-golden/README.md`](fixtures/eval-golden/README.md). After adding cases under `fixtures/eval-golden/cases/`, run `npm run golden:eval` then `npm run golden:baseline`. Regression: `$env:GOLDEN_EVAL_RUN="1"; npm run golden:regression`.
+**Golden-set eval** (deck photos + expected card names): see [`fixtures/eval-golden/README.md`](fixtures/eval-golden/README.md). After adding cases, run `npm run golden:eval` (live OpenAI + comparison report), then `npm run golden:baseline` when you want to commit a new reference.
 
 ### Reset local data
 

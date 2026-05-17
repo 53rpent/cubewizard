@@ -6,6 +6,7 @@
  */
 
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import { ANALYTICS_EXCLUDED_CARD_NAMES as ANALYTICS_EXCLUDED_CARD_NAMES_LIST } from "./shared/analyticsExcludedCardNames.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -1743,18 +1744,7 @@ async function handlePutDeckCards(deckIdStr, request, env) {
 // ============================================================
 
 /** Oracle names omitted from charts and cube-wide analytics (deck modal still lists full deck). */
-var ANALYTICS_EXCLUDED_CARD_NAMES = new Set([
-  "Island",
-  "Plains",
-  "Mountain",
-  "Swamp",
-  "Forest",
-  "Snow-Covered Island",
-  "Snow-Covered Plains",
-  "Snow-Covered Mountain",
-  "Snow-Covered Swamp",
-  "Snow-Covered Forest",
-]);
+var ANALYTICS_EXCLUDED_CARD_NAMES = new Set(ANALYTICS_EXCLUDED_CARD_NAMES_LIST);
 
 function isExcludedFromAnalyticsCardName(name) {
   return ANALYTICS_EXCLUDED_CARD_NAMES.has(String(name || "").trim());

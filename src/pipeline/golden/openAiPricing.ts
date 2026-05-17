@@ -187,10 +187,17 @@ export async function fetchOpenAiModelPricing(
 }
 
 export function computeUsageCostUsd(
-  usage: { input_tokens: number; output_tokens: number },
+  usage: { input_tokens: number; output_tokens: number; cached_input_tokens?: number },
   rates: OpenAiPricingRates
 ): OpenAiUsageCostUsd {
-  const input_usd = (usage.input_tokens / 1_000_000) * rates.usd_per_1m_input;
+  const cached = Math.min(
+    usage.cached_input_tokens ?? 0,
+    usage.input_tokens
+  );
+  const uncached = usage.input_tokens - cached;
+  const input_usd =
+    (uncached / 1_000_000) * rates.usd_per_1m_input +
+    (cached / 1_000_000) * rates.usd_per_1m_cached_input;
   const output_usd = (usage.output_tokens / 1_000_000) * rates.usd_per_1m_output;
   return {
     input_usd,

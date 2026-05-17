@@ -7,6 +7,7 @@ export { decodeToRgba } from "./decode";
 export { encodeJpeg, encodePng, frameHasTransparency } from "./encode";
 export {
   combineClockwiseRotations,
+  cropCenter,
   resizeToMaxSide,
   rotateClockwise,
 } from "./transform";

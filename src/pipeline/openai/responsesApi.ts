@@ -1,6 +1,10 @@
 import type { ZodType } from "zod";
 import { getActiveEvalUsageReporter } from "../evalUsage/evalUsageReport";
-import type { CardExtractionResult, OrientationResult } from "./schemas";
+import type {
+  CardExtractionResult,
+  OrientationConfirmResult,
+  OrientationResult,
+} from "./schemas";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
@@ -72,7 +76,11 @@ export type VisionJsonCallOptions = {
   model: string;
   maxOutputTokens: number;
   reasoningEffort?: "low" | "medium" | "high";
+  /** Static rules / cube list prefix (cached when ≥1024 tokens). */
+  developerText?: string;
   userText: string;
+  /** OpenAI `prompt_cache_key` — reuse prefix across passes/uploads for same cube. */
+  promptCacheKey?: string;
   schemaName: string;
   jsonSchema: Record<string, unknown>;
   /** OpenAI `strict` JSON schema mode (requires exhaustive `required`); default false for optional fields. */
@@ -96,6 +104,28 @@ function resolveInputImageUrl(opts: VisionJsonCallOptions): string {
   throw new ModelOutputInvalidError("vision call requires imageUrl or imageBase64");
 }
 
+function buildVisionInput(opts: VisionJsonCallOptions): Record<string, unknown>[] {
+  const messages: Record<string, unknown>[] = [];
+  const developer = opts.developerText?.trim();
+  if (developer) {
+    messages.push({
+      role: "developer",
+      content: [{ type: "input_text", text: developer }],
+    });
+  }
+  messages.push({
+    role: "user",
+    content: [
+      { type: "input_text", text: opts.userText },
+      {
+        type: "input_image",
+        image_url: resolveInputImageUrl(opts),
+      },
+    ],
+  });
+  return messages;
+}
+
 /**
  * OpenAI **Responses** API with `text.format.type = json_schema`, then Zod-parse output.
  */
@@ -108,18 +138,7 @@ export async function callOpenAiVisionJsonSchema<T>(
   const body: Record<string, unknown> = {
     model: opts.model,
     max_output_tokens: opts.maxOutputTokens,
-    input: [
-      {
-        role: "user",
-        content: [
-          { type: "input_text", text: opts.userText },
-          {
-            type: "input_image",
-            image_url: resolveInputImageUrl(opts),
-          },
-        ],
-      },
-    ],
+    input: buildVisionInput(opts),
     text: {
       format: {
         type: "json_schema",
@@ -133,6 +152,9 @@ export async function callOpenAiVisionJsonSchema<T>(
   if (opts.reasoningEffort) {
     body.reasoning = { effort: opts.reasoningEffort };
   }
+  if (opts.promptCacheKey?.trim()) {
+    body.prompt_cache_key = opts.promptCacheKey.trim();
+  }
 
   const level = opts.openAiLogLevel ?? "off";
   const evalVerbose = level === "high";
@@ -144,6 +166,8 @@ export async function callOpenAiVisionJsonSchema<T>(
       model: opts.model,
       max_output_tokens: opts.maxOutputTokens,
       reasoning_effort: opts.reasoningEffort ?? null,
+      prompt_cache_key: opts.promptCacheKey ?? null,
+      developer_text_len: opts.developerText?.length ?? 0,
       image_url: opts.imageUrl ?? null,
       image_base64_len: opts.imageBase64?.length ?? null,
       user_text_len: opts.userText.length,
@@ -219,6 +243,9 @@ export async function callOpenAiVisionJsonSchema<T>(
         `Orientation detection: ${r.rotation_needed}° rotation needed (${r.confidence} confidence)`
       );
       if (r.reasoning) console.log(`Reasoning: ${r.reasoning}`);
+    } else if (opts.schemaName === "orientation_confirm") {
+      const r = parsed.data as OrientationConfirmResult;
+      console.log(`Orientation confirm: ${r.correctly_oriented ? "yes" : "no"}`);
     } else if (opts.schemaName === "card_extraction") {
       const r = parsed.data as CardExtractionResult;
       console.log(`Extraction confidence: ${r.confidence_level}`);

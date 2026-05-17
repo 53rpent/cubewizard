@@ -10,7 +10,12 @@ describe("evalUsageReport", () => {
         usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
       });
       reporter.recordOpenAiResponse("card_extraction", 200, {
-        usage: { input_tokens: 500, output_tokens: 200, total_tokens: 700 },
+        usage: {
+          input_tokens: 500,
+          output_tokens: 200,
+          total_tokens: 700,
+          input_tokens_details: { cached_tokens: 300 },
+        },
       });
     });
 
@@ -19,6 +24,8 @@ describe("evalUsageReport", () => {
     expect(report.extracted_card_names).toEqual(["Lightning Bolt"]);
     expect(report.openai.calls).toHaveLength(2);
     expect(report.openai.totals.total_tokens).toBe(810);
+    expect(report.openai.totals.cached_input_tokens).toBe(300);
+    expect(report.openai.calls[1]?.cached_input_tokens).toBe(300);
     expect(report.openai.orientation_calls).toBe(1);
     expect(report.openai.extraction_calls).toBe(1);
     expect(report.duration_ms).toBe(1234);

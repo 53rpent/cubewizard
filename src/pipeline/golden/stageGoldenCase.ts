@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, extname } from "node:path";
 import type { R2BucketGetPut } from "../orchestrator/runEvalTask";
+import { contentTypeForExt } from "../r2/orientedKeys";
 import type { TaskRequest } from "../contracts/taskRequest.zod";
 import type { GoldenCaseDefinition } from "./types";
 
@@ -24,12 +25,14 @@ export async function stageGoldenCaseOnR2(
   const image_key = `${r2_prefix}${basename(goldenCase.image_path)}`;
   const metaKey = `${r2_prefix}metadata.json`;
 
+  const imageContentType = contentTypeForExt(extname(goldenCase.image_path));
   await bucket.put(image_key, imageBytes, {
-    httpMetadata: { contentType: "image/jpeg" },
+    httpMetadata: { contentType: imageContentType },
   } as { httpMetadata?: { contentType?: string } });
 
   const cubeId = goldenCase.expected.cube_id?.trim() || "golden-cube";
-  const metadata = {
+  const expectedCount = goldenCase.expected.expected_count;
+  const metadata: Record<string, unknown> = {
     cube_id: cubeId,
     pilot_name: "GoldenHarness",
     match_wins: 0,
@@ -40,6 +43,10 @@ export async function stageGoldenCaseOnR2(
     image_key,
     original_filename: basename(goldenCase.image_path),
   };
+  if (typeof expectedCount === "number" && Number.isFinite(expectedCount)) {
+    metadata.expected_count = Math.floor(expectedCount);
+    metadata.expected_deck_size = Math.floor(expectedCount);
+  }
 
   await bucket.put(
     metaKey,

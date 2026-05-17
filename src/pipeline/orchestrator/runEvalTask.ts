@@ -4,6 +4,7 @@ import type { CardsEnrichmentBlock, DeckCardRow, DeckPayload } from "../d1/types
 import { executeDeckWritePlan } from "../d1/executeDeckWritePlan";
 import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
 import { orientDeckImageRgba } from "../orientation/orientDeckImage";
+import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
 import { extractCardNamesFromRgba } from "../openai/extractCardNames";
 import { ModelOutputInvalidError, parseEvalOpenAiLogLevel } from "../openai/responsesApi";
 import {
@@ -15,7 +16,7 @@ import {
 } from "./processingJobRepo";
 import { uploadOrientedImageAndThumb } from "./uploadOriented";
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
-import { parseEvalMaxImageSide, parseEvalOrientMaxSide } from "./evalImageLimits";
+import { parseEvalJpegQuality, parseEvalMaxImageSide } from "./evalImageLimits";
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
 import {
   assertVisionPublishConfigured,
@@ -53,6 +54,7 @@ export interface RunEvalTaskEnv {
   OPENAI_VISION_MODEL?: string;
   OPENAI_MAX_OUTPUT_TOKENS?: string;
   OPENAI_REASONING_EFFORT?: string;
+  OPENAI_ORIENT_REASONING_EFFORT?: string;
   CW_EVAL_MAX_CUBECOBRA_CARDS?: string;
   CW_EVAL_USE_MULTI_PASS?: string;
   CW_EVAL_JPEG_QUALITY?: string;
@@ -64,10 +66,8 @@ export interface RunEvalTaskEnv {
   CW_EVAL_MAX_CONSUMERS?: string;
   /** Match queue `max_retries` in wrangler (default 5). */
   CW_EVAL_MAX_RETRIES?: string;
-  /** Max decoded image width/height in px (default 2048; keeps RGBA under Workers memory cap). */
+  /** Max decode/vision side in px; `0` / unset = source resolution. Set only to cap Workers memory. */
   CW_EVAL_MAX_IMAGE_SIDE?: string;
-  /** Max side for orientation OpenAI previews only (default 1280; extraction uses full side). */
-  CW_EVAL_ORIENT_MAX_SIDE?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
@@ -87,6 +87,8 @@ interface StagingMetadata {
   record_logged?: string;
   image_key?: string;
   original_filename?: string;
+  expected_deck_size?: number;
+  expected_count?: number;
 }
 
 function processingTimestampTag(d = new Date()): string {
@@ -212,14 +214,15 @@ export async function runEvalTask(
   );
   const reasoning = (String(env.OPENAI_REASONING_EFFORT || "medium").trim() ||
     "medium") as "low" | "medium" | "high";
+  const orientReasoning = (String(env.OPENAI_ORIENT_REASONING_EFFORT || "low").trim() ||
+    "low") as "low" | "medium" | "high";
   const maxCubeCards =
     Math.min(2000, parseInt(String(env.CW_EVAL_MAX_CUBECOBRA_CARDS || "1000"), 10) || 1000);
   const useMultiPass = !/^0|false|no$/i.test(String(env.CW_EVAL_USE_MULTI_PASS || "true"));
-  const jpegQ = Math.min(100, Math.max(60, parseInt(String(env.CW_EVAL_JPEG_QUALITY || "95"), 10) || 95));
+  const jpegQ = parseEvalJpegQuality(env.CW_EVAL_JPEG_QUALITY);
 
   const openAiLogLevel = parseEvalOpenAiLogLevel(env);
   const maxImageSide = parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE);
-  const orientMaxSide = parseEvalOrientMaxSide(env.CW_EVAL_ORIENT_MAX_SIDE);
   const localVision = isLocalEvalEnv(env);
   if (!localVision) assertVisionPublishConfigured(env);
   const vision: VisionImagePublisher | undefined = localVision
@@ -292,24 +295,43 @@ export async function runEvalTask(
       cube_id: cubeId,
       vision_mode: localVision ? "inline" : "presigned",
     });
+    const expectedDeckSize =
+      typeof metadata.expected_deck_size === "number" && Number.isFinite(metadata.expected_deck_size)
+        ? Math.floor(metadata.expected_deck_size)
+        : typeof metadata.expected_count === "number" && Number.isFinite(metadata.expected_count)
+          ? Math.floor(metadata.expected_count)
+          : 40;
+    const promptCacheKey = `cube:${cubeId}`;
+
     const { frame: orientedRgba } = await orientDeckImageRgba(imageBytes, undefined, {
       apiKey,
       model,
-      maxOutputTokens: 2000,
-      reasoningEffort: "medium",
+      reasoningEffort: orientReasoning,
+      promptCacheKey,
       jpegQuality: jpegQ,
-      maxImageWidth: maxImageSide,
-      maxImageHeight: maxImageSide,
-      orientMaxSide,
+      maxImageSide,
       visionEnv: env,
       vision,
       fetchImpl,
       openAiLogLevel,
+      orientLightExtract: {
+        apiKey,
+        model,
+        cubeCardList: cubeList,
+        expectedDeckSize,
+        maxImageSide,
+        jpegQuality: jpegQ,
+        cubeId,
+        visionEnv: env,
+        vision,
+        fetchImpl,
+        openAiLogLevel,
+      },
     });
     imageBytes = new Uint8Array(0);
 
     console.log("eval_phase orient_done", { upload_id: task.upload_id });
-    const cardNames = await extractCardNamesFromRgba(orientedRgba, {
+    let cardNames = await extractCardNamesFromRgba(orientedRgba, {
       apiKey,
       model,
       maxOutputTokens: maxOut,
@@ -319,11 +341,17 @@ export async function runEvalTask(
       useMultiPass: useMultiPass,
       jpegQuality: jpegQ,
       maxImageSide,
+      expectedDeckSize,
+      cubeId,
       visionEnv: env,
       vision,
       fetchImpl,
       openAiLogLevel,
     });
+
+    if (cubeList.length) {
+      cardNames = normalizeNamesToCubeList(cardNames, cubeList);
+    }
 
     if (!cardNames.length) {
       throw new PermanentEvalError("no_cards_extracted");
@@ -402,6 +430,7 @@ export async function runEvalTask(
       cubeId,
       imageId,
       orientedRgba,
+      jpegQuality: jpegQ,
     });
 
     await updateDeckAuxiliaryKeys(env.cubewizard_db, deckId, {

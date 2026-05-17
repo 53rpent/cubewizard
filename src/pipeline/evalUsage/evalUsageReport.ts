@@ -6,12 +6,14 @@ export interface EvalOpenAiCallRecord {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cached_input_tokens: number;
 }
 
 export interface EvalOpenAiUsageTotals {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cached_input_tokens: number;
 }
 
 export interface EvalRunReport {
@@ -35,29 +37,37 @@ export interface EvalUsageReporter {
 
 function extractUsage(json: unknown): EvalOpenAiUsageTotals {
   if (!json || typeof json !== "object") {
-    return { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    return { input_tokens: 0, output_tokens: 0, total_tokens: 0, cached_input_tokens: 0 };
   }
   const u = (json as Record<string, unknown>).usage;
   if (!u || typeof u !== "object") {
-    return { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    return { input_tokens: 0, output_tokens: 0, total_tokens: 0, cached_input_tokens: 0 };
   }
   const usage = u as Record<string, unknown>;
   const input = Number(usage.input_tokens ?? usage.prompt_tokens ?? 0) || 0;
   const output = Number(usage.output_tokens ?? usage.completion_tokens ?? 0) || 0;
   const total = Number(usage.total_tokens ?? input + output) || input + output;
-  return { input_tokens: input, output_tokens: output, total_tokens: total };
+  let cached_input_tokens = 0;
+  const details = usage.input_tokens_details;
+  if (details && typeof details === "object") {
+    cached_input_tokens =
+      Number((details as Record<string, unknown>).cached_tokens ?? 0) || 0;
+  }
+  return { input_tokens: input, output_tokens: output, total_tokens: total, cached_input_tokens };
 }
 
 function sumTotals(calls: EvalOpenAiCallRecord[]): EvalOpenAiUsageTotals {
   let input_tokens = 0;
   let output_tokens = 0;
   let total_tokens = 0;
+  let cached_input_tokens = 0;
   for (const c of calls) {
     input_tokens += c.input_tokens;
     output_tokens += c.output_tokens;
     total_tokens += c.total_tokens;
+    cached_input_tokens += c.cached_input_tokens;
   }
-  return { input_tokens, output_tokens, total_tokens };
+  return { input_tokens, output_tokens, total_tokens, cached_input_tokens };
 }
 
 export function createEvalUsageReporter(uploadId: string): EvalUsageReporter {
@@ -81,7 +91,12 @@ export function createEvalUsageReporter(uploadId: string): EvalUsageReporter {
       let orientation_calls = 0;
       let extraction_calls = 0;
       for (const c of calls) {
-        if (c.schema_name === "orientation_result") orientation_calls += 1;
+        if (
+          c.schema_name === "orientation_result" ||
+          c.schema_name === "orientation_confirm"
+        ) {
+          orientation_calls += 1;
+        }
         else if (c.schema_name === "card_extraction") extraction_calls += 1;
       }
       return {

@@ -6,6 +6,7 @@ import { loadDevVarsIntoEnv } from "./loadDevVars";
 import { loadGoldenCases } from "./loadCases";
 import { resolveOpenAiKeyFromEnv } from "./loadDevVars";
 import { computeUsageCostUsd, resolveOpenAiModelPricing, type OpenAiPricingRates } from "./openAiPricing";
+import { parseEvalJpegQuality, parseEvalMaxImageSide } from "../orchestrator/evalImageLimits";
 import { runGoldenCaseViaEvalConsumer } from "./runViaEvalConsumer";
 import type { GoldenCaseRunResult, GoldenSuiteConfig, GoldenSuiteRunResult } from "./types";
 
@@ -23,17 +24,10 @@ export function defaultGoldenSuiteConfig(env: NodeJS.ProcessEnv = process.env): 
       2000,
       parseInt(String(env.CW_EVAL_MAX_CUBECOBRA_CARDS || "1000"), 10) || 1000
     ),
-    jpeg_quality: Math.min(
-      100,
-      Math.max(60, parseInt(String(env.CW_EVAL_JPEG_QUALITY || "95"), 10) || 95)
-    ),
-    max_image_side: Math.min(
-      4096,
-      Math.max(512, parseInt(String(env.CW_EVAL_MAX_IMAGE_SIDE || "2048"), 10) || 2048)
-    ),
-    orient_max_side: Math.min(
-      2048,
-      Math.max(512, parseInt(String(env.CW_EVAL_ORIENT_MAX_SIDE || "1280"), 10) || 1280)
+    jpeg_quality: parseEvalJpegQuality(env.CW_EVAL_JPEG_QUALITY),
+    max_image_side: parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE),
+    orient_max_side: parseEvalMaxImageSide(
+      env.CW_EVAL_ORIENT_MAX_SIDE ?? env.CW_EVAL_MAX_IMAGE_SIDE
     ),
   };
 }
@@ -55,10 +49,22 @@ function caseResultFromEvalReport(
   );
 
   const openai = report?.openai;
-  const usage = openai?.totals ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+  const usage = openai?.totals ?? {
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    cached_input_tokens: 0,
+  };
   const cost_usd =
     usage.input_tokens || usage.output_tokens ?
-      computeUsageCostUsd(usage, pricing)
+      computeUsageCostUsd(
+        {
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
+          cached_input_tokens: usage.cached_input_tokens,
+        },
+        pricing
+      )
     : ZERO_COST;
   const ok = jobStatus === "done" && report != null;
   return {

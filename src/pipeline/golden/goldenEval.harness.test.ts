@@ -1,6 +1,6 @@
 /**
  * Optional Vitest wrapper around {@link runGoldenEvalCli}.
- * Prefer `npm run golden:eval` (Node CLI). Use `npm run golden:eval:vitest` only if you want Vitest output.
+ * `npm run golden:eval` runs this via Vitest (live OpenAI). Comparison vs baseline is printed by the CLI.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";

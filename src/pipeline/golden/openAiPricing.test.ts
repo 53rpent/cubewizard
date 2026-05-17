@@ -45,6 +45,22 @@ describe("openAiPricing", () => {
     expect(cost.total_usd).toBeCloseTo(1.25);
   });
 
+  it("applies cached input rate for cached portion", () => {
+    const cost = computeUsageCostUsd(
+      { input_tokens: 1_000_000, output_tokens: 0, cached_input_tokens: 600_000 },
+      {
+        model: "gpt-5-mini",
+        verified_model_id: "gpt-5-mini",
+        usd_per_1m_input: 0.25,
+        usd_per_1m_cached_input: 0.025,
+        usd_per_1m_output: 2,
+        source: "pricing_csv",
+        fetched_at: "2026-05-17",
+      }
+    );
+    expect(cost.input_usd).toBeCloseTo(0.25 * 0.4 + 0.025 * 0.6);
+  });
+
   it("has committed pricing CSV at expected path", () => {
     const rates = resolveOpenAiModelPricing("gpt-4o", REPO_ROOT);
     expect(rates.pricing_csv_path).toMatch(/eval-golden[\\/]data[\\/]openai-standard-pricing\.csv$/);

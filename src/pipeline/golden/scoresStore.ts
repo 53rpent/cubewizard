@@ -41,10 +41,15 @@ export function loadBaseline(repoRoot: string): GoldenSuiteRunResult | null {
   return JSON.parse(readFileSync(baseline, "utf8")) as GoldenSuiteRunResult;
 }
 
+export function loadLatest(repoRoot: string): GoldenSuiteRunResult | null {
+  const { latest } = goldenScoresPaths(repoRoot);
+  if (!existsSync(latest)) return null;
+  return JSON.parse(readFileSync(latest, "utf8")) as GoldenSuiteRunResult;
+}
+
 export interface PersistGoldenRunOptions {
   repoRoot: string;
   result: GoldenSuiteRunResult;
-  writeBaseline?: boolean;
 }
 
 /** Append run to runs.json, write latest.json, snapshot under history/. */
@@ -52,7 +57,6 @@ export function persistGoldenRun(opts: PersistGoldenRunOptions): {
   runsPath: string;
   latestPath: string;
   historyPath: string;
-  baselinePath?: string;
 } {
   const paths = goldenScoresPaths(opts.repoRoot);
   mkdirSync(paths.dir, { recursive: true });
@@ -66,18 +70,27 @@ export function persistGoldenRun(opts: PersistGoldenRunOptions): {
   const historyPath = join(paths.historyDir, `${opts.result.run_id}.json`);
   writeFileSync(historyPath, JSON.stringify(opts.result, null, 2), "utf8");
 
-  let baselinePath: string | undefined;
-  if (opts.writeBaseline) {
-    writeFileSync(paths.baseline, JSON.stringify(opts.result, null, 2), "utf8");
-    baselinePath = paths.baseline;
-  }
-
   return {
     runsPath: paths.runs,
     latestPath: paths.latest,
     historyPath,
-    baselinePath,
   };
+}
+
+/** Copy latest.json to baseline.json (used by `golden:baseline` after confirmation). */
+export function promoteLatestToBaseline(repoRoot: string): string {
+  const latest = loadLatest(repoRoot);
+  if (!latest) {
+    throw new Error("promoteLatestToBaseline: no scores/latest.json");
+  }
+  const paths = goldenScoresPaths(repoRoot);
+  mkdirSync(paths.dir, { recursive: true });
+  const baselineRecord: GoldenSuiteRunResult = {
+    ...latest,
+    label: "baseline",
+  };
+  writeFileSync(paths.baseline, JSON.stringify(baselineRecord, null, 2), "utf8");
+  return paths.baseline;
 }
 
 export function formatAggregateSummary(result: GoldenSuiteRunResult): string {

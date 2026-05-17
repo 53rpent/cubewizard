@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   combineClockwiseRotations,
+  cropCenter,
   decodeToRgba,
   encodeJpeg,
   prepareBytesForOpenAiVision,
@@ -70,7 +71,26 @@ describe("combineClockwiseRotations", () => {
   });
 });
 
+describe("cropCenter", () => {
+  it("crops the middle fraction of the frame", () => {
+    const data = new Uint8ClampedArray(4 * 4 * 4);
+    data.fill(0);
+    data[(1 * 4 + 1) * 4] = 255;
+    const frame = { width: 4, height: 4, data };
+    const out = cropCenter(frame, 0.5);
+    expect(out.width).toBe(2);
+    expect(out.height).toBe(2);
+    expect(out.data[0]).toBe(255);
+  });
+});
+
 describe("resizeToMaxSide", () => {
+  it("is a no-op when max side is 0 (unlimited)", () => {
+    const data = new Uint8ClampedArray(100 * 200 * 4);
+    const frame = { width: 100, height: 200, data };
+    expect(resizeToMaxSide(frame, 0, 0)).toBe(frame);
+  });
+
   it("shrinks when larger than max", () => {
     const data = new Uint8ClampedArray(100 * 200 * 4);
     data.fill(255);

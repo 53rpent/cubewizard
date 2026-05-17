@@ -12,16 +12,17 @@ export interface R2PutBucket {
 }
 
 /**
- * Store oriented deck photo as **JPEG** (quality 95) + WebP thumb — matches common Python `.jpg` output.
+ * Store oriented deck photo as **JPEG** + WebP thumb — matches common Python `.jpg` output.
  */
 export async function uploadOrientedImageAndThumb(opts: {
   blob: R2PutBucket;
   cubeId: string;
   imageId: string;
   orientedRgba: import("../images/types").RgbaFrame;
+  jpegQuality?: number;
 }): Promise<{ orientedKey: string; thumbKey: string; storedImagePath: string; ext: string }> {
   const ext = ".jpg";
-  const orientedBytes = encodeJpeg(opts.orientedRgba, 95);
+  const orientedBytes = encodeJpeg(opts.orientedRgba, opts.jpegQuality ?? 100);
   const orientedKey = orientedObjectKey(opts.cubeId, opts.imageId, ext);
   await opts.blob.put(orientedKey, orientedBytes, {
     httpMetadata: { contentType: "image/jpeg" },

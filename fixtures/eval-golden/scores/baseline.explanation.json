@@ -61,7 +61,7 @@
       "total_cost_usd": "Sum of case cost_usd.total_usd.",
       "mean_cost_usd_per_case": "total_cost_usd / case_count."
     },
-    "regression_tests": "golden:regression compares latest run to baseline.json: micro F1/recall floors, optional cost ratio (GOLDEN_MAX_COST_RATIO)."
+    "baseline_comparison": "golden:eval prints comparison vs baseline.json after each run. Optional GOLDEN_FAIL_ON_REGRESSION=1 exits on tolerance breach (GOLDEN_MAX_REGRESSION, GOLDEN_MAX_COST_RATIO)."
   },
   "version": 1,
   "label": "example-baseline",

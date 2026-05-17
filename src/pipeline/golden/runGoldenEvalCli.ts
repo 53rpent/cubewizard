@@ -1,25 +1,29 @@
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
+import {
+  assertWithinBaselineTolerance,
+  compareGoldenToBaseline,
+  formatBaselineComparison,
+} from "./compareToBaseline";
 import { loadDevVarsIntoEnv, resolveOpenAiKeyFromEnv } from "./loadDevVars";
 import { loadGoldenCases } from "./loadCases";
 import { runGoldenSuite } from "./runSuite";
-import { formatAggregateSummary, persistGoldenRun } from "./scoresStore";
+import { GoldenEvalCliError } from "./goldenCliError";
+import {
+  formatAggregateSummary,
+  loadBaseline,
+  persistGoldenRun,
+} from "./scoresStore";
 
-export class GoldenEvalCliError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "GoldenEvalCliError";
-  }
-}
+export { GoldenEvalCliError } from "./goldenCliError";
 
 export interface RunGoldenEvalCliOptions {
   repoRoot: string;
   label?: string;
-  writeBaseline?: boolean;
 }
 
 /**
- * Run the golden suite via the eval consumer and write score files.
- * Used by `npm run golden:eval` (not Vitest).
+ * Run the golden suite via the eval consumer, write scores, and compare to baseline.
+ * Used by `npm run golden:eval`.
  */
 export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<void> {
   loadDevVarsIntoEnv(opts.repoRoot);
@@ -39,12 +43,7 @@ export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<v
     );
   }
 
-  const writeBaseline =
-    opts.writeBaseline ??
-    /^1|true|yes$/i.test(String(process.env.GOLDEN_EVAL_WRITE_BASELINE ?? "").trim());
-  const label =
-    opts.label ??
-    (writeBaseline ? "baseline" : String(process.env.GOLDEN_EVAL_LABEL || "golden-eval"));
+  const label = opts.label ?? String(process.env.GOLDEN_EVAL_LABEL || "golden-eval");
 
   resolveOpenAiApiKey({ OPENAI_API_KEY: apiKey });
 
@@ -54,11 +53,26 @@ export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<v
   const paths = persistGoldenRun({
     repoRoot: opts.repoRoot,
     result,
-    writeBaseline,
   });
 
   console.log(formatAggregateSummary(result));
   console.log("Scores written:", paths);
+
+  const baseline = loadBaseline(opts.repoRoot);
+  const comparison = compareGoldenToBaseline(result, baseline);
+  console.log(formatBaselineComparison(comparison));
+
+  const toleranceErrors = assertWithinBaselineTolerance(comparison);
+  if (toleranceErrors.length) {
+    console.warn("\nBaseline tolerance warnings:");
+    for (const e of toleranceErrors) console.warn(`  - ${e}`);
+    if (/^1|true|yes$/i.test(String(process.env.GOLDEN_FAIL_ON_REGRESSION ?? "").trim())) {
+      throw new GoldenEvalCliError(
+        `Run exceeded baseline tolerance (${toleranceErrors.length} issue(s)). ` +
+          "Set GOLDEN_FAIL_ON_REGRESSION=0 to only warn."
+      );
+    }
+  }
 
   let failed = 0;
   for (const c of result.cases) {

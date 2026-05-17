@@ -4,10 +4,14 @@ import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
 import type { VisionImageInput } from "./responsesApi";
 import type { RgbaFrame } from "../images/types";
-import { EVAL_MAX_IMAGE_SIDE_DEFAULT } from "../orchestrator/evalImageLimits";
-import { buildExtractionPrompt } from "../openai/prompts";
+import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
+import {
+  EXTRACTION_DEVELOPER_PROMPT,
+  buildCubeListDeveloperSuffix,
+  buildExtractionUserPrompt,
+} from "../openai/prompts";
 import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
-import { CardExtractionResultSchema } from "../openai/schemas";
+import { CardExtractionResultSchema, type CardExtractionResult } from "../openai/schemas";
 import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
 
 export interface ExtractCardNamesOptions {
@@ -21,27 +25,70 @@ export interface ExtractCardNamesOptions {
   useMultiPass: boolean;
   jpegQuality: number;
   expectedDeckSize?: number;
+  cubeId?: string;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
   visionEnv: { CWW_ENV?: string };
   vision?: VisionImagePublisher;
 }
 
-async function singlePass(
+function buildExtractionDeveloperPrefix(
+  cubeCardList: string[] | null,
+  maxCardsInPrompt: number,
+  includeCubeList: boolean
+): string {
+  if (!includeCubeList || !cubeCardList?.length) {
+    return EXTRACTION_DEVELOPER_PROMPT;
+  }
+  return `${EXTRACTION_DEVELOPER_PROMPT}${buildCubeListDeveloperSuffix(cubeCardList, maxCardsInPrompt)}`;
+}
+
+function buildPromptCacheKey(cubeId?: string): string | undefined {
+  const id = cubeId?.trim();
+  return id ? `cube:${id}` : undefined;
+}
+
+function countBelowThreshold(count: number, expected: number, ratio: number): boolean {
+  return count < expected * ratio;
+}
+
+function needsSecondPass(
+  pass1: CardExtractionResult,
+  expected: number,
+  hasCubeList: boolean
+): boolean {
+  const count = pass1.card_names.length;
+  if (countBelowThreshold(count, expected, 0.85)) return true;
+  if (pass1.confidence_level === "low" || pass1.confidence_level === "medium") return true;
+  if (!hasCubeList && countBelowThreshold(count, expected, 0.85)) return true;
+  return false;
+}
+
+async function extractionPass(
   imageInput: VisionImageInput,
-  prompt: string,
+  developerText: string,
+  userText: string,
   opts: Pick<
     ExtractCardNamesOptions,
-    "apiKey" | "model" | "maxOutputTokens" | "reasoningEffort" | "fetchImpl" | "openAiLogLevel"
-  >
-): Promise<string[]> {
-  const r = await callOpenAiVisionJsonSchema(
+    | "apiKey"
+    | "model"
+    | "maxOutputTokens"
+    | "reasoningEffort"
+    | "fetchImpl"
+    | "openAiLogLevel"
+    | "cubeId"
+  >,
+  reasoningEffort?: "low" | "medium" | "high"
+): Promise<CardExtractionResult> {
+  return callOpenAiVisionJsonSchema(
     {
       apiKey: opts.apiKey,
       model: opts.model,
       maxOutputTokens: opts.maxOutputTokens,
-      reasoningEffort: opts.reasoningEffort ?? "medium",
-      userText: prompt,
+      reasoningEffort: reasoningEffort ?? opts.reasoningEffort ?? "medium",
+      developerText,
+      userText,
+      promptCacheKey: buildPromptCacheKey(opts.cubeId),
       ...imageInput,
       schemaName: "card_extraction",
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
@@ -50,7 +97,13 @@ async function singlePass(
     },
     CardExtractionResultSchema
   );
-  return r.card_names.map((s) => s.trim()).filter(Boolean);
+}
+
+function mergeNames(into: Set<string>, names: string[]): void {
+  for (const c of names) {
+    const t = c.trim();
+    if (t) into.add(t);
+  }
 }
 
 /**
@@ -60,7 +113,7 @@ export async function extractCardNamesFromRgba(
   frame: RgbaFrame,
   opts: ExtractCardNamesOptions
 ): Promise<string[]> {
-  const side = opts.maxImageSide ?? EVAL_MAX_IMAGE_SIDE_DEFAULT;
+  const side = opts.maxImageSide ?? EVAL_IMAGE_SIDE_UNLIMITED;
   const sized = resizeToMaxSide(frame, side, side);
   const jpegBytes = encodeJpeg(sized, opts.jpegQuality);
   const imageInput = await visionInputFromJpegBytes({
@@ -69,60 +122,79 @@ export async function extractCardNamesFromRgba(
     jpegBytes,
     purpose: "extract",
   });
-  const basePrompt = buildExtractionPrompt(opts.cubeCardList, opts.maxCardsInPrompt);
 
   const level = opts.openAiLogLevel ?? "off";
   const mediumLog = level === "medium";
-
-  if (!opts.useMultiPass || !opts.cubeCardList) {
-    return singlePass(imageInput, basePrompt, opts);
-  }
-
-  if (mediumLog) console.log("Pass 1: General aggressive detection...");
-  const first = await singlePass(imageInput, basePrompt, opts);
-  if (first.length === 0) {
-    return first;
-  }
-
-  const all = new Set(first);
-  const missedPrompt = `
-SECOND PASS ANALYSIS: You previously identified ${first.length} cards. Look specifically for cards you may have missed.
-
-Previously found: ${first.join(", ")}
-
-Now scan the image again with extreme care looking for:
-1. Cards partially hidden behind others
-2. Cards at the edges or corners of the image
-3. Cards that are rotated or at unusual angles
-4. Cards with poor lighting or shadows
-5. Cards that might be face-down but have visible text on edges
-
-Focus ONLY on cards you haven't already identified.
-Return JSON via the schema with ONLY the additional card_names found in this pass (may be empty).
-`.trim();
-
-  if (mediumLog) console.log("Pass 2: Focused detection on potentially missed cards...");
-  const second = await singlePass(imageInput, missedPrompt, opts);
-  for (const c of second) all.add(c);
-
   const expected = opts.expectedDeckSize ?? 40;
-  if (all.size < expected * 0.9 && opts.cubeCardList.length > 0) {
+  const hasCubeList = Boolean(opts.cubeCardList?.length);
+  const developerWithCube = buildExtractionDeveloperPrefix(
+    opts.cubeCardList,
+    opts.maxCardsInPrompt,
+    true
+  );
+  const developerRulesOnly = buildExtractionDeveloperPrefix(opts.cubeCardList, opts.maxCardsInPrompt, false);
+
+  if (mediumLog) console.log("Pass 1: systematic extraction...");
+  let pass1 = await extractionPass(
+    imageInput,
+    developerWithCube,
+    buildExtractionUserPrompt({ pass: "initial" }),
+    opts
+  );
+
+  if (pass1.confidence_level === "low") {
+    if (mediumLog) console.log("Pass 1 low confidence — retrying once at high reasoning...");
+    pass1 = await extractionPass(
+      imageInput,
+      developerWithCube,
+      buildExtractionUserPrompt({ pass: "initial" }),
+      opts,
+      "high"
+    );
+  }
+
+  const all = new Set<string>();
+  mergeNames(all, pass1.card_names);
+
+  if (!opts.useMultiPass) {
+    return [...all];
+  }
+
+  const runPass2 = needsSecondPass(pass1, expected, hasCubeList);
+  if (!runPass2) {
+    if (mediumLog) console.log("Skipping pass 2 (count and confidence sufficient).");
+    return [...all];
+  }
+
+  if (mediumLog) console.log("Pass 2: focused detection on potentially missed cards...");
+  const pass2 = await extractionPass(
+    imageInput,
+    developerRulesOnly,
+    buildExtractionUserPrompt({ pass: "second", previouslyFound: [...all] }),
+    opts
+  );
+  mergeNames(all, pass2.card_names);
+
+  if (
+    hasCubeList &&
+    opts.cubeCardList &&
+    countBelowThreshold(all.size, expected, 0.9)
+  ) {
     const unfound = opts.cubeCardList.filter((c) => !all.has(c));
     if (unfound.length > 0) {
       const slice = unfound.slice(0, 120);
-      const validationPrompt = `
-VALIDATION PASS: You've identified ${all.size} cards so far, but there may be more.
-
-Already found: ${[...all].sort().join(", ")}
-
-Look specifically for any of these remaining possibilities from the cube (only return names you can actually see):
-${slice.join(", ")}
-
-Return JSON via the schema with additional card_names only.
-`.trim();
-      if (mediumLog) console.log("Pass 3: Validation pass for specific missing cards...");
-      const third = await singlePass(imageInput, validationPrompt, opts);
-      for (const c of third) all.add(c);
+      if (mediumLog) console.log("Pass 3: validation pass for specific missing cards...");
+      const pass3 = await extractionPass(
+        imageInput,
+        developerRulesOnly,
+        buildExtractionUserPrompt({
+          pass: "validation",
+          previouslyFound: [...all],
+          validationCandidates: slice,
+        }),
+        opts
+      );
+      mergeNames(all, pass3.card_names);
     }
   }
 
