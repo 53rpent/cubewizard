@@ -47,6 +47,7 @@ export function resizeToMaxSide(
   maxWidth: number,
   maxHeight: number
 ): RgbaFrame {
+  if (maxWidth <= 0 || maxHeight <= 0) return frame;
   const { width: w, height: h, data } = frame;
   if (w <= maxWidth && h <= maxHeight) return frame;
   const scale = Math.min(maxWidth / w, maxHeight / h);
@@ -71,6 +72,31 @@ export function resizeToMaxSide(
 /** Sum clockwise rotation steps (each 0|90|180|270). */
 export function combineClockwiseRotations(a: number, b: number): number {
   return (((a + b) % 360) + 360) % 360;
+}
+
+/**
+ * Center crop by `fraction` of width/height (0–1], preserving aspect of the source frame.
+ * Used for orientation API input so edge deck-bleed does not dominate rotation.
+ */
+export function cropCenter(frame: RgbaFrame, fraction: number): RgbaFrame {
+  const f = Math.min(1, Math.max(0.1, fraction));
+  const cw = Math.max(1, Math.floor(frame.width * f));
+  const ch = Math.max(1, Math.floor(frame.height * f));
+  const x0 = Math.floor((frame.width - cw) / 2);
+  const y0 = Math.floor((frame.height - ch) / 2);
+  const out = new Uint8ClampedArray(cw * ch * 4);
+  const sw = frame.width;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const si = ((y0 + y) * sw + (x0 + x)) * 4;
+      const di = (y * cw + x) * 4;
+      out[di] = frame.data[si]!;
+      out[di + 1] = frame.data[si + 1]!;
+      out[di + 2] = frame.data[si + 2]!;
+      out[di + 3] = frame.data[si + 3]!;
+    }
+  }
+  return { width: cw, height: ch, data: out };
 }
 
 /** One 90° clockwise step: new size (H×W), maps old (x,y) → new (y, x). */

@@ -1,59 +1,112 @@
-/** OpenAI system/user prompts for orientation and card extraction. */
+/** OpenAI developer/user prompts for orientation and card extraction. */
 
-export const ORIENTATION_PROMPT = `
-Analyze this image of Magic the Gathering cards to determine the correct orientation.
+/** Confirm whether the main deck pile already reads upright (yes/no). */
+export const ORIENTATION_CONFIRM_DEVELOPER_PROMPT = `
+You confirm whether a photo of Magic: The Gathering cards is correctly oriented for reading card names.
 
-Look for these key indicators:
-1. Card names at the TOP of each card (most important indicator)
-2. Mana cost symbols in the TOP-RIGHT corner of cards
-3. Card text should be readable from left to right
-4. Power/toughness numbers in BOTTOM-RIGHT corner (for creatures)
-5. Set symbols in MIDDLE-RIGHT of cards
-6. Any visible text should be oriented normally (not sideways or upside down)
-7. Do not rely on backgrounds such as skylines, focus only on card features
-8. All indicators should be based on the cards themselves, not the surrounding environment.
+Judge the main pile only (largest central group being scanned — often 20–60 cards):
+- Title bars on top, mana cost top-right, text left-to-right, P/T bottom-right on creatures.
 
-The image might be rotated 0°, 90°, 180°, or 270° from the correct orientation.
+Ignore edge bleed, stray cards from other decks, or isolated mis-oriented cards at the border when the main pile is upright.
 
-Determine how many degrees clockwise the image needs to be rotated to make the cards properly oriented.
-Then, imagine the image rotated that amount and confirm that the cards would be correctly oriented.
-
-Return JSON only via the schema: rotation_needed (0|90|180|270), confidence (high|medium|low), optional reasoning.
+Return JSON only: correctly_oriented (true|false).
 `.trim();
 
-export function buildExtractionPrompt(cubeCardList: string[] | null, maxCardsInPrompt: number): string {
-  const base = `
-Analyze this image of Magic the Gathering cards and extract ALL visible card names. Be extremely thorough and inclusive.
+export const ORIENTATION_CONFIRM_USER_PROMPT =
+  "Is the main deck pile in this image correctly oriented for reading card title bars? Answer yes or no only via the schema.".trim();
 
-CRITICAL INSTRUCTIONS:
-1. Scan the ENTIRE image systematically - look at every corner, edge, and area
-2. Examine cards that may be partially obscured, overlapping, at angles, or in shadows
-3. If rotating the image mentally helps, do so
-4. Look for card names at the top of each card - even if only partially visible
-5. Include cards even if they are blurry, rotated, or have poor lighting
-6. If you can make out even part of a card name, make your best educated guess
-7. NEVER skip a card - it's better to guess than to miss it entirely
-8. Count every single card visible in the image and ensure you identify that many names
-9. Look for cards that might be face-down or sideways - try to identify them by any visible text
-10. Check for cards that might be stacked or overlapping behind others
-11. Be aggressive in your identification - err on the side of inclusion rather than omission
+/** @deprecated Rotation is chosen by extract scoring; use ORIENTATION_CONFIRM_* prompts. */
+export const ORIENTATION_DEVELOPER_PROMPT = ORIENTATION_CONFIRM_DEVELOPER_PROMPT;
 
-Your goal is 100% card detection rate. Missing cards is worse than occasional misidentification.
+/** @deprecated */
+export const ORIENTATION_USER_PROMPT_INITIAL = ORIENTATION_CONFIRM_USER_PROMPT;
+
+/** @deprecated */
+export function buildOrientationUserPromptFollowUp(_appliedDegrees: number): string {
+  return ORIENTATION_CONFIRM_USER_PROMPT;
+}
+
+/** @deprecated */
+export const ORIENTATION_USER_PROMPT = ORIENTATION_CONFIRM_USER_PROMPT;
+
+/** @deprecated */
+export const ORIENTATION_PROMPT = ORIENTATION_CONFIRM_DEVELOPER_PROMPT;
+
+export const EXTRACTION_DEVELOPER_PROMPT = `
+You extract Magic: The Gathering card names from deck photos.
+
+Inclusion (tiered):
+- Include a name only when the title bar is legibly readable (or a high-confidence partial read that clearly matches one card).
+- Scan systematically: rows/columns, corners, edges, overlaps, shadows, sleeves, and partial stacks.
+- Count visible card fronts; aim to name every card you can support with readable title text.
+
+Cube list (when provided in a follow-up developer message):
+- Prefer exact spelling from the cube list.
+- If torn between two list cards, omit — never invent a list card you cannot see.
+- Never return a cube-list name unless that card is visibly present.
+
+Naming:
+- Use Scryfall-style names: "Plains", "Island", "Swamp", "Mountain", "Forest" — not "Plains (basic land)" or parenthetical type lines.
+- Double-faced / adventure cards: use the front face name shown.
+- Foreign basics: use the English basic name when the type line indicates a basic land.
+- Sleeves, glare, and blur: only name cards when title text is still legible; do not guess from art alone.
+
+Return JSON only via the schema: card_names (array of strings), confidence_level (high|medium|low), optional notes.
 `.trim();
 
-  let cubeContext = "";
-  if (cubeCardList && cubeCardList.length > 0) {
-    const lines = cubeCardList.slice(0, maxCardsInPrompt).map((c) => `- ${c}`);
-    cubeContext = `
+export function buildCubeListDeveloperSuffix(
+  cubeCardList: string[],
+  maxCardsInPrompt: number
+): string {
+  const lines = cubeCardList.slice(0, maxCardsInPrompt).map((c) => `- ${c}`);
+  return `
 
-IMPORTANT: This image contains cards from a specific cube. Here is the complete list of cards in this cube:
-${lines.join("\n")}
+Cube mainboard (only return names from this list when a matching card is visible):
+${lines.join("\n")}`.trim();
+}
 
-When identifying cards, ONLY return card names that appear in this cube list above.
-This will significantly improve accuracy since you know exactly which cards are possible.`;
+export type ExtractionPassKind = "initial" | "second" | "validation";
+
+export interface BuildExtractionUserPromptOptions {
+  pass: ExtractionPassKind;
+  previouslyFound?: string[];
+  validationCandidates?: string[];
+}
+
+/** Pass-specific user text (image is attached separately). */
+export function buildExtractionUserPrompt(opts: BuildExtractionUserPromptOptions): string {
+  const { pass, previouslyFound = [], validationCandidates = [] } = opts;
+
+  if (pass === "initial") {
+    return "Extract every card name you can read from the title bars in this image. Be thorough across the full frame.".trim();
   }
 
-  return `${base}${cubeContext}
+  if (pass === "second") {
+    return `
+Second pass: you previously identified ${previouslyFound.length} cards.
 
-Return JSON only via the schema: card_names (array of strings), confidence_level (high|medium|low), optional notes.`;
+Already found: ${previouslyFound.join(", ")}
+
+Scan again for cards missed in pass 1 — edges, overlaps, rotation, glare, or partial title bars.
+Return JSON with only additional card_names not already listed (may be empty).
+`.trim();
+  }
+
+  return `
+Validation pass: ${previouslyFound.length} cards identified so far; more may remain.
+
+Already found: ${[...previouslyFound].sort().join(", ")}
+
+Look specifically for any of these cube possibilities you can actually see (return only additional names):
+${validationCandidates.join(", ")}
+
+Return JSON with additional card_names only.
+`.trim();
+}
+
+/** @deprecated Use EXTRACTION_DEVELOPER_PROMPT + buildExtractionUserPrompt. */
+export function buildExtractionPrompt(cubeCardList: string[] | null, maxCardsInPrompt: number): string {
+  const user = buildExtractionUserPrompt({ pass: "initial" });
+  if (!cubeCardList?.length) return `${EXTRACTION_DEVELOPER_PROMPT}\n\n${user}`;
+  return `${EXTRACTION_DEVELOPER_PROMPT}${buildCubeListDeveloperSuffix(cubeCardList, maxCardsInPrompt)}\n\n${user}`;
 }
