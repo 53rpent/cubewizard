@@ -134,6 +134,9 @@ Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 AP
 | `npm run dev:hedron-consumer` | Hedron only |
 | `npm run d1:bootstrap:local` | Apply `schema.sql` to local D1 |
 | `npm run test:pipeline` | Vitest pipeline unit tests |
+| `npm run golden:eval` | Golden-set run (eval consumer + live OpenAI); writes `fixtures/eval-golden/scores/` |
+| `npm run golden:baseline` | Same as `golden:eval`, also saves `scores/baseline.json` (Windows script) |
+| `npm run golden:regression` | Live regression vs baseline (`GOLDEN_EVAL_RUN=1` + API key) |
 | `npm run wrangler:check` | Dry-run deploy all Wrangler configs |
 
 ### Tests and CI parity
@@ -150,6 +153,8 @@ Optional visual QA on a folder of images:
 $env:PIPELINE_QA_INPUT="C:\path\to\images"
 npm run test:pipeline:qa
 ```
+
+**Golden-set eval** (deck photos + expected card names): see [`fixtures/eval-golden/README.md`](fixtures/eval-golden/README.md). After adding cases under `fixtures/eval-golden/cases/`, run `npm run golden:eval` then `npm run golden:baseline`. Regression: `$env:GOLDEN_EVAL_RUN="1"; npm run golden:regression`.
 
 ### Reset local data
 

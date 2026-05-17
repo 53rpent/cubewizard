@@ -10,6 +10,10 @@ OPENAI_API_KEY=
 # Optional — OpenAI eval consumer log level: off | low | medium | high
 CW_EVAL_LOG_LEVEL=
 
+# Optional — golden eval USD/1M tokens (skips bundled pricing CSV when both set)
+# GOLDEN_EVAL_USD_PER_1M_INPUT=
+# GOLDEN_EVAL_USD_PER_1M_OUTPUT=
+
 # Optional — max decode/orient pixels per side (default 2048 on Workers)
 # CW_EVAL_MAX_IMAGE_SIDE=2048
 # CW_EVAL_ORIENT_MAX_SIDE=1280

@@ -63,6 +63,11 @@ node_modules/
 # Wrangler / Cloudflare
 .wrangler/
 
+# Golden eval generated scores (baseline.json is committed when you opt in)
+fixtures/eval-golden/scores/runs.json
+fixtures/eval-golden/scores/latest.json
+fixtures/eval-golden/scores/history/
+
 # Project specific - user data and generated content
 output/
 submissions/

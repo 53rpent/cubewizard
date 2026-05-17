@@ -37,6 +37,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/pipeline/**/*.test.ts"],
+    exclude: ["**/node_modules/**", "**/goldenEval.harness.test.ts"],
     testTimeout: 60_000,
   },
 });

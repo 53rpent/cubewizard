@@ -1,0 +1,148 @@
+{
+  "_commentary": {
+    "purpose": "Human-readable template for scores/baseline.json. The harness loads baseline.json only (via golden:baseline). This file is not used at runtime.",
+    "matching": "Per case, predicted names are deduplicated, then greedily paired to expected names when Levenshtein similarity ≥ 0.92 (see src/pipeline/golden/metrics.ts). Names are normalized (lowercase, trim, collapse spaces) before comparison.",
+    "top_level": {
+      "version": "Schema version (currently 1).",
+      "run_id": "UTC timestamp id for a single golden:eval run (omitted when saved as baseline).",
+      "recorded_at": "ISO-8601 time the run was written.",
+      "label": "Run label from GOLDEN_EVAL_LABEL or default (e.g. baseline, latest).",
+      "model": "OPENAI_VISION_MODEL used for orient + extract.",
+      "runner": "Always eval_consumer — full eval queue handler, not a direct API shortcut.",
+      "config": "Snapshot of harness env (multi-pass, reasoning, image resize, etc.)."
+    },
+    "pricing": {
+      "usd_per_1m_input": "Standard-tier input token rate from fixtures/eval-golden/data/openai-standard-pricing.csv.",
+      "usd_per_1m_cached_input": "Cached-input rate when published; otherwise same as input.",
+      "usd_per_1m_output": "Standard-tier output token rate from CSV.",
+      "source": "pricing_csv or env_override (GOLDEN_EVAL_USD_PER_1M_*).",
+      "fetched_at": "pricing_as_of date from CSV row, or ISO time for env override."
+    },
+    "per_case_metrics": {
+      "predicted_count": "Count of unique non-empty predicted card name strings.",
+      "expected_count": "expected_count from expected.json, or length of expected_card_names.",
+      "count_error": "predicted_count − expected_count (negative = under-count).",
+      "exact_set_match": "true when normalized predicted set equals normalized expected set (exact spelling after normalize, not fuzzy).",
+      "true_positives": "Fuzzy-matched pairs (one predicted ↔ one expected, similarity ≥ 0.92).",
+      "false_positives": "Unmatched predicted names (hallucinations or wrong cards).",
+      "false_negatives": "Unmatched expected names (missed cards).",
+      "precision": "TP / (TP + FP). Fraction of predictions that matched an expected card.",
+      "recall": "TP / (TP + FN). Fraction of expected cards that were matched.",
+      "f1": "2 × precision × recall / (precision + recall). Harmonic mean of precision and recall.",
+      "false_positive_names": "Predicted strings with no fuzzy match to any expected name.",
+      "false_negative_names": "Expected strings with no fuzzy match to any prediction.",
+      "matches": "Aligned pairs: predicted, expected, similarity (0–1)."
+    },
+    "per_case_run": {
+      "openai_calls": "Total Responses API calls (orient + extract passes).",
+      "orientation_calls": "Subset of calls tagged as orientation.",
+      "extraction_calls": "Subset tagged as extraction.",
+      "usage": "Token totals from eval_report for this case.",
+      "cost_usd": "input_usd + output_usd using pricing rates: tokens × (USD per 1M) / 1e6.",
+      "duration_ms": "Wall-clock time for the eval job (consumer pipeline)."
+    },
+    "aggregate": {
+      "case_count": "Number of golden cases in the run.",
+      "micro_precision": "Sum(TP) / (Sum(TP) + Sum(FP)) across all cases — weights frequent errors by card count.",
+      "micro_recall": "Sum(TP) / (Sum(TP) + Sum(FN)) across all cases.",
+      "micro_f1": "2 × micro_precision × micro_recall / (micro_precision + micro_recall).",
+      "macro_precision": "Mean of per-case precision values (each case weighted equally).",
+      "macro_recall": "Mean of per-case recall values.",
+      "macro_f1": "Mean of per-case F1 values.",
+      "mean_count_error": "Mean of |count_error| per case (absolute deck-size gap).",
+      "exact_match_cases": "Count of cases where exact_set_match is true.",
+      "total_openai_calls": "Sum of openai_calls.",
+      "total_input_tokens": "Sum of input_tokens.",
+      "total_output_tokens": "Sum of output_tokens.",
+      "total_tokens": "Sum of total_tokens.",
+      "total_duration_ms": "Sum of duration_ms.",
+      "mean_openai_calls_per_case": "total_openai_calls / case_count.",
+      "mean_duration_ms_per_case": "total_duration_ms / case_count.",
+      "total_cost_usd": "Sum of case cost_usd.total_usd.",
+      "mean_cost_usd_per_case": "total_cost_usd / case_count."
+    },
+    "regression_tests": "golden:regression compares latest run to baseline.json: micro F1/recall floors, optional cost ratio (GOLDEN_MAX_COST_RATIO)."
+  },
+  "version": 1,
+  "label": "example-baseline",
+  "recorded_at": "2026-01-01T00:00:00.000Z",
+  "model": "gpt-5-mini-2025-08-07",
+  "runner": "eval_consumer",
+  "config": {
+    "use_multi_pass": true,
+    "reasoning_effort": "medium",
+    "max_image_side": 2048
+  },
+  "pricing": {
+    "model": "gpt-5-mini-2025-08-07",
+    "verified_model_id": "gpt-5-mini-2025-08-07",
+    "usd_per_1m_input": 0.25,
+    "usd_per_1m_cached_input": 0.025,
+    "usd_per_1m_output": 2,
+    "source": "pricing_csv",
+    "fetched_at": "2026-05-17"
+  },
+  "aggregate": {
+    "case_count": 1,
+    "micro_precision": 0.95,
+    "micro_recall": 0.9,
+    "micro_f1": 0.924,
+    "macro_precision": 0.95,
+    "macro_recall": 0.9,
+    "macro_f1": 0.924,
+    "mean_count_error": 2,
+    "exact_match_cases": 0,
+    "total_openai_calls": 4,
+    "total_input_tokens": 12000,
+    "total_output_tokens": 3000,
+    "total_tokens": 15000,
+    "total_duration_ms": 60000,
+    "mean_openai_calls_per_case": 4,
+    "mean_duration_ms_per_case": 60000,
+    "total_cost_usd": 0.009,
+    "mean_cost_usd_per_case": 0.009
+  },
+  "cases": [
+    {
+      "case_id": "example-case",
+      "description": "Illustrative row — see _commentary.per_case_metrics",
+      "predicted_card_names": ["Lightning Bolt", "Wrong Card"],
+      "metrics": {
+        "predicted_count": 2,
+        "expected_count": 3,
+        "count_error": -1,
+        "exact_set_match": false,
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 2,
+        "precision": 0.5,
+        "recall": 0.3333333333333333,
+        "f1": 0.4,
+        "false_positive_names": ["Wrong Card"],
+        "false_negative_names": ["Counterspell", "Island"],
+        "matches": [
+          {
+            "predicted": "Lightning Bolt",
+            "expected": "Lightning Bolt",
+            "similarity": 1
+          }
+        ]
+      },
+      "openai_calls": 4,
+      "orientation_calls": 1,
+      "extraction_calls": 3,
+      "usage": {
+        "input_tokens": 12000,
+        "output_tokens": 3000,
+        "total_tokens": 15000
+      },
+      "cost_usd": {
+        "input_usd": 0.003,
+        "output_usd": 0.006,
+        "total_usd": 0.009
+      },
+      "duration_ms": 60000,
+      "job_status": "done"
+    }
+  ]
+}

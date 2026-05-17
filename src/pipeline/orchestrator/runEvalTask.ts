@@ -25,6 +25,12 @@ import {
 import { PermanentEvalError } from "./evalErrors";
 import { safeMarkJobFailed } from "./safeMarkJobFailed";
 import { formatEvalError } from "../util/formatEvalError";
+import {
+  createEvalUsageReporter,
+  logEvalUsageReport,
+  runWithEvalUsageReporter,
+  type EvalRunReport,
+} from "../evalUsage/evalUsageReport";
 
 export { PermanentEvalError } from "./evalErrors";
 
@@ -225,7 +231,11 @@ export async function runEvalTask(
         fetchImpl,
       });
 
+  const evalStarted = Date.now();
+  const usageReporter = createEvalUsageReporter(task.upload_id);
+
   try {
+    await runWithEvalUsageReporter(usageReporter, async () => {
     await ensureQueuedProcessingJob(env.cubewizard_db, task);
 
     let imageBytes: Uint8Array;
@@ -319,6 +329,8 @@ export async function runEvalTask(
       throw new PermanentEvalError("no_cards_extracted");
     }
 
+    usageReporter.setExtractedCardNames(cardNames);
+
     console.log("eval_phase extract_done", {
       upload_id: task.upload_id,
       card_count: cardNames.length,
@@ -365,11 +377,18 @@ export async function runEvalTask(
     if (!write.success) {
       throw new PermanentEvalError("d1_deck_write_failed");
     }
+    const evalReport = usageReporter.finish(Date.now() - evalStarted);
+    logEvalUsageReport(evalReport);
+
     if (write.duplicate || write.deckId == null) {
       await markJobDone(
         env.cubewizard_db,
         task.upload_id,
-        JSON.stringify({ duplicate: true, image_id: write.imageId })
+        JSON.stringify({
+          duplicate: true,
+          image_id: write.imageId,
+          eval_report: evalReport,
+        })
       );
       return;
     }
@@ -405,9 +424,11 @@ export async function runEvalTask(
         image_id: imageId,
         oriented_image_r2_key: uploaded.orientedKey,
         oriented_thumb_r2_key: uploaded.thumbKey,
+        eval_report: evalReport,
       })
     );
     console.log("eval_phase complete", { upload_id: task.upload_id });
+    });
   } catch (e) {
     if (e instanceof ModelOutputInvalidError || e instanceof PermanentEvalError) {
       await safeMarkJobFailed(env.cubewizard_db, task.upload_id, formatEvalError(e));

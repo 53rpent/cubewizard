@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import { getActiveEvalUsageReporter } from "../evalUsage/evalUsageReport";
 import type { CardExtractionResult, OrientationResult } from "./schemas";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -180,6 +181,8 @@ export async function callOpenAiVisionJsonSchema<T>(
   } catch (e) {
     throw new ModelOutputInvalidError("OpenAI response body is not JSON", { cause: e });
   }
+
+  getActiveEvalUsageReporter()?.recordOpenAiResponse(opts.schemaName, res.status, json);
 
   const text = extractStructuredText(json);
   if (level === "low" && text) {

@@ -1,0 +1,48 @@
+# OpenAI API Standard-tier text token pricing (USD per 1M tokens).
+# Source: https://platform.openai.com/docs/pricing (Standard table). Update manually when OpenAI changes rates.
+# Columns: model_id, usd_per_1m_input, usd_per_1m_cached_input, usd_per_1m_output, tier, pricing_as_of
+# Empty usd_per_1m_cached_input means same as input. Lines starting with # are ignored.
+model_id,usd_per_1m_input,usd_per_1m_cached_input,usd_per_1m_output,tier,pricing_as_of
+gpt-5.5,5,0.5,30,standard,2026-05-17
+gpt-5.5-pro,30,,180,standard,2026-05-17
+gpt-5.4,2.5,0.25,15,standard,2026-05-17
+gpt-5.4-mini,0.75,0.075,4.5,standard,2026-05-17
+gpt-5.4-nano,0.2,0.02,1.25,standard,2026-05-17
+gpt-5.4-pro,30,,180,standard,2026-05-17
+gpt-5.2,1.75,0.175,14,standard,2026-05-17
+gpt-5.2-pro,21,,168,standard,2026-05-17
+gpt-5.1,1.25,0.125,10,standard,2026-05-17
+gpt-5,1.25,0.125,10,standard,2026-05-17
+gpt-5-mini,0.25,0.025,2,standard,2026-05-17
+gpt-5-mini-2025-08-07,0.25,0.025,2,standard,2026-05-17
+gpt-5-nano,0.05,0.005,0.4,standard,2026-05-17
+gpt-5-pro,15,,120,standard,2026-05-17
+gpt-4.1,2,0.5,8,standard,2026-05-17
+gpt-4.1-mini,0.4,0.1,1.6,standard,2026-05-17
+gpt-4.1-nano,0.1,0.025,0.4,standard,2026-05-17
+gpt-4o,2.5,1.25,10,standard,2026-05-17
+gpt-4o-2024-05-13,5,,15,standard,2026-05-17
+gpt-4o-mini,0.15,0.075,0.6,standard,2026-05-17
+o1,15,7.5,60,standard,2026-05-17
+o1-pro,150,,600,standard,2026-05-17
+o3-pro,20,,80,standard,2026-05-17
+o3,2,0.5,8,standard,2026-05-17
+o4-mini,1.1,0.275,4.4,standard,2026-05-17
+o3-mini,1.1,0.55,4.4,standard,2026-05-17
+o1-mini,1.1,0.55,4.4,standard,2026-05-17
+gpt-4-turbo-2024-04-09,10,,30,standard,2026-05-17
+gpt-4-0125-preview,10,,30,standard,2026-05-17
+gpt-4-1106-preview,10,,30,standard,2026-05-17
+gpt-4-1106-vision-preview,10,,30,standard,2026-05-17
+gpt-4-0613,30,,60,standard,2026-05-17
+gpt-4-0314,30,,60,standard,2026-05-17
+gpt-4-32k,60,,120,standard,2026-05-17
+gpt-3.5-turbo,0.5,,1.5,standard,2026-05-17
+gpt-3.5-turbo-0125,0.5,,1.5,standard,2026-05-17
+gpt-3.5-turbo-1106,1,,2,standard,2026-05-17
+gpt-3.5-turbo-0613,1.5,,2,standard,2026-05-17
+gpt-3.5-0301,1.5,,2,standard,2026-05-17
+gpt-3.5-turbo-instruct,1.5,,2,standard,2026-05-17
+gpt-3.5-turbo-16k-0613,3,,4,standard,2026-05-17
+davinci-002,2,,2,standard,2026-05-17
+babbage-002,0.4,,0.4,standard,2026-05-17

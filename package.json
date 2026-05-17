@@ -3,6 +3,9 @@
   "scripts": {
     "test:pipeline": "vitest run --config vitest.config.ts",
     "test:pipeline:qa": "vitest run --config vitest.config.ts visualQa.manual",
+    "golden:eval": "vitest run --config vitest.golden.config.ts",
+    "golden:baseline": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-golden-eval.ps1 -Baseline",
+    "golden:regression": "vitest run --config vitest.config.ts goldenEval.regression",
     "test:pipeline:watch": "vitest --config vitest.config.ts",
     "build:eval-consumer": "wrangler deploy --config wrangler-eval-consumer.jsonc --dry-run --outdir=.wrangler/check-eval-bundle --env=\"\"",
     "dev": "wrangler dev --persist-to .wrangler/local-shared",
@@ -26,6 +29,7 @@
     "@emnapi/core": "1.10.0",
     "@emnapi/runtime": "1.10.0",
     "@types/node": "^25.7.0",
+    "tsx": "^4.22.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6",
     "wrangler": "^4.56.0"
