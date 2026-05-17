@@ -1415,8 +1415,7 @@ async function handleTriggerHedronSync(cubeId, env, ctx) {
     var result = await syncHedronCube(env, id, ctx);
     return jsonResponse(result || { ok: true, cube_id: id, decks_queued: 0 }, 200);
   } catch (e) {
-    var msg = e && e.message ? String(e.message) : String(e);
-    console.error("hedron manual sync handler", msg, e && e.stack ? e.stack : "");
+    console.error("hedron manual sync handler", e);
     return jsonResponse({ error: "Failed to start Hedron sync" }, 500);
   }
 }
@@ -2647,9 +2646,31 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+function sanitizeJsonResponseBody(body) {
+  if (body === null || body === undefined) return body;
+  if (typeof body !== "object") return body;
+  if (body instanceof Error) {
+    return { error: "Internal error" };
+  }
+  if (Array.isArray(body)) {
+    var arr = [];
+    for (var ai = 0; ai < body.length; ai++) {
+      arr.push(sanitizeJsonResponseBody(body[ai]));
+    }
+    return arr;
+  }
+  var out = {};
+  for (var k in body) {
+    if (!Object.prototype.hasOwnProperty.call(body, k)) continue;
+    if (k === "stack" || k === "stackTrace") continue;
+    out[k] = sanitizeJsonResponseBody(body[k]);
+  }
+  return out;
+}
+
 function jsonResponse(body, status) {
   if (status === undefined) status = 200;
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify(sanitizeJsonResponseBody(body)), {
     status: status,
     headers: {
       "Content-Type": "application/json",

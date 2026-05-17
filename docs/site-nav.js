@@ -27,7 +27,9 @@
 
   function hrefForDataView(id, view) {
     if (!window.CWPaths || !id) return "#";
-    return CWPaths.dataPath(id, view);
+    var v = String(view || "").toLowerCase().trim();
+    if (!CWPaths.DATA_VIEWS || !CWPaths.DATA_VIEWS[v]) return "#";
+    return CWPaths.safeAppPath(CWPaths.dataPath(id, v));
   }
 
   function applyNavLinks() {
@@ -35,7 +37,7 @@
     var id = cubeIdForNav();
     var dash = document.getElementById("nav-dashboard-trigger");
     var brand = document.querySelector(".header-brand-link");
-    var homeOrDash = id ? CWPaths.dashboard(id) : CWPaths.home();
+    var homeOrDash = CWPaths.safeAppPath(id ? CWPaths.dashboard(id) : CWPaths.home());
     if (dash) dash.href = homeOrDash;
     if (brand) brand.href = homeOrDash;
 
@@ -62,7 +64,7 @@
     for (var j = 0; j < deckLinks.length; j++) {
       var d = deckLinks[j];
       if (id) {
-        d.href = CWPaths.decks(id);
+        d.href = CWPaths.safeAppPath(CWPaths.decks(id));
         d.classList.remove("is-disabled");
         d.removeAttribute("aria-disabled");
         d.removeAttribute("title");
