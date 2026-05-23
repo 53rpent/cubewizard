@@ -26,8 +26,6 @@ export function loadWranglerEvalConsumerVars(repoRoot: string): Record<string, s
 export interface GoldenEvalConsumerEnvOptions {
   repoRoot: string;
   fetchImpl?: typeof fetch;
-  /** Invoked when orient stage enqueues extract work (golden runs extract consumer inline). */
-  onExtractEnqueued?: (body: unknown, env: RunEvalTaskEnv) => Promise<void>;
 }
 
 /**
@@ -55,17 +53,16 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
     CW_EVAL_MAX_IMAGE_SIDE: process.env.CW_EVAL_MAX_IMAGE_SIDE,
     CW_EVAL_ORIENT_MAX_SIDE: process.env.CW_EVAL_ORIENT_MAX_SIDE,
     CW_EVAL_LOG_LEVEL: process.env.CW_EVAL_LOG_LEVEL ?? "off",
+    CW_EVAL_MEMORY_LOG: process.env.CW_EVAL_MEMORY_LOG,
     cubewizard_db: createGoldenSqliteD1(opts.repoRoot),
     BUCKET: createMockR2Bucket(),
     DECK_IMAGES_BLOB: createMockR2Bucket(),
   };
 
+  // Production uses a Cloudflare Queue binding; the golden harness patches this per case
+  // in bindGoldenExtractQueueInline (see runViaEvalConsumer.ts).
   env.EVAL_EXTRACT_QUEUE = {
-    send: async (body) => {
-      if (opts.onExtractEnqueued) {
-        await opts.onExtractEnqueued(body, env);
-      }
-    },
+    send: async () => {},
   };
 
   return env;

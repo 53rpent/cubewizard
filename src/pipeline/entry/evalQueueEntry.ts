@@ -32,19 +32,28 @@ import { PermanentEvalError, runExtractTask, runOrientTask, type RunEvalTaskEnv 
 
 import { evalErrorFields, formatEvalError } from "../util/formatEvalError";
 
+import { resetEvalUsageReporterGlobal } from "../evalUsage/evalUsageReport";
 import {
 
   logEvalConsumer,
 
   logEvalConsumerError,
 
+  resetEvalConsumerLogGlobals,
+
   runWithEvalConsumerLog,
 
 } from "../util/evalConsumerLog";
 
+import { clearActiveEvalBufferEstimates } from "../util/evalMemoryProbe";
 import { parseEvalTaskBody } from "../util/queueMessageBody";
 
-
+/** Per-message cleanup so module globals never retain deck state across invocations. */
+function resetEvalInvocationGlobals(): void {
+  resetEvalConsumerLogGlobals();
+  resetEvalUsageReporterGlobal();
+  clearActiveEvalBufferEstimates();
+}
 
 type QueueMessage = {
 
@@ -140,8 +149,8 @@ async function processEvalQueueMessage(
 
   const phase = shouldRunExtractPhase(queueName, taskBody) ? "extract" : "orient";
 
-
-
+  resetEvalInvocationGlobals();
+  try {
   await runWithEvalConsumerLog(env, uploadId, async () => {
 
     logEvalConsumer("queue_job_start", {
@@ -340,6 +349,9 @@ async function processEvalQueueMessage(
 
   });
 
+  } finally {
+    resetEvalInvocationGlobals();
+  }
 }
 
 

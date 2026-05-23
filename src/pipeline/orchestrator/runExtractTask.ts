@@ -25,6 +25,7 @@ import { markJobDone } from "./processingJobRepo";
 import { uploadOrientedThumb } from "./uploadOriented";
 import type { RunEvalTaskEnv } from "./runEvalTask";
 import type { RgbaFrame } from "../images/types";
+import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
 import { resolveEvalPipelineConfig, updateDeckAuxiliaryKeys } from "./evalTaskShared";
 
 /**
@@ -67,6 +68,13 @@ export async function runExtractTask(
       const orientedJpeg = new Uint8Array(await imgObj.arrayBuffer());
 
       const orientedRgba: RgbaFrame = await decodeToRgba(orientedJpeg, "jpeg");
+
+      mergeActiveEvalBufferEstimates({
+        est_oriented_jpeg_mb: bytesToMb(orientedJpeg.byteLength),
+        est_rgba_mb: bytesToMb(rgbaFrameBytes(orientedRgba)),
+        oriented_w: orientedRgba.width,
+        oriented_h: orientedRgba.height,
+      });
 
       const cubeList = await fetchCubeCobraMainboardNames(task.cube_id, {
         fetchImpl,

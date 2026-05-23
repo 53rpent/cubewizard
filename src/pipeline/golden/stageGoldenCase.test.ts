@@ -33,17 +33,17 @@ function goldenCase(imageBasename: string): GoldenCaseDefinition {
 }
 
 describe("stageGoldenCaseOnR2", () => {
-  it("sets image/png for PNG golden fixtures", async () => {
+  it("normalizes PNG golden fixtures to staging JPEG", async () => {
     const bucket = mockBucket();
     await stageGoldenCaseOnR2(bucket, {
       ...goldenCase("image.png"),
       image_path: PNG_FIXTURE,
     });
-    const imagePut = bucket.puts.find((p) => p.key.endsWith("image.png"));
-    expect(imagePut?.contentType).toBe("image/png");
+    const imagePut = bucket.puts.find((p) => p.key.endsWith("image.jpg"));
+    expect(imagePut?.contentType).toBe("image/jpeg");
   });
 
-  it("sets image/jpeg for JPG golden fixtures", async () => {
+  it("normalizes JPG golden fixtures to bounded staging JPEG", async () => {
     const bucket = mockBucket();
     await stageGoldenCaseOnR2(bucket, {
       ...goldenCase("image.jpg"),

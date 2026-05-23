@@ -3,7 +3,7 @@
 	"name": "cubewizard-eval-consumer",
 	"main": "src/pipeline/entry/evalQueueEntry.ts",
 	"compatibility_date": "2024-12-01",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": ["nodejs_compat", "enable_nodejs_process_v2"],
 	"limits": {
 		"cpu_ms": 30000
 	},
@@ -28,6 +28,8 @@
 		"CW_EVAL_MAX_IMAGE_SIDE": "3072",
 		"CW_EVAL_MAX_CONSUMERS": "2",
 		"CW_EVAL_MAX_RETRIES": "5",
+		// Override in `.dev.vars` (off: 0 | false). Ensures the binding exists on queue `env` in multi-worker dev.
+		"CW_EVAL_MEMORY_LOG": "1",
 		"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 	},
 	"r2_buckets": [

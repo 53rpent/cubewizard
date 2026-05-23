@@ -16,6 +16,12 @@ import { uploadOrientedJpeg } from "./uploadOriented";
 import type { RunEvalTaskEnv } from "./runEvalTask";
 import { logEvalConsumer } from "../util/evalConsumerLog";
 import {
+  bytesToMb,
+  estimateEvalRgbaPeakMb,
+  mergeActiveEvalBufferEstimates,
+  rgbaFrameBytes,
+} from "../util/evalMemoryProbe";
+import {
   ensureQueuedProcessingJob,
   readImageFromUrl,
   readStagingPackage,
@@ -71,7 +77,7 @@ export async function runOrientTask(
 
   await ensureQueuedProcessingJob(env.cubewizard_db, task);
 
-  let imageBytes: Uint8Array;
+  let imageBytes: Uint8Array | undefined;
   let metadata: import("./evalTaskShared").StagingMetadata;
 
   if (task.image_url) {
@@ -102,6 +108,14 @@ export async function runOrientTask(
     maxCards: cfg.maxCubeCards,
   });
 
+  if (!imageBytes?.byteLength) {
+    throw new PermanentEvalError("staging_image_missing");
+  }
+
+  mergeActiveEvalBufferEstimates({
+    est_staging_jpeg_mb: bytesToMb(imageBytes.byteLength),
+  });
+
   const { frame: orientedRgba } = await orientDeckImageRgba(imageBytes, undefined, {
     apiKey,
     model,
@@ -113,6 +127,9 @@ export async function runOrientTask(
     vision,
     fetchImpl,
     openAiLogLevel: cfg.openAiLogLevel,
+    onStagingBytesDecoded: () => {
+      imageBytes = undefined;
+    },
     orientLightExtract: {
       apiKey,
       model,
@@ -126,6 +143,13 @@ export async function runOrientTask(
       fetchImpl,
       openAiLogLevel: cfg.openAiLogLevel,
     },
+  });
+
+  mergeActiveEvalBufferEstimates({
+    est_rgba_mb: bytesToMb(rgbaFrameBytes(orientedRgba)),
+    est_rgba_peak_mb: estimateEvalRgbaPeakMb(orientedRgba),
+    oriented_w: orientedRgba.width,
+    oriented_h: orientedRgba.height,
   });
 
   const imageId = await computeImageId(cubeId, deckMeta.pilot, deckMeta.processingTs);

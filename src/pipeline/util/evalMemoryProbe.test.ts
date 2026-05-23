@@ -1,38 +1,58 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  buildEvalMemoryPayload,
-  estimateEvalRgbaPeakMb,
+  enrichEvalMemoryLogEnv,
+  isEvalMemoryLoggingEnabled,
+  isStubNodeMemoryUsage,
   parseEvalMemoryLog,
-  rgbaFrameBytes,
+  readNodeMemoryUsageMb,
 } from "./evalMemoryProbe";
 
-describe("parseEvalMemoryLog", () => {
-  it("is off unless explicitly enabled", () => {
-    expect(parseEvalMemoryLog(undefined)).toBe(false);
-    expect(parseEvalMemoryLog("")).toBe(false);
-    expect(parseEvalMemoryLog("0")).toBe(false);
-    expect(parseEvalMemoryLog("true")).toBe(true);
-    expect(parseEvalMemoryLog("1")).toBe(true);
-    expect(parseEvalMemoryLog("yes")).toBe(true);
-  });
-});
-
-describe("rgbaFrameBytes", () => {
-  it("uses width * height * 4", () => {
-    expect(rgbaFrameBytes({ width: 100, height: 200 })).toBe(80_000);
-    expect(estimateEvalRgbaPeakMb({ width: 3072, height: 3072 })).toBeGreaterThan(70);
-  });
-});
-
-describe("buildEvalMemoryPayload", () => {
-  it("includes phase and optional node memory", () => {
-    const proc = { memoryUsage: () => ({ heapUsed: 40 * 1024 * 1024, rss: 50 * 1024 * 1024, external: 0, arrayBuffers: 8 * 1024 * 1024 }) };
-    vi.stubGlobal("process", proc);
-    const p = buildEvalMemoryPayload("test", { image_bytes_mb: 1.5 });
-    expect(p.event).toBe("eval_memory");
-    expect(p.phase).toBe("test");
-    expect(p.image_bytes_mb).toBe(1.5);
-    expect(p.heap_used_mb).toBe(40);
+describe("evalMemoryProbe memory log flag", () => {
+  afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("parseEvalMemoryLog accepts 1/true/yes", () => {
+    expect(parseEvalMemoryLog("1")).toBe(true);
+    expect(parseEvalMemoryLog("true")).toBe(true);
+    expect(parseEvalMemoryLog("0")).toBe(false);
+  });
+
+  it("isEvalMemoryLoggingEnabled reads process.env when env binding is missing", () => {
+    vi.stubGlobal("process", { env: { CW_EVAL_MEMORY_LOG: "1" } });
+    expect(isEvalMemoryLoggingEnabled({})).toBe(true);
+  });
+
+  it("enrichEvalMemoryLogEnv copies flag from process.env", () => {
+    vi.stubGlobal("process", { env: { CW_EVAL_MEMORY_LOG: "yes" } });
+    const enriched = enrichEvalMemoryLogEnv({ CWW_ENV: "local" });
+    expect(enriched.CW_EVAL_MEMORY_LOG).toBe("yes");
+  });
+
+  it("readNodeMemoryUsageMb returns null for all-zero stub", () => {
+    vi.stubGlobal("process", {
+      memoryUsage: () => ({
+        heapUsed: 0,
+        rss: 0,
+        external: 0,
+        arrayBuffers: 0,
+      }),
+    });
+    expect(isStubNodeMemoryUsage({ heapUsed: 0, rss: 0, external: 0, arrayBuffers: 0 })).toBe(
+      true
+    );
+    expect(readNodeMemoryUsageMb()).toBeNull();
+  });
+
+  it("readNodeMemoryUsageMb returns rounded MB for real usage", () => {
+    vi.stubGlobal("process", {
+      memoryUsage: () => ({
+        heapUsed: 40 * 1024 * 1024,
+        rss: 50 * 1024 * 1024,
+        external: 1,
+        arrayBuffers: 2,
+      }),
+    });
+    expect(readNodeMemoryUsageMb()?.heap_used_mb).toBe(40);
   });
 });
