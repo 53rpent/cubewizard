@@ -60,6 +60,8 @@ flowchart LR
 
 **Eval pipeline** (`runEvalTask`): load staging image from R2 → orient (OpenAI) → extract card names (OpenAI, optional multi-pass) → optional CubeCobra list → Scryfall enrichment → D1 deck/cards/stats → upload oriented WebP + thumb to `cubewizard-deck-images` → mark `processing_jobs` done or failed.
 
+**Eval queue concurrency:** `max_batch_size: 1` (one deck per invocation) and `max_concurrency` > 1 in `wrangler-eval-consumer.jsonc` so Cloudflare runs multiple consumer isolates when the queue has backlog (stg/prod: 4). Keep `CW_EVAL_MAX_CONSUMERS` equal to `max_concurrency` so Scryfall HTTP stays near ~10 req/s account-wide. **Local `wrangler dev` does not run multiple queue consumers in parallel** ([Cloudflare Queues local dev](https://developers.cloudflare.com/queues/configuration/local-development/)) — you will only see one eval at a time locally even with `max_concurrency: 2`; deploy to staging/production for real parallelism.
+
 ### Local vs staging vs production
 
 | | **Local** (`wrangler dev`) | **Staging** (`--env stg`) | **Production** (`--env prod`) |
@@ -118,7 +120,8 @@ Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a
 |----------|------------------|--------|
 | `OPENAI_API_KEY` | Yes (for eval) | Eval consumer secret |
 | `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` — see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
-| `CW_EVAL_MAX_IMAGE_SIDE` | No | Unset/`0`/`full` = source resolution for orient + extract; set px only to cap Workers memory |
+| `CW_EVAL_MAX_IMAGE_SIDE` | No | Default in wrangler eval config: `3072` px max side; unset/`0`/`full` = source resolution |
+| `CW_EVAL_MAX_CONSUMERS` | No | Must match queue `max_concurrency` in `wrangler-eval-consumer.jsonc` (Scryfall throttle) |
 | `TURNSTILE_SECRET` | No | Site upload bot check; skipped when `CWW_ENV=local` |
 
 Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` — see [Deploy](#deploy-cloudflare).
