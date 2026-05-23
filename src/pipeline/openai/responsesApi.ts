@@ -1,5 +1,13 @@
 import type { ZodType } from "zod";
-import { getActiveEvalUsageReporter } from "../evalUsage/evalUsageReport";
+import {
+  extractOpenAiUsageFromResponse,
+  getActiveEvalUsageReporter,
+} from "../evalUsage/evalUsageReport";
+import {
+  getActiveEvalConsumerUploadId,
+  isEvalConsumerLogActive,
+  logEvalConsumer,
+} from "../util/evalConsumerLog";
 import type {
   CardExtractionResult,
   OrientationConfirmResult,
@@ -174,6 +182,22 @@ export async function callOpenAiVisionJsonSchema<T>(
     });
   }
 
+  if (isEvalConsumerLogActive()) {
+    const uploadId =
+      getActiveEvalConsumerUploadId() ?? getActiveEvalUsageReporter()?.uploadId ?? null;
+    logEvalConsumer("openai_request", {
+      schema: opts.schemaName,
+      model: opts.model,
+      max_output_tokens: opts.maxOutputTokens,
+      reasoning_effort: opts.reasoningEffort ?? null,
+      prompt_cache_key: opts.promptCacheKey ?? null,
+      upload_id: uploadId,
+      image_url: opts.imageUrl?.trim() ? "(url)" : null,
+      image_base64_len: opts.imageBase64?.length ?? null,
+      user_text_len: opts.userText.length,
+    });
+  }
+
   const res = await fetchImpl(OPENAI_RESPONSES_URL, {
     method: "POST",
     headers: {
@@ -207,6 +231,21 @@ export async function callOpenAiVisionJsonSchema<T>(
   }
 
   getActiveEvalUsageReporter()?.recordOpenAiResponse(opts.schemaName, res.status, json);
+
+  if (isEvalConsumerLogActive()) {
+    const usage = extractOpenAiUsageFromResponse(json);
+    const uploadId =
+      getActiveEvalConsumerUploadId() ?? getActiveEvalUsageReporter()?.uploadId ?? null;
+    logEvalConsumer("openai_response", {
+      schema: opts.schemaName,
+      status: res.status,
+      upload_id: uploadId,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      total_tokens: usage.total_tokens,
+      cached_input_tokens: usage.cached_input_tokens,
+    });
+  }
 
   const text = extractStructuredText(json);
   if (level === "low" && text) {
