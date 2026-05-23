@@ -567,7 +567,7 @@
                 var winPct = (d.win_rate != null) ? (Number(d.win_rate) * 100).toFixed(1) + '%' : '';
                 var thumbSrc = d.deck_thumb_url || d.deck_photo_url;
                 var photoTd = thumbSrc
-                    ? '<td style="width:56px;"><img src="' + String(thumbSrc).replace(/"/g, '&quot;') + '" alt="" loading="lazy" decoding="async" style="width:48px;height:48px;object-fit:cover;border-radius:6px;background:#eee;" /></td>'
+                    ? '<td style="width:56px;"><img src="' + String(thumbSrc).replace(/"/g, '&quot;') + '" alt="" loading="lazy" decoding="async" style="width:48px;height:48px;object-fit:contain;border-radius:6px;background:#eee;" /></td>'
                     : '<td style="width:56px;">\u2014</td>';
                 html += '<tr>' + photoTd + '<td>' + (d.pilot_name || '') + '</td>' +
                     '<td class="trophy-mono">' + (d.match_wins != null ? d.match_wins : '') + '</td>' +

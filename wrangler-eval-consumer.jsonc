@@ -25,7 +25,8 @@
 		"CW_EVAL_USE_MULTI_PASS": "true",
 		"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 		"CW_EVAL_JPEG_QUALITY": "100",
-		"CW_EVAL_MAX_CONSUMERS": "1",
+		"CW_EVAL_MAX_IMAGE_SIDE": "3072",
+		"CW_EVAL_MAX_CONSUMERS": "2",
 		"CW_EVAL_MAX_RETRIES": "5",
 		"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 	},
@@ -47,6 +48,7 @@
 			// Local dev: Miniflare D1. For hosted DB: add "remote": true
 		}
 	],
+	// Queue: max_batch_size 1 = one deck per invocation; max_concurrency = parallel isolates (keep in sync with CW_EVAL_MAX_CONSUMERS).
 	"queues": {
 		"consumers": [
 			{
@@ -54,7 +56,7 @@
 				"max_batch_size": 1,
 				"max_batch_timeout": 30,
 				"max_retries": 5,
-				"max_concurrency": 1,
+				"max_concurrency": 2,
 				"dead_letter_queue": "cubewizard-eval-local-dlq"
 			},
 			{
@@ -82,7 +84,8 @@
 				"CW_EVAL_USE_MULTI_PASS": "true",
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 				"CW_EVAL_JPEG_QUALITY": "100",
-				"CW_EVAL_MAX_CONSUMERS": "1",
+				"CW_EVAL_MAX_IMAGE_SIDE": "3072",
+				"CW_EVAL_MAX_CONSUMERS": "4",
 				"CW_EVAL_MAX_RETRIES": "5",
 				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 			},
@@ -111,7 +114,7 @@
 						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 1,
+						"max_concurrency": 4,
 						"dead_letter_queue": "cubewizard-eval-stg-dlq"
 					},
 					{
@@ -139,7 +142,8 @@
 				"CW_EVAL_USE_MULTI_PASS": "true",
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
 				"CW_EVAL_JPEG_QUALITY": "100",
-				"CW_EVAL_MAX_CONSUMERS": "1",
+				"CW_EVAL_MAX_IMAGE_SIDE": "3072",
+				"CW_EVAL_MAX_CONSUMERS": "4",
 				"CW_EVAL_MAX_RETRIES": "5",
 				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 			},
@@ -168,7 +172,7 @@
 						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 1,
+						"max_concurrency": 4,
 						"dead_letter_queue": "cubewizard-eval-prod-dlq"
 					},
 					{

@@ -15,4 +15,4 @@ CW_EVAL_LOG_LEVEL=
 # GOLDEN_EVAL_USD_PER_1M_OUTPUT=
 
 # Optional — max vision/orient side in px (unset = full source resolution)
-# CW_EVAL_MAX_IMAGE_SIDE=4096
+# CW_EVAL_MAX_IMAGE_SIDE=3072
