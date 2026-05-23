@@ -24,6 +24,46 @@ export interface RunGoldenCaseViaConsumerOptions {
   fetchImpl?: typeof fetch;
 }
 
+type QueueMessage = {
+  id: string;
+  body: unknown;
+  attempts: number;
+  ack(): void;
+  retry(): void;
+};
+
+/**
+ * Mirror production: when orient enqueues extract work, invoke the extract queue consumer inline.
+ * Patches `EVAL_EXTRACT_QUEUE` on the shared harness env for one case run.
+ */
+export function bindGoldenExtractQueueInline(
+  env: RunEvalTaskEnv,
+  caseId: string,
+  onExtractAcked: () => void
+): RunEvalTaskEnv {
+  const bound: RunEvalTaskEnv = { ...env };
+  bound.EVAL_EXTRACT_QUEUE = {
+    send: async (body) => {
+      const message: QueueMessage = {
+        id: `golden-extract-${caseId}`,
+        body,
+        attempts: 1,
+        ack() {
+          onExtractAcked();
+        },
+        retry() {
+          throw new Error("golden_harness_unexpected_extract_retry");
+        },
+      };
+      await evalConsumer.queue(
+        { queue: GOLDEN_EVAL_EXTRACT_QUEUE, messages: [message] },
+        bound
+      );
+    },
+  };
+  return bound;
+}
+
 /**
  * Run one golden case: orient queue message → extract queue message (two consumer invocations).
  */
@@ -33,32 +73,10 @@ export async function runGoldenCaseViaEvalConsumer(
   let orientAcked = false;
   let extractAcked = false;
 
-  const env =
-    opts.env ??
-    buildGoldenEvalConsumerEnv({
-      repoRoot: opts.repoRoot,
-      onExtractEnqueued: async (body, runEnv) => {
-        await evalConsumer.queue(
-          {
-            queue: GOLDEN_EVAL_EXTRACT_QUEUE,
-            messages: [
-              {
-                id: `golden-extract-${opts.goldenCase.case_id}`,
-                body,
-                attempts: 1,
-                ack() {
-                  extractAcked = true;
-                },
-                retry() {
-                  throw new Error("golden_harness_unexpected_extract_retry");
-                },
-              },
-            ],
-          },
-          runEnv
-        );
-      },
-    });
+  const baseEnv = opts.env ?? buildGoldenEvalConsumerEnv({ repoRoot: opts.repoRoot });
+  const env = bindGoldenExtractQueueInline(baseEnv, opts.goldenCase.case_id, () => {
+    extractAcked = true;
+  });
 
   resolveOpenAiApiKey(env);
 

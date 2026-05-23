@@ -58,7 +58,7 @@ flowchart LR
 
 **Hedron sync:** `POST /api/hedron-sync/:cubeId` enqueues the Hedron consumer, which fetches deck images from Hedron, stages them under the same R2 layout, then enqueues the eval consumer with `upload_id` prefixed `hedron:`.
 
-**Eval pipeline** (two queue stages, fresh isolate per stage):
+**Eval pipeline** (two queue stages — separate queue invocations; isolates may be reused by the platform but deck buffers are not retained across messages):
 
 1. **Orient** (`runOrientTask` on `EVAL_QUEUE`): load staging image → orient (OpenAI) → upload oriented JPEG to `cubewizard-deck-images` → enqueue extract message.
 2. **Extract** (`runExtractTask` on `EVAL_EXTRACT_QUEUE`): load oriented JPEG → extract card names (OpenAI) → upload WebP thumb → release RGBA → Scryfall → D1 → mark `processing_jobs` done.
@@ -128,6 +128,8 @@ Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a
 | `CW_EVAL_MAX_IMAGE_SIDE` | No | Default in wrangler eval config: `3072` px max side; unset/`0`/`full` = source resolution |
 | `CW_EVAL_MAX_CONSUMERS` | No | Must match queue `max_concurrency` in `wrangler-eval-consumer.jsonc` (Scryfall throttle) |
 | `CW_EVAL_MEMORY_LOG` | No | `1` / `true` / `yes` → attach `heap_used_mb` / `rss_mb` to each `eval_consumer` log line (see [Memory debugging](#memory-debugging-eval-consumer)) |
+| `CW_STAGING_MAX_IMAGE_SIDE` | No | Site + Hedron staging normalize via Cloudflare Images (default `3072` in wrangler) |
+| `CW_STAGING_JPEG_QUALITY` | No | JPEG quality for normalized staging uploads (default `90`) |
 | `TURNSTILE_SECRET` | No | Site upload bot check; skipped when `CWW_ENV=local` |
 
 Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` — see [Deploy](#deploy-cloudflare).
@@ -177,15 +179,20 @@ npm run d1:bootstrap:local
 
 Workers have a **128 MiB per-isolate** limit. Cloudflare does not expose a production heap profiler; use a mix of platform tools and opt-in pipeline logs.
 
+**Staging normalize (Phase 1):** Upload and Hedron staging use the **Cloudflare Images** Worker binding (`env.IMAGES`) to downscale photos to `CW_STAGING_MAX_IMAGE_SIDE` (default 3072 px) **before** R2 — transform runs outside the isolate, avoiding full-resolution RGBA decode (~93 MB on 12 MP JPEGs). Each normalize is one Images transformation (see [Images pricing](https://developers.cloudflare.com/images/pricing/)); binding calls may require **Images Paid** on your account. Local `wrangler dev` uses a low-fidelity Images sim; set `"remote": true` on the `images` binding or use `wrangler dev --remote` for production parity.
+
 | Approach | When to use |
 |----------|-------------|
-| **`CW_EVAL_MEMORY_LOG=1`** in `.dev.vars` or eval worker vars | Adds `heap_used_mb` / `rss_mb` (via `nodejs_compat` `process.memoryUsage()`) to each structured **`eval_consumer`** line: `queue_job_start`, `openai_request`, `openai_response`, `queue_send`, `queue_job_done`, failures, etc. Filter logs for `eval_consumer`. |
+| **`CW_EVAL_MEMORY_LOG=1`** in `.dev.vars` or eval worker vars | Each **`eval_consumer`** JSON line includes `est_*` buffer MB (RGBA/JPEG sizes) plus `heap_used_mb` / `rss_mb` when `process.memoryUsage()` is real (`enable_nodejs_process_v2` on the eval worker). All-zero heap → `heap_probe_unavailable` and rely on `est_*`. |
+| **Cloudflare Images staging** (`IMAGES` binding on site + hedron workers) | Caps eval input size; avoids OOM from decode-before-resize on camera photos. |
 | **`wrangler tail cubewizard-eval-consumer-stg`** (or `-prod`) | Live hosted logs; OOM failures often show `Exceeded Memory`, Error **1102**, or `likely_memory_limit: true` on `eval_consumer` with `kind: queue_job_failed`. |
 | **Dashboard → Workers → eval consumer → Observability → Logs** | Query `eval_consumer` or `$metadata.trigger` / invocation errors; Metrics → Errors → **Exceeded Memory**. |
 | **Local DevTools memory snapshots** | `npm run dev:all`, press **`D`**, Memory tab, reproduce with production-like image size ([CF docs](https://developers.cloudflare.com/workers/observability/dev-tools/memory-usage/)). |
 | **Lower `CW_EVAL_MAX_IMAGE_SIDE`** (default `3072` in wrangler) | Primary lever when `est_rgba_mb` or `est_rgba_peak_mb` approaches ~100+ MB. |
 
 `CW_EVAL_LOG_LEVEL=medium|high` still adds human-readable OpenAI/orientation detail on top of the structured `eval_consumer` lines. `eval_usage_report` at the end of extract still summarizes token totals per upload.
+
+`est_rgba_mb` is the oriented frame at max side (W×H×4); `est_rgba_peak_mb` adds a rotation scratch during orient scoring. These are estimates, not isolate heap — compare them to the 128 MiB limit when `heap_used_mb` is unavailable locally.
 
 #### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
 

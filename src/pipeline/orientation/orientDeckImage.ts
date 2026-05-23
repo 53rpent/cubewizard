@@ -22,6 +22,8 @@ import {
   type OrientLightExtractOptions,
   type RotationCandidate,
 } from "./orientExtractVerify";
+import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
+import { isEvalConsumerLogActive } from "../util/evalConsumerLog";
 
 export const ORIENT_DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 export const ORIENT_CENTER_CROP_FRACTION = 0.65;
@@ -41,6 +43,8 @@ export interface OrientDeckImageOptions {
   openAiLogLevel?: EvalOpenAiLogLevel;
   /** Required: used to score each 90° rotation before a yes/no confirm call. */
   orientLightExtract: OrientLightExtractOptions;
+  /** Called once staging JPEG/PNG bytes are decoded; drop the source buffer reference here. */
+  onStagingBytesDecoded?: () => void;
 }
 
 function maybeResize(frame: RgbaFrame, maxSide: number): RgbaFrame {
@@ -116,6 +120,14 @@ export async function orientDeckImageRgba(
   const light = opts.orientLightExtract;
   const maxSide = opts.maxImageSide ?? EVAL_IMAGE_SIDE_UNLIMITED;
   const baseFrame = maybeResize(await decodeToRgba(imageBytes, fmt), maxSide);
+  opts.onStagingBytesDecoded?.();
+  if (isEvalConsumerLogActive()) {
+    mergeActiveEvalBufferEstimates({
+      est_rgba_mb: bytesToMb(rgbaFrameBytes(baseFrame)),
+      oriented_w: baseFrame.width,
+      oriented_h: baseFrame.height,
+    });
+  }
   const history = emptyRotationScoreHistory();
 
   if (level === "medium") {

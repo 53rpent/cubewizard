@@ -136,6 +136,11 @@ export function getActiveEvalUsageReporter(): EvalUsageReporter | null {
   return activeReporter;
 }
 
+/** Clear module globals after each queue message (e.g. OOM without `finally`). */
+export function resetEvalUsageReporterGlobal(): void {
+  activeReporter = null;
+}
+
 export function logEvalUsageReport(report: EvalRunReport): void {
   console.log("eval_usage_report", JSON.stringify(report));
 }

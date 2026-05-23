@@ -7,6 +7,10 @@
 
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import { ANALYTICS_EXCLUDED_CARD_NAMES as ANALYTICS_EXCLUDED_CARD_NAMES_LIST } from "./shared/analyticsExcludedCardNames.js";
+import {
+  normalizeStagingImage,
+  parseStagingImageConfig,
+} from "./pipeline/images/normalizeStagingImage.ts";
 
 export default {
   async fetch(request, env, ctx) {
@@ -2417,9 +2421,25 @@ async function handleUpload(request, env) {
     };
     var ext = extMap[imageFile.type] || "jpg";
 
-    var imageKey = prefix + "/image." + ext;
-    await env.BUCKET.put(imageKey, imageFile.stream(), {
-      httpMetadata: { contentType: imageFile.type },
+    var stagingOpts = parseStagingImageConfig(env);
+    var rawBytes = new Uint8Array(await imageFile.arrayBuffer());
+    var normalized;
+    try {
+      normalized = await normalizeStagingImage(env.IMAGES, rawBytes, stagingOpts);
+    } catch (normErr) {
+      console.error("Upload staging normalize failed:", normErr);
+      return jsonResponse(
+        {
+          success: false,
+          errors: ["Could not process image. Try a smaller photo or a different format."],
+        },
+        500
+      );
+    }
+
+    var imageKey = prefix + "/image.jpg";
+    await env.BUCKET.put(imageKey, normalized.bytes, {
+      httpMetadata: { contentType: "image/jpeg" },
       customMetadata: { pilotName: pilotName, cubeId: cubeId },
     });
 
@@ -2434,7 +2454,18 @@ async function handleUpload(request, env) {
       record_logged: now.toISOString(),
       image_key: imageKey,
       original_filename: imageFile.name,
+      original_content_type: imageFile.type,
+      original_ext: ext,
+      uploaded_bytes: rawBytes.byteLength,
+      staging_normalized: true,
+      staging_max_side: stagingOpts.maxSide,
+      staging_width: normalized.width,
+      staging_height: normalized.height,
     };
+    if (normalized.originalWidth != null) {
+      metadata.original_width = normalized.originalWidth;
+      metadata.original_height = normalized.originalHeight;
+    }
 
     var metadataKey = prefix + "/metadata.json";
     await env.BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {

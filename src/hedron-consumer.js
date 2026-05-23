@@ -9,6 +9,10 @@
 
 import { parseQueueJsonBody } from "./queueMessageBody.js";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import {
+  normalizeStagingImage,
+  parseStagingImageConfig,
+} from "./pipeline/images/normalizeStagingImage.ts";
 
 var HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 var HEDRON_RETRY_BASE_DELAY_SECONDS = 30;
@@ -159,11 +163,21 @@ async function processHedronMessage(raw, env, messageId) {
   var winRate = wins + losses > 0 ? wins / (wins + losses) : 0;
 
   var image = await fetchImageBytes(imageUrl);
-  var imageKey = prefix + "/image." + image.ext;
+  var stagingOpts = parseStagingImageConfig(env);
+  var normalized;
+  try {
+    normalized = await normalizeStagingImage(env.IMAGES, image.bytes, stagingOpts);
+  } catch (normErr) {
+    throw PermanentError(
+      "hedron staging normalize failed: " + (normErr && normErr.message ? normErr.message : String(normErr))
+    );
+  }
+
+  var imageKey = prefix + "/image.jpg";
   var metadataKey = prefix + "/metadata.json";
 
-  await env.BUCKET.put(imageKey, image.bytes, {
-    httpMetadata: { contentType: image.contentType },
+  await env.BUCKET.put(imageKey, normalized.bytes, {
+    httpMetadata: { contentType: "image/jpeg" },
     customMetadata: { pilotName: pilotName, cubeId: cubeId, source: "hedron" },
   });
 
@@ -177,18 +191,29 @@ async function processHedronMessage(raw, env, messageId) {
     record_logged: submittedAt,
     image_key: imageKey,
     original_filename: deckImageUuid + "." + image.ext,
+    original_content_type: image.contentType,
+    original_ext: image.ext,
     image_url: imageUrl,
     image_source: job.image_source ? String(job.image_source) : "hedron",
     upload_id: uploadId,
     draft_id: job.draft_id ? String(job.draft_id) : "",
     player_id: job.player_id ? String(job.player_id) : "",
     downloaded_bytes: image.byteLength,
+    staging_bytes: normalized.bytes.byteLength,
+    staging_normalized: true,
+    staging_max_side: stagingOpts.maxSide,
+    staging_width: normalized.width,
+    staging_height: normalized.height,
   };
+  if (normalized.originalWidth != null) {
+    metadata.original_width = normalized.originalWidth;
+    metadata.original_height = normalized.originalHeight;
+  }
   await env.BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
     httpMetadata: { contentType: "application/json" },
   });
 
-  await verifyR2Staging(env, metadataKey, imageKey, image.byteLength);
+  await verifyR2Staging(env, metadataKey, imageKey, normalized.bytes.byteLength);
 
   var r2Bucket = String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim();
   var taskBody = {
