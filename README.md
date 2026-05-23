@@ -58,7 +58,12 @@ flowchart LR
 
 **Hedron sync:** `POST /api/hedron-sync/:cubeId` enqueues the Hedron consumer, which fetches deck images from Hedron, stages them under the same R2 layout, then enqueues the eval consumer with `upload_id` prefixed `hedron:`.
 
-**Eval pipeline** (`runEvalTask`): load staging image from R2 → orient (OpenAI) → extract card names (OpenAI, optional multi-pass) → optional CubeCobra list → Scryfall enrichment → D1 deck/cards/stats → upload oriented WebP + thumb to `cubewizard-deck-images` → mark `processing_jobs` done or failed.
+**Eval pipeline** (two queue stages, fresh isolate per stage):
+
+1. **Orient** (`runOrientTask` on `EVAL_QUEUE`): load staging image → orient (OpenAI) → upload oriented JPEG to `cubewizard-deck-images` → enqueue extract message.
+2. **Extract** (`runExtractTask` on `EVAL_EXTRACT_QUEUE`): load oriented JPEG → extract card names (OpenAI) → upload WebP thumb → release RGBA → Scryfall → D1 → mark `processing_jobs` done.
+
+Hosted accounts need extract queues created once, e.g. `npx wrangler queues create cubewizard-eval-extract-stg` (and `-dlq`, plus prod names) before deploy.
 
 **Eval queue concurrency:** `max_batch_size: 1` (one deck per invocation) and `max_concurrency` > 1 in `wrangler-eval-consumer.jsonc` so Cloudflare runs multiple consumer isolates when the queue has backlog (stg/prod: 4). Keep `CW_EVAL_MAX_CONSUMERS` equal to `max_concurrency` so Scryfall HTTP stays near ~10 req/s account-wide. **Local `wrangler dev` does not run multiple queue consumers in parallel** ([Cloudflare Queues local dev](https://developers.cloudflare.com/queues/configuration/local-development/)) — you will only see one eval at a time locally even with `max_concurrency: 2`; deploy to staging/production for real parallelism.
 
@@ -122,6 +127,7 @@ Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a
 | `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` — see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
 | `CW_EVAL_MAX_IMAGE_SIDE` | No | Default in wrangler eval config: `3072` px max side; unset/`0`/`full` = source resolution |
 | `CW_EVAL_MAX_CONSUMERS` | No | Must match queue `max_concurrency` in `wrangler-eval-consumer.jsonc` (Scryfall throttle) |
+| `CW_EVAL_MEMORY_LOG` | No | `1` / `true` / `yes` → attach `heap_used_mb` / `rss_mb` to each `eval_consumer` log line (see [Memory debugging](#memory-debugging-eval-consumer)) |
 | `TURNSTILE_SECRET` | No | Site upload bot check; skipped when `CWW_ENV=local` |
 
 Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` — see [Deploy](#deploy-cloudflare).
@@ -166,6 +172,20 @@ Remove-Item -Recurse -Force .wrangler\local-shared -ErrorAction SilentlyContinue
 npm run d1:bootstrap:local
 ```
 
+
+#### Memory debugging (eval consumer)
+
+Workers have a **128 MiB per-isolate** limit. Cloudflare does not expose a production heap profiler; use a mix of platform tools and opt-in pipeline logs.
+
+| Approach | When to use |
+|----------|-------------|
+| **`CW_EVAL_MEMORY_LOG=1`** in `.dev.vars` or eval worker vars | Adds `heap_used_mb` / `rss_mb` (via `nodejs_compat` `process.memoryUsage()`) to each structured **`eval_consumer`** line: `queue_job_start`, `openai_request`, `openai_response`, `queue_send`, `queue_job_done`, failures, etc. Filter logs for `eval_consumer`. |
+| **`wrangler tail cubewizard-eval-consumer-stg`** (or `-prod`) | Live hosted logs; OOM failures often show `Exceeded Memory`, Error **1102**, or `likely_memory_limit: true` on `eval_consumer` with `kind: queue_job_failed`. |
+| **Dashboard → Workers → eval consumer → Observability → Logs** | Query `eval_consumer` or `$metadata.trigger` / invocation errors; Metrics → Errors → **Exceeded Memory**. |
+| **Local DevTools memory snapshots** | `npm run dev:all`, press **`D`**, Memory tab, reproduce with production-like image size ([CF docs](https://developers.cloudflare.com/workers/observability/dev-tools/memory-usage/)). |
+| **Lower `CW_EVAL_MAX_IMAGE_SIDE`** (default `3072` in wrangler) | Primary lever when `est_rgba_mb` or `est_rgba_peak_mb` approaches ~100+ MB. |
+
+`CW_EVAL_LOG_LEVEL=medium|high` still adds human-readable OpenAI/orientation detail on top of the structured `eval_consumer` lines. `eval_usage_report` at the end of extract still summarizes token totals per upload.
 
 #### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
 

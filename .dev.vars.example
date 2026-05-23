@@ -10,6 +10,9 @@ OPENAI_API_KEY=
 # Optional — OpenAI eval consumer log level: off | low | medium | high
 CW_EVAL_LOG_LEVEL=
 
+# Optional — log eval_memory lines (buffer MB estimates + Node heap when available): 1 | true | yes
+# CW_EVAL_MEMORY_LOG=1   # heap_used_mb / rss_mb on each eval_consumer log line
+
 # Optional — golden eval USD/1M tokens (skips bundled pricing CSV when both set)
 # GOLDEN_EVAL_USD_PER_1M_INPUT=
 # GOLDEN_EVAL_USD_PER_1M_OUTPUT=

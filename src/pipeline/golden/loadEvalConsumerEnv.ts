@@ -26,6 +26,8 @@ export function loadWranglerEvalConsumerVars(repoRoot: string): Record<string, s
 export interface GoldenEvalConsumerEnvOptions {
   repoRoot: string;
   fetchImpl?: typeof fetch;
+  /** Invoked when orient stage enqueues extract work (golden runs extract consumer inline). */
+  onExtractEnqueued?: (body: unknown, env: RunEvalTaskEnv) => Promise<void>;
 }
 
 /**
@@ -56,6 +58,14 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
     cubewizard_db: createGoldenSqliteD1(opts.repoRoot),
     BUCKET: createMockR2Bucket(),
     DECK_IMAGES_BLOB: createMockR2Bucket(),
+  };
+
+  env.EVAL_EXTRACT_QUEUE = {
+    send: async (body) => {
+      if (opts.onExtractEnqueued) {
+        await opts.onExtractEnqueued(body, env);
+      }
+    },
   };
 
   return env;

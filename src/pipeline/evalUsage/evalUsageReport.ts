@@ -35,6 +35,11 @@ export interface EvalUsageReporter {
   finish(durationMs: number): EvalRunReport;
 }
 
+/** Token usage from an OpenAI Responses API JSON body. */
+export function extractOpenAiUsageFromResponse(json: unknown): EvalOpenAiUsageTotals {
+  return extractUsage(json);
+}
+
 function extractUsage(json: unknown): EvalOpenAiUsageTotals {
   if (!json || typeof json !== "object") {
     return { input_tokens: 0, output_tokens: 0, total_tokens: 0, cached_input_tokens: 0 };

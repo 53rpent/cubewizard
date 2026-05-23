@@ -7,6 +7,9 @@ import { readProcessingJobOutcome } from "./readJobResult";
 import { stageGoldenCaseOnR2 } from "./stageGoldenCase";
 import type { GoldenCaseDefinition } from "./types";
 
+export const GOLDEN_EVAL_ORIENT_QUEUE = "cubewizard-eval-local";
+export const GOLDEN_EVAL_EXTRACT_QUEUE = "cubewizard-eval-extract-local";
+
 export interface GoldenConsumerRunResult {
   upload_id: string;
   job_status: string;
@@ -22,37 +25,70 @@ export interface RunGoldenCaseViaConsumerOptions {
 }
 
 /**
- * Run one golden case through the eval queue consumer (`evalQueueEntry` → `runEvalTask`).
- * OpenAI calls happen inside the consumer; the harness only stages R2 + enqueues.
+ * Run one golden case: orient queue message → extract queue message (two consumer invocations).
  */
 export async function runGoldenCaseViaEvalConsumer(
   opts: RunGoldenCaseViaConsumerOptions
 ): Promise<GoldenConsumerRunResult> {
-  const env = opts.env ?? buildGoldenEvalConsumerEnv({ repoRoot: opts.repoRoot });
+  let orientAcked = false;
+  let extractAcked = false;
+
+  const env =
+    opts.env ??
+    buildGoldenEvalConsumerEnv({
+      repoRoot: opts.repoRoot,
+      onExtractEnqueued: async (body, runEnv) => {
+        await evalConsumer.queue(
+          {
+            queue: GOLDEN_EVAL_EXTRACT_QUEUE,
+            messages: [
+              {
+                id: `golden-extract-${opts.goldenCase.case_id}`,
+                body,
+                attempts: 1,
+                ack() {
+                  extractAcked = true;
+                },
+                retry() {
+                  throw new Error("golden_harness_unexpected_extract_retry");
+                },
+              },
+            ],
+          },
+          runEnv
+        );
+      },
+    });
+
   resolveOpenAiApiKey(env);
 
   const staged = await stageGoldenCaseOnR2(env.BUCKET, opts.goldenCase);
 
-  let acked = false;
-  const message = {
-    id: `golden-msg-${opts.goldenCase.case_id}`,
-    body: staged.task,
-    attempts: 1,
-    ack() {
-      acked = true;
-    },
-    retry() {
-      throw new Error("golden_harness_unexpected_retry");
-    },
-  };
-
   await evalConsumer.queue(
-    { queue: "cubewizard-eval-local", messages: [message] },
+    {
+      queue: GOLDEN_EVAL_ORIENT_QUEUE,
+      messages: [
+        {
+          id: `golden-orient-${opts.goldenCase.case_id}`,
+          body: staged.task,
+          attempts: 1,
+          ack() {
+            orientAcked = true;
+          },
+          retry() {
+            throw new Error("golden_harness_unexpected_orient_retry");
+          },
+        },
+      ],
+    },
     env
   );
 
-  if (!acked) {
-    throw new Error(`eval_consumer did not ack message for ${opts.goldenCase.case_id}`);
+  if (!orientAcked) {
+    throw new Error(`eval orient consumer did not ack for ${opts.goldenCase.case_id}`);
+  }
+  if (!extractAcked) {
+    throw new Error(`eval extract consumer did not ack for ${opts.goldenCase.case_id}`);
   }
 
   const outcome = await readProcessingJobOutcome(env.cubewizard_db, staged.upload_id);
