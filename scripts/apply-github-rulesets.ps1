@@ -28,29 +28,13 @@ foreach ($entry in $files) {
     if (-not (Test-Path $path)) {
         throw "Missing ruleset file: $path"
     }
-    $body = Get-Content $path -Raw | ConvertFrom-Json
-    $payload = [ordered]@{
-        name          = $body.name
-        target        = $body.target
-        enforcement   = $body.enforcement
-        conditions    = $body.conditions
-        bypass_actors = @($body.bypass_actors)
-        rules         = @($body.rules)
-    }
-    $tmp = [System.IO.Path]::GetTempFileName()
-    try {
-        $payload | ConvertTo-Json -Depth 20 | Set-Content -Path $tmp -Encoding utf8NoBOM
+    $name = (Get-Content $path -Raw | ConvertFrom-Json).name
+    $id = $idByName[$name]
+    if (-not $id) { $id = $entry.FallbackId }
 
-        $id = $idByName[$body.name]
-        if (-not $id) { $id = $entry.FallbackId }
-
-        Write-Host "Updating ruleset '$($body.name)' (id $id) on $Repo ..."
-        gh api --method PUT "repos/$Repo/rulesets/$id" --input $tmp | Out-Null
-        Write-Host "  OK"
-    }
-    finally {
-        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-    }
+    Write-Host "Updating ruleset '$name' (id $id) on $Repo ..."
+    gh api --method PUT "repos/$Repo/rulesets/$id" --input $path
+    Write-Host "  OK"
 }
 
 Write-Host "Done. Verify: gh api repos/$Repo/rules/branches/staging"
