@@ -20,6 +20,9 @@ CW_EVAL_LOG_LEVEL=
 # Optional — max vision/orient side in px (unset = full source resolution)
 # CW_EVAL_MAX_IMAGE_SIDE=3072
 
+# Optional — jpeg-js decode memory cap in MB (default 512). Golden harness sets 0 (unlimited).
+# CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB=0
+
 # Optional — staging upload normalize (site + hedron workers; default in wrangler.jsonc)
 # CW_STAGING_MAX_IMAGE_SIDE=3072
 # CW_STAGING_JPEG_QUALITY=90

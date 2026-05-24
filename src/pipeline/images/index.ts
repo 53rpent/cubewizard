@@ -9,6 +9,7 @@ export {
   combineClockwiseRotations,
   cropCenter,
   resizeToMaxSide,
+  rotate90ClockwiseOnce,
   rotateClockwise,
 } from "./transform";
 export {

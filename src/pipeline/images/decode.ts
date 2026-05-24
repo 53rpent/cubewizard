@@ -6,6 +6,38 @@ import { sniffImageFormat } from "./sniff";
 import type { ImageFormatHint, RgbaFrame } from "./types";
 import { decodeHeicToRgba } from "./heic";
 
+/** jpeg-js default safety cap (production Workers / untrusted uploads). */
+export const JPEG_DECODE_DEFAULT_MAX_MEMORY_MB = 512;
+
+/** Practical “unlimited” for golden / local full-resolution fixtures. */
+export const JPEG_DECODE_UNLIMITED_MEMORY_MB = 16_384;
+
+export interface JpegDecodeEnv {
+  CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB?: string;
+}
+
+/**
+ * `CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB`: positive MB cap, or `0` / `unlimited` for no cap.
+ * Unset → {@link JPEG_DECODE_DEFAULT_MAX_MEMORY_MB}.
+ */
+export function parseJpegDecodeMaxMemoryMb(
+  env: JpegDecodeEnv = {}
+): number {
+  const raw =
+    env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB ??
+    (typeof process !== "undefined"
+      ? (process as NodeJS.Process).env?.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB
+      : undefined);
+  if (raw === undefined || raw === "") {
+    return JPEG_DECODE_DEFAULT_MAX_MEMORY_MB;
+  }
+  if (/^0|unlimited|none|off|false$/i.test(String(raw).trim())) {
+    return JPEG_DECODE_UNLIMITED_MEMORY_MB;
+  }
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 ? n : JPEG_DECODE_DEFAULT_MAX_MEMORY_MB;
+}
+
 function ensureRgbaFrame(w: number, h: number, data: Uint8Array): RgbaFrame {
   const n = w * h;
   if (data.length === n * 4) {
@@ -46,7 +78,11 @@ function decodePngToRgba(bytes: Uint8Array): RgbaFrame {
 }
 
 function decodeJpegToRgba(bytes: Uint8Array): RgbaFrame {
-  const raw = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true });
+  const raw = jpeg.decode(bytes, {
+    useTArray: true,
+    formatAsRGBA: true,
+    maxMemoryUsageInMB: parseJpegDecodeMaxMemoryMb(),
+  });
   return ensureRgbaFrame(raw.width, raw.height, raw.data as Uint8Array);
 }
 

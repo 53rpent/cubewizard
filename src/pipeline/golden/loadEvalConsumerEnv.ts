@@ -41,8 +41,16 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
     }
   }
 
+  if (
+    process.env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB === undefined ||
+    process.env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB === ""
+  ) {
+    process.env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB = "0";
+  }
+
   const env: RunEvalTaskEnv = {
     CWW_ENV: "local",
+    CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB: process.env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL,
     OPENAI_MAX_OUTPUT_TOKENS: process.env.OPENAI_MAX_OUTPUT_TOKENS,

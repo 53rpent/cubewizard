@@ -99,59 +99,23 @@ export function cropCenter(frame: RgbaFrame, fraction: number): RgbaFrame {
   return { width: cw, height: ch, data: out };
 }
 
-/** One 90° clockwise step: new size (H×W), maps old (x,y) → new (y, x). */
-function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
+/**
+ * One 90° clockwise step with expand (no flips / transpose — rotation only).
+ * Top-left origin, +x right, +y down. W×H → H×W.
+ */
+export function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
   const w = frame.width;
   const h = frame.height;
   const src = frame.data;
   const nw = h;
   const nh = w;
   const out = new Uint8ClampedArray(nw * nh * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const nx = y;
-      const ny = x;
-      const si = (y * w + x) * 4;
-      const di = (ny * nw + nx) * 4;
-      out[di] = src[si]!;
-      out[di + 1] = src[si + 1]!;
-      out[di + 2] = src[si + 2]!;
-      out[di + 3] = src[si + 3]!;
-    }
-  }
-  return { width: nw, height: nh, data: out };
-}
-
-function rotate180(frame: RgbaFrame): RgbaFrame {
-  const w = frame.width;
-  const h = frame.height;
-  const src = frame.data;
-  const out = new Uint8ClampedArray(w * h * 4);
-  const n = w * h;
-  for (let i = 0; i < n; i++) {
-    const si = i * 4;
-    const di = (n - 1 - i) * 4;
-    out[di] = src[si]!;
-    out[di + 1] = src[si + 1]!;
-    out[di + 2] = src[si + 2]!;
-    out[di + 3] = src[si + 3]!;
-  }
-  return { width: w, height: h, data: out };
-}
-
-function rotate270ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
-  const w = frame.width;
-  const h = frame.height;
-  const src = frame.data;
-  const nw = h;
-  const nh = w;
-  const out = new Uint8ClampedArray(nw * nh * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const nx = h - 1 - y;
-      const ny = x;
-      const si = (y * w + x) * 4;
-      const di = (ny * nw + nx) * 4;
+  for (let oy = 0; oy < nh; oy++) {
+    for (let ox = 0; ox < nw; ox++) {
+      const sx = oy;
+      const sy = h - 1 - ox;
+      const si = (sy * w + sx) * 4;
+      const di = (oy * nw + ox) * 4;
       out[di] = src[si]!;
       out[di + 1] = src[si + 1]!;
       out[di + 2] = src[si + 2]!;
@@ -162,13 +126,14 @@ function rotate270ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
 }
 
 /**
- * Clockwise rotation (0, 90, 180, 270), expand canvas like PIL `rotate(..., expand=True)`.
- * Uses one output buffer per call (no chained 90° steps for 180/270).
+ * Clockwise rotation by repeated 90° steps only (0, 90, 180, 270).
  */
 export function rotateClockwise(frame: RgbaFrame, degrees: number): RgbaFrame {
-  const d = (((degrees % 360) + 360) % 360) as 0 | 90 | 180 | 270;
-  if (d === 0) return frame;
-  if (d === 90) return rotate90ClockwiseOnce(frame);
-  if (d === 180) return rotate180(frame);
-  return rotate270ClockwiseOnce(frame);
+  const steps = ((((degrees % 360) + 360) % 360) / 90) | 0;
+  if (steps === 0) return frame;
+  let out = frame;
+  for (let i = 0; i < steps; i++) {
+    out = rotate90ClockwiseOnce(out);
+  }
+  return out;
 }

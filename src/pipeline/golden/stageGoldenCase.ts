@@ -10,6 +10,24 @@ import type { TaskRequest } from "../contracts/taskRequest.zod";
 import type { GoldenCaseDefinition } from "./types";
 
 const GOLDEN_R2_BUCKET = "decklist-uploads";
+const JPEG_DECODE_MEMORY_ENV = "CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB";
+
+/** Full-resolution golden fixtures must decode before staging downscale (jpeg-js 512 MB default). */
+async function withGoldenJpegDecodeUnlimited<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = process.env[JPEG_DECODE_MEMORY_ENV];
+  if (!prev) {
+    process.env[JPEG_DECODE_MEMORY_ENV] = "0";
+  }
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) {
+      delete process.env[JPEG_DECODE_MEMORY_ENV];
+    } else {
+      process.env[JPEG_DECODE_MEMORY_ENV] = prev;
+    }
+  }
+}
 
 export interface StagedGoldenCase {
   task: TaskRequest;
@@ -27,7 +45,9 @@ export async function stageGoldenCaseOnR2(
   const r2_prefix = `golden/${goldenCase.case_id}/`;
   const rawBytes = new Uint8Array(readFileSync(goldenCase.image_path));
   const stagingOpts = parseStagingImageConfig(process.env);
-  const normalized = await normalizeStagingImage(null, rawBytes, stagingOpts);
+  const normalized = await withGoldenJpegDecodeUnlimited(() =>
+    normalizeStagingImage(null, rawBytes, stagingOpts)
+  );
   const image_key = `${r2_prefix}image.jpg`;
   const metaKey = `${r2_prefix}metadata.json`;
 
