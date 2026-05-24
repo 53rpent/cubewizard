@@ -174,7 +174,7 @@
     },
     preferredCubeId: function () {
       var parsed = this.parsePathname(window.location.pathname);
-      var id = parsed.cubeId || "";
+      var id = normalizeCubeId(parsed.cubeId || "");
       if (!id) {
         try {
           var q = new URLSearchParams(window.location.search).get("cube");
@@ -188,6 +188,7 @@
           id = "";
         }
       }
+      id = normalizeCubeId(id);
       if (!id) {
         try {
           localStorage.removeItem("selectedCubeId");

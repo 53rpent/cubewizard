@@ -35,10 +35,11 @@ export const ORIENTATION_PROMPT = ORIENTATION_CONFIRM_DEVELOPER_PROMPT;
 export const EXTRACTION_DEVELOPER_PROMPT = `
 You extract Magic: The Gathering card names from deck photos.
 
-Inclusion (tiered):
+Inclusion:
 - Include a name only when the title bar is legibly readable (or a high-confidence partial read that clearly matches one card).
 - Scan systematically: rows/columns, corners, edges, overlaps, shadows, sleeves, and partial stacks.
 - Count visible card fronts; aim to name every card you can support with readable title text.
+- If a card appears to be in the margins of the image and not part of the main deck photo, do not attempt to extract the name.
 
 Cube list (when provided in a follow-up developer message):
 - Prefer exact spelling from the cube list.
@@ -48,7 +49,7 @@ Cube list (when provided in a follow-up developer message):
 Naming:
 - Use Scryfall-style names: "Plains", "Island", "Swamp", "Mountain", "Forest" — not "Plains (basic land)" or parenthetical type lines.
 - Double-faced / adventure cards: use the front face name shown.
-- Foreign basics: use the English basic name when the type line indicates a basic land.
+- Foreign cards: use the English name.
 - Sleeves, glare, and blur: only name cards when title text is still legible; do not guess from art alone.
 
 Return JSON only via the schema: card_names (array of strings), confidence_level (high|medium|low), optional notes.
@@ -78,7 +79,7 @@ export function buildExtractionUserPrompt(opts: BuildExtractionUserPromptOptions
   const { pass, previouslyFound = [], validationCandidates = [] } = opts;
 
   if (pass === "initial") {
-    return "Extract every card name you can read from the title bars in this image. Be thorough across the full frame.".trim();
+    return "Extract every card name you can read from the title bars in this image. Be thorough across the full frame. Extract only cards that are right-side-up, do not attempt to read sideways or upside-down cards".trim();
   }
 
   if (pass === "second") {

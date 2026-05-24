@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "run_id": "2026-05-23T22-57-48-283Z",
-  "recorded_at": "2026-05-23T22:57:48.283Z",
+  "run_id": "2026-05-24T03-54-53-167Z",
+  "recorded_at": "2026-05-24T03:54:53.167Z",
   "label": "baseline",
   "model": "gpt-5-mini-2025-08-07",
   "config": {
@@ -27,23 +27,23 @@
   "runner": "eval_consumer",
   "aggregate": {
     "case_count": 8,
-    "micro_precision": 0.9779735682819384,
-    "micro_recall": 0.8604651162790697,
-    "micro_f1": 0.9154639175257733,
-    "macro_precision": 0.9806547619047619,
-    "macro_recall": 0.8614037155141855,
-    "macro_f1": 0.9160191466907885,
-    "mean_count_error": 7.125,
+    "micro_precision": 0.990909090909091,
+    "micro_recall": 0.8449612403100775,
+    "micro_f1": 0.9121338912133891,
+    "macro_precision": 0.9915229885057472,
+    "macro_recall": 0.848025166979387,
+    "macro_f1": 0.9128955861236748,
+    "mean_count_error": 8,
     "exact_match_cases": 0,
     "total_openai_calls": 20,
-    "total_input_tokens": 106359,
-    "total_output_tokens": 38433,
-    "total_tokens": 144792,
-    "total_duration_ms": 722595,
+    "total_input_tokens": 107409,
+    "total_output_tokens": 39095,
+    "total_tokens": 146504,
+    "total_duration_ms": 589571,
     "mean_openai_calls_per_case": 2.5,
-    "mean_duration_ms_per_case": 90324.375,
-    "total_cost_usd": 0.10187175000000001,
-    "mean_cost_usd_per_case": 0.012733968750000001
+    "mean_duration_ms_per_case": 73696.375,
+    "total_cost_usd": 0.10383265,
+    "mean_cost_usd_per_case": 0.01297908125
   },
   "cases": [
     {
@@ -60,60 +60,56 @@
         "Shadow Rift",
         "Tamiyo's Safekeeping",
         "Vines of Vastwood",
-        "Charge Through",
         "Prey's Vengeance",
-        "Stormchaser Drake",
         "Aquatic Alchemist",
-        "Slickshot Lockpicker",
-        "Spellscorn Coven",
-        "Yavimaya Bloomsage",
-        "Micromancer",
+        "Stormchaser Drake",
         "Silverfur Partisan",
         "Gnarlback Rhino",
+        "Micromancer",
+        "Slickshot Lockpicker",
+        "Spellscorn Coven",
         "Witherbloom Campus",
         "Golgari Rot Farm",
-        "Hedge Maze",
-        "Quandrix Campus",
-        "Simic Growth Chamber",
-        "Silundi Vision",
-        "Khalni Ambush",
         "Island",
-        "Counterspell",
         "Pop Quiz",
-        "Terramorph",
         "Call of the Herd",
         "Harmonize",
+        "Simic Growth Chamber",
+        "Quandrix Campus",
+        "Counterspell",
+        "Silundi Vision",
         "Suffer the Past",
         "All Is Dust",
-        "Imodane, the Pyrohammer",
-        "Flourishing Strike",
+        "Charge Through",
         "Hisoka's Defiance",
-        "Trostani, Selesnya's Voice",
-        "Tribute to Urborg"
+        "Khalni Ambush",
+        "Hedge Maze"
       ],
       "metrics": {
-        "predicted_count": 36,
+        "predicted_count": 30,
         "expected_count": 40,
-        "count_error": -4,
+        "count_error": -10,
         "exact_set_match": false,
-        "true_positives": 33,
-        "false_positives": 3,
-        "false_negatives": 6,
-        "precision": 0.9166666666666666,
-        "recall": 0.8461538461538461,
-        "f1": 0.8799999999999999,
+        "true_positives": 29,
+        "false_positives": 1,
+        "false_negatives": 10,
+        "precision": 0.9666666666666667,
+        "recall": 0.7435897435897436,
+        "f1": 0.8405797101449275,
         "false_positive_names": [
-          "Terramorph",
-          "Harmonize",
-          "Trostani, Selesnya's Voice"
+          "Harmonize"
         ],
         "false_negative_names": [
+          "Yavimaya Bloomsage",
           "Niblis of Frost",
           "Djinn Illuminatus",
           "Environmental Sciences",
           "Spell Satchel",
+          "Imodane, the Pyrohammer",
           "Wake the Reflections",
-          "Weather the Storm"
+          "Flourishing Strike",
+          "Weather the Storm",
+          "Tribute to Urborg"
         ],
         "matches": [
           {
@@ -147,18 +143,8 @@
             "similarity": 1
           },
           {
-            "predicted": "Charge Through",
-            "expected": "Charge Through",
-            "similarity": 1
-          },
-          {
             "predicted": "Prey's Vengeance",
             "expected": "Prey's Vengeance",
-            "similarity": 1
-          },
-          {
-            "predicted": "Stormchaser Drake",
-            "expected": "Stormchaser Drake",
             "similarity": 1
           },
           {
@@ -167,23 +153,8 @@
             "similarity": 1
           },
           {
-            "predicted": "Slickshot Lockpicker",
-            "expected": "Slickshot Lockpicker",
-            "similarity": 1
-          },
-          {
-            "predicted": "Spellscorn Coven",
-            "expected": "Spellscorn Coven",
-            "similarity": 1
-          },
-          {
-            "predicted": "Yavimaya Bloomsage",
-            "expected": "Yavimaya Bloomsage",
-            "similarity": 1
-          },
-          {
-            "predicted": "Micromancer",
-            "expected": "Micromancer",
+            "predicted": "Stormchaser Drake",
+            "expected": "Stormchaser Drake",
             "similarity": 1
           },
           {
@@ -197,6 +168,21 @@
             "similarity": 1
           },
           {
+            "predicted": "Micromancer",
+            "expected": "Micromancer",
+            "similarity": 1
+          },
+          {
+            "predicted": "Slickshot Lockpicker",
+            "expected": "Slickshot Lockpicker",
+            "similarity": 1
+          },
+          {
+            "predicted": "Spellscorn Coven",
+            "expected": "Spellscorn Coven",
+            "similarity": 1
+          },
+          {
             "predicted": "Witherbloom Campus",
             "expected": "Witherbloom Campus",
             "similarity": 1
@@ -207,38 +193,8 @@
             "similarity": 1
           },
           {
-            "predicted": "Hedge Maze",
-            "expected": "Hedge Maze",
-            "similarity": 1
-          },
-          {
-            "predicted": "Quandrix Campus",
-            "expected": "Quandrix Campus",
-            "similarity": 1
-          },
-          {
-            "predicted": "Simic Growth Chamber",
-            "expected": "Simic Growth Chamber",
-            "similarity": 1
-          },
-          {
-            "predicted": "Silundi Vision",
-            "expected": "Silundi Vision",
-            "similarity": 1
-          },
-          {
-            "predicted": "Khalni Ambush",
-            "expected": "Khalni Ambush",
-            "similarity": 1
-          },
-          {
             "predicted": "Island",
             "expected": "Island",
-            "similarity": 1
-          },
-          {
-            "predicted": "Counterspell",
-            "expected": "Counterspell",
             "similarity": 1
           },
           {
@@ -252,6 +208,26 @@
             "similarity": 1
           },
           {
+            "predicted": "Simic Growth Chamber",
+            "expected": "Simic Growth Chamber",
+            "similarity": 1
+          },
+          {
+            "predicted": "Quandrix Campus",
+            "expected": "Quandrix Campus",
+            "similarity": 1
+          },
+          {
+            "predicted": "Counterspell",
+            "expected": "Counterspell",
+            "similarity": 1
+          },
+          {
+            "predicted": "Silundi Vision",
+            "expected": "Silundi Vision",
+            "similarity": 1
+          },
+          {
             "predicted": "Suffer the Past",
             "expected": "Suffer the Past",
             "similarity": 1
@@ -262,13 +238,8 @@
             "similarity": 1
           },
           {
-            "predicted": "Imodane, the Pyrohammer",
-            "expected": "Imodane, the Pyrohammer",
-            "similarity": 1
-          },
-          {
-            "predicted": "Flourishing Strike",
-            "expected": "Flourishing Strike",
+            "predicted": "Charge Through",
+            "expected": "Charge Through",
             "similarity": 1
           },
           {
@@ -277,26 +248,31 @@
             "similarity": 1
           },
           {
-            "predicted": "Tribute to Urborg",
-            "expected": "Tribute to Urborg",
+            "predicted": "Khalni Ambush",
+            "expected": "Khalni Ambush",
+            "similarity": 1
+          },
+          {
+            "predicted": "Hedge Maze",
+            "expected": "Hedge Maze",
             "similarity": 1
           }
         ]
       },
-      "openai_calls": 2,
+      "openai_calls": 3,
       "orientation_calls": 0,
-      "extraction_calls": 2,
+      "extraction_calls": 3,
       "usage": {
-        "input_tokens": 10868,
-        "output_tokens": 4302,
-        "total_tokens": 15170
+        "input_tokens": 15715,
+        "output_tokens": 6961,
+        "total_tokens": 22676
       },
       "cost_usd": {
-        "input_usd": 0.002717,
-        "output_usd": 0.008604,
-        "total_usd": 0.011321000000000001
+        "input_usd": 0.00392875,
+        "output_usd": 0.013922,
+        "total_usd": 0.01785075
       },
-      "duration_ms": 166967,
+      "duration_ms": 79124,
       "job_status": "done"
     },
     {
@@ -313,20 +289,19 @@
         "Ledger Shredder",
         "Mana Leak",
         "Standstill",
-        "Vendilion Clique",
+        "Damn",
+        "Liliana of the Veil",
         "Brazen Borrower",
-        "Fell the Profane",
+        "Vendilion Clique",
         "Vindicate",
         "Ashiok, Nightmare Weaver",
         "Esper Charm",
         "Cryptic Command",
         "Supreme Verdict",
-        "Timeless Dragon",
         "Triumph of Saint Katherine",
+        "Timeless Dragon",
         "Dig Through Time",
         "Tidespout Tyrant",
-        "Liliana of the Veil",
-        "Damn",
         "Watery Grave",
         "Godless Shrine",
         "Creeping Tar Pit",
@@ -334,18 +309,19 @@
         "Mystic Gate"
       ],
       "metrics": {
-        "predicted_count": 27,
+        "predicted_count": 26,
         "expected_count": 30,
-        "count_error": -3,
+        "count_error": -4,
         "exact_set_match": false,
-        "true_positives": 27,
+        "true_positives": 26,
         "false_positives": 0,
-        "false_negatives": 1,
+        "false_negatives": 2,
         "precision": 1,
-        "recall": 0.9642857142857143,
-        "f1": 0.9818181818181818,
+        "recall": 0.9285714285714286,
+        "f1": 0.962962962962963,
         "false_positive_names": [],
         "false_negative_names": [
+          "Fell the Profane",
           "Nulldrifter"
         ],
         "matches": [
@@ -390,8 +366,13 @@
             "similarity": 1
           },
           {
-            "predicted": "Vendilion Clique",
-            "expected": "Vendilion Clique",
+            "predicted": "Damn",
+            "expected": "Damn",
+            "similarity": 1
+          },
+          {
+            "predicted": "Liliana of the Veil",
+            "expected": "Liliana of the Veil",
             "similarity": 1
           },
           {
@@ -400,8 +381,8 @@
             "similarity": 1
           },
           {
-            "predicted": "Fell the Profane",
-            "expected": "Fell the Profane",
+            "predicted": "Vendilion Clique",
+            "expected": "Vendilion Clique",
             "similarity": 1
           },
           {
@@ -430,13 +411,13 @@
             "similarity": 1
           },
           {
-            "predicted": "Timeless Dragon",
-            "expected": "Timeless Dragon",
+            "predicted": "Triumph of Saint Katherine",
+            "expected": "Triumph of Saint Katherine",
             "similarity": 1
           },
           {
-            "predicted": "Triumph of Saint Katherine",
-            "expected": "Triumph of Saint Katherine",
+            "predicted": "Timeless Dragon",
+            "expected": "Timeless Dragon",
             "similarity": 1
           },
           {
@@ -447,16 +428,6 @@
           {
             "predicted": "Tidespout Tyrant",
             "expected": "Tidespout Tyrant",
-            "similarity": 1
-          },
-          {
-            "predicted": "Liliana of the Veil",
-            "expected": "Liliana of the Veil",
-            "similarity": 1
-          },
-          {
-            "predicted": "Damn",
-            "expected": "Damn",
             "similarity": 1
           },
           {
@@ -486,20 +457,20 @@
           }
         ]
       },
-      "openai_calls": 2,
+      "openai_calls": 1,
       "orientation_calls": 0,
-      "extraction_calls": 2,
+      "extraction_calls": 1,
       "usage": {
-        "input_tokens": 10604,
-        "output_tokens": 3011,
-        "total_tokens": 13615
+        "input_tokens": 6459,
+        "output_tokens": 2883,
+        "total_tokens": 9342
       },
       "cost_usd": {
-        "input_usd": 0.0020461999999999998,
-        "output_usd": 0.006022,
-        "total_usd": 0.0080682
+        "input_usd": 0.00161475,
+        "output_usd": 0.005766,
+        "total_usd": 0.00738075
       },
-      "duration_ms": 70775,
+      "duration_ms": 36770,
       "job_status": "done"
     },
     {
@@ -511,31 +482,31 @@
       ],
       "cube_id": "goodolddays",
       "predicted_card_names": [
-        "Firebolt",
-        "Seal of Fire",
-        "Survival of the Fittest",
-        "Earthquake",
-        "Forgotten Cave",
-        "Birds of Paradise",
-        "Kird Ape",
         "Mogg Fanatic",
         "Basking Rootwalla",
+        "Kird Ape",
+        "Birds of Paradise",
         "Rofellos, Llanowar Emissary",
-        "Hermit Druid",
         "Goblin Sharpshooter",
         "Cathodion",
         "Masticore",
         "Blastoderm",
         "Ravenous Baloth",
         "Fire Imp",
-        "Yavimaya Elder",
-        "Arrogant Wurm",
         "Silvos, Rogue Elemental",
         "Genesis",
+        "Arrogant Wurm",
+        "Yavimaya Elder",
+        "Firebolt",
+        "Earthquake",
+        "Forgotten Cave",
         "Forest",
         "Mountain",
+        "Survival of the Fittest",
+        "Hermit Druid",
+        "Siege-Gang Commander",
         "Wooded Foothills",
-        "Siege-Gang Commander"
+        "Seal of Fire"
       ],
       "metrics": {
         "predicted_count": 25,
@@ -557,41 +528,6 @@
         ],
         "matches": [
           {
-            "predicted": "Firebolt",
-            "expected": "Firebolt",
-            "similarity": 1
-          },
-          {
-            "predicted": "Seal of Fire",
-            "expected": "Seal of Fire",
-            "similarity": 1
-          },
-          {
-            "predicted": "Survival of the Fittest",
-            "expected": "Survival of the Fittest",
-            "similarity": 1
-          },
-          {
-            "predicted": "Earthquake",
-            "expected": "Earthquake",
-            "similarity": 1
-          },
-          {
-            "predicted": "Forgotten Cave",
-            "expected": "Forgotten Cave",
-            "similarity": 1
-          },
-          {
-            "predicted": "Birds of Paradise",
-            "expected": "Birds of Paradise",
-            "similarity": 1
-          },
-          {
-            "predicted": "Kird Ape",
-            "expected": "Kird Ape",
-            "similarity": 1
-          },
-          {
             "predicted": "Mogg Fanatic",
             "expected": "Mogg Fanatic",
             "similarity": 1
@@ -602,13 +538,18 @@
             "similarity": 1
           },
           {
-            "predicted": "Rofellos, Llanowar Emissary",
-            "expected": "Rofellos, Llanowar Emissary",
+            "predicted": "Kird Ape",
+            "expected": "Kird Ape",
             "similarity": 1
           },
           {
-            "predicted": "Hermit Druid",
-            "expected": "Hermit Druid",
+            "predicted": "Birds of Paradise",
+            "expected": "Birds of Paradise",
+            "similarity": 1
+          },
+          {
+            "predicted": "Rofellos, Llanowar Emissary",
+            "expected": "Rofellos, Llanowar Emissary",
             "similarity": 1
           },
           {
@@ -642,8 +583,13 @@
             "similarity": 1
           },
           {
-            "predicted": "Yavimaya Elder",
-            "expected": "Yavimaya Elder",
+            "predicted": "Silvos, Rogue Elemental",
+            "expected": "Silvos, Rogue Elemental",
+            "similarity": 1
+          },
+          {
+            "predicted": "Genesis",
+            "expected": "Genesis",
             "similarity": 1
           },
           {
@@ -652,13 +598,23 @@
             "similarity": 1
           },
           {
-            "predicted": "Silvos, Rogue Elemental",
-            "expected": "Silvos, Rogue Elemental",
+            "predicted": "Yavimaya Elder",
+            "expected": "Yavimaya Elder",
             "similarity": 1
           },
           {
-            "predicted": "Genesis",
-            "expected": "Genesis",
+            "predicted": "Firebolt",
+            "expected": "Firebolt",
+            "similarity": 1
+          },
+          {
+            "predicted": "Earthquake",
+            "expected": "Earthquake",
+            "similarity": 1
+          },
+          {
+            "predicted": "Forgotten Cave",
+            "expected": "Forgotten Cave",
             "similarity": 1
           },
           {
@@ -672,13 +628,28 @@
             "similarity": 1
           },
           {
-            "predicted": "Wooded Foothills",
-            "expected": "Wooded Foothills",
+            "predicted": "Survival of the Fittest",
+            "expected": "Survival of the Fittest",
+            "similarity": 1
+          },
+          {
+            "predicted": "Hermit Druid",
+            "expected": "Hermit Druid",
             "similarity": 1
           },
           {
             "predicted": "Siege-Gang Commander",
             "expected": "Siege-Gang Commander",
+            "similarity": 1
+          },
+          {
+            "predicted": "Wooded Foothills",
+            "expected": "Wooded Foothills",
+            "similarity": 1
+          },
+          {
+            "predicted": "Seal of Fire",
+            "expected": "Seal of Fire",
             "similarity": 1
           }
         ]
@@ -687,16 +658,16 @@
       "orientation_calls": 0,
       "extraction_calls": 3,
       "usage": {
-        "input_tokens": 14963,
-        "output_tokens": 6021,
-        "total_tokens": 20984
+        "input_tokens": 15016,
+        "output_tokens": 5452,
+        "total_tokens": 20468
       },
       "cost_usd": {
-        "input_usd": 0.00374075,
-        "output_usd": 0.012042,
-        "total_usd": 0.01578275
+        "input_usd": 0.003754,
+        "output_usd": 0.010904,
+        "total_usd": 0.014658000000000001
       },
-      "duration_ms": 89129,
+      "duration_ms": 82138,
       "job_status": "done"
     },
     {
@@ -716,20 +687,20 @@
         "Hidetsugu, Devouring Chaos",
         "Dragonlord Ojutai",
         "Plains",
-        "Thundering Falls",
-        "Great Hall of the Citadel",
         "Watery Grave",
         "Mana Leak",
-        "Consider",
         "Lose Focus",
         "Get Lost",
+        "Storm's Wrath",
         "Tale's End",
+        "Consider",
+        "Great Hall of the Citadel",
+        "Rivendell",
+        "Thundering Falls",
         "Sheoldred's Edict",
         "Oath of Chandra",
-        "Nahiri, the Harbinger",
-        "Storm's Wrath",
         "Wrath of God",
-        "Rivendell"
+        "Nahiri, the Harbinger"
       ],
       "metrics": {
         "predicted_count": 23,
@@ -800,16 +771,6 @@
             "similarity": 1
           },
           {
-            "predicted": "Thundering Falls",
-            "expected": "Thundering Falls",
-            "similarity": 1
-          },
-          {
-            "predicted": "Great Hall of the Citadel",
-            "expected": "Great Hall of the Citadel",
-            "similarity": 1
-          },
-          {
             "predicted": "Watery Grave",
             "expected": "Watery Grave",
             "similarity": 1
@@ -817,11 +778,6 @@
           {
             "predicted": "Mana Leak",
             "expected": "Mana Leak",
-            "similarity": 1
-          },
-          {
-            "predicted": "Consider",
-            "expected": "Consider",
             "similarity": 1
           },
           {
@@ -835,8 +791,33 @@
             "similarity": 1
           },
           {
+            "predicted": "Storm's Wrath",
+            "expected": "Storm's Wrath",
+            "similarity": 1
+          },
+          {
             "predicted": "Tale's End",
             "expected": "Tale's End",
+            "similarity": 1
+          },
+          {
+            "predicted": "Consider",
+            "expected": "Consider",
+            "similarity": 1
+          },
+          {
+            "predicted": "Great Hall of the Citadel",
+            "expected": "Great Hall of the Citadel",
+            "similarity": 1
+          },
+          {
+            "predicted": "Rivendell",
+            "expected": "Rivendell",
+            "similarity": 1
+          },
+          {
+            "predicted": "Thundering Falls",
+            "expected": "Thundering Falls",
             "similarity": 1
           },
           {
@@ -850,23 +831,13 @@
             "similarity": 1
           },
           {
-            "predicted": "Nahiri, the Harbinger",
-            "expected": "Nahiri, the Harbinger",
-            "similarity": 1
-          },
-          {
-            "predicted": "Storm's Wrath",
-            "expected": "Storm's Wrath",
-            "similarity": 1
-          },
-          {
             "predicted": "Wrath of God",
             "expected": "Wrath of God",
             "similarity": 1
           },
           {
-            "predicted": "Rivendell",
-            "expected": "Rivendell",
+            "predicted": "Nahiri, the Harbinger",
+            "expected": "Nahiri, the Harbinger",
             "similarity": 1
           }
         ]
@@ -875,16 +846,16 @@
       "orientation_calls": 0,
       "extraction_calls": 3,
       "usage": {
-        "input_tokens": 15634,
-        "output_tokens": 4775,
-        "total_tokens": 20409
+        "input_tokens": 15666,
+        "output_tokens": 4817,
+        "total_tokens": 20483
       },
       "cost_usd": {
-        "input_usd": 0.0039085,
-        "output_usd": 0.00955,
-        "total_usd": 0.013458499999999998
+        "input_usd": 0.0039165,
+        "output_usd": 0.009634,
+        "total_usd": 0.0135505
       },
-      "duration_ms": 75377,
+      "duration_ms": 102416,
       "job_status": "done"
     },
     {
@@ -902,9 +873,7 @@
         "Inti, Seneschal of the Sun",
         "Infernal Grasp",
         "Dauthi Voidwalker",
-        "Sheoldred's Edict",
         "Recurring Nightmare",
-        "Nethergoyf",
         "Liliana of the Veil",
         "Barrowgoyf",
         "Exsanguinator Cavalry",
@@ -915,27 +884,26 @@
         "Triplicate Titan",
         "Raucous Theater",
         "Shattered Landscape",
-        "Blackcleave Cliffs",
-        "Arid Mesa",
         "Underground Mortuary",
         "Badlands",
+        "Blackcleave Cliffs",
+        "Arid Mesa",
         "Twisted Landscape",
-        "Bayou"
+        "Bayou",
+        "Sheoldred's Edict"
       ],
       "metrics": {
-        "predicted_count": 28,
+        "predicted_count": 27,
         "expected_count": 32,
-        "count_error": -4,
+        "count_error": -5,
         "exact_set_match": false,
         "true_positives": 27,
-        "false_positives": 1,
+        "false_positives": 0,
         "false_negatives": 5,
-        "precision": 0.9642857142857143,
+        "precision": 1,
         "recall": 0.84375,
-        "f1": 0.8999999999999999,
-        "false_positive_names": [
-          "Nethergoyf"
-        ],
+        "f1": 0.9152542372881356,
+        "false_positive_names": [],
         "false_negative_names": [
           "Bloodghast",
           "Dakmor Salvage",
@@ -987,11 +955,6 @@
           {
             "predicted": "Dauthi Voidwalker",
             "expected": "Dauthi Voidwalker",
-            "similarity": 1
-          },
-          {
-            "predicted": "Sheoldred's Edict",
-            "expected": "Sheoldred's Edict",
             "similarity": 1
           },
           {
@@ -1050,16 +1013,6 @@
             "similarity": 1
           },
           {
-            "predicted": "Blackcleave Cliffs",
-            "expected": "Blackcleave Cliffs",
-            "similarity": 1
-          },
-          {
-            "predicted": "Arid Mesa",
-            "expected": "Arid Mesa",
-            "similarity": 1
-          },
-          {
             "predicted": "Underground Mortuary",
             "expected": "Underground Mortuary",
             "similarity": 1
@@ -1067,6 +1020,16 @@
           {
             "predicted": "Badlands",
             "expected": "Badlands",
+            "similarity": 1
+          },
+          {
+            "predicted": "Blackcleave Cliffs",
+            "expected": "Blackcleave Cliffs",
+            "similarity": 1
+          },
+          {
+            "predicted": "Arid Mesa",
+            "expected": "Arid Mesa",
             "similarity": 1
           },
           {
@@ -1078,6 +1041,11 @@
             "predicted": "Bayou",
             "expected": "Bayou",
             "similarity": 1
+          },
+          {
+            "predicted": "Sheoldred's Edict",
+            "expected": "Sheoldred's Edict",
+            "similarity": 1
           }
         ]
       },
@@ -1085,16 +1053,16 @@
       "orientation_calls": 0,
       "extraction_calls": 2,
       "usage": {
-        "input_tokens": 11783,
-        "output_tokens": 5148,
-        "total_tokens": 16931
+        "input_tokens": 11831,
+        "output_tokens": 4530,
+        "total_tokens": 16361
       },
       "cost_usd": {
-        "input_usd": 0.00294575,
-        "output_usd": 0.010296,
-        "total_usd": 0.01324175
+        "input_usd": 0.00295775,
+        "output_usd": 0.00906,
+        "total_usd": 0.01201775
       },
-      "duration_ms": 76661,
+      "duration_ms": 67127,
       "job_status": "done"
     },
     {
@@ -1104,10 +1072,6 @@
       "cube_id": "proxybacon",
       "predicted_card_names": [
         "Deathrite Shaman",
-        "Thoughtseize",
-        "Imperial Seal",
-        "Lavaspur Boots",
-        "Aether Spellbomb",
         "Malcolm, Alluring Scoundrel",
         "Tersa Lightshatter",
         "Pyrogoyf",
@@ -1116,21 +1080,25 @@
         "Alpha Deathclaw",
         "Metamorphosis Fanatic",
         "Sin, Spira's Punishment",
+        "Thoughtseize",
+        "Imperial Seal",
+        "Lavaspur Boots",
+        "Aether Spellbomb",
         "Yggdrasil, Rebirth Engine",
         "Toxic Deluge",
-        "Collective Brutality",
         "Occult Epiphany",
         "Animate Dead",
+        "Collective Brutality",
         "Time Walk",
         "Underground Mortuary",
-        "Xander's Lounge",
         "Misty Rainforest",
         "Bloodstained Mire",
         "Urza's Saga",
         "Blackcleave Cliffs",
         "Spara's Headquarters",
         "Celestial Colonnade",
-        "Breeding Pool"
+        "Breeding Pool",
+        "Xander's Lounge"
       ],
       "metrics": {
         "predicted_count": 28,
@@ -1154,26 +1122,6 @@
           {
             "predicted": "Deathrite Shaman",
             "expected": "Deathrite Shaman",
-            "similarity": 1
-          },
-          {
-            "predicted": "Thoughtseize",
-            "expected": "Thoughtseize",
-            "similarity": 1
-          },
-          {
-            "predicted": "Imperial Seal",
-            "expected": "Imperial Seal",
-            "similarity": 1
-          },
-          {
-            "predicted": "Lavaspur Boots",
-            "expected": "Lavaspur Boots",
-            "similarity": 1
-          },
-          {
-            "predicted": "Aether Spellbomb",
-            "expected": "Aether Spellbomb",
             "similarity": 1
           },
           {
@@ -1217,6 +1165,26 @@
             "similarity": 1
           },
           {
+            "predicted": "Thoughtseize",
+            "expected": "Thoughtseize",
+            "similarity": 1
+          },
+          {
+            "predicted": "Imperial Seal",
+            "expected": "Imperial Seal",
+            "similarity": 1
+          },
+          {
+            "predicted": "Lavaspur Boots",
+            "expected": "Lavaspur Boots",
+            "similarity": 1
+          },
+          {
+            "predicted": "Aether Spellbomb",
+            "expected": "Aether Spellbomb",
+            "similarity": 1
+          },
+          {
             "predicted": "Yggdrasil, Rebirth Engine",
             "expected": "Yggdrasil, Rebirth Engine",
             "similarity": 1
@@ -1224,11 +1192,6 @@
           {
             "predicted": "Toxic Deluge",
             "expected": "Toxic Deluge",
-            "similarity": 1
-          },
-          {
-            "predicted": "Collective Brutality",
-            "expected": "Collective Brutality",
             "similarity": 1
           },
           {
@@ -1242,6 +1205,11 @@
             "similarity": 1
           },
           {
+            "predicted": "Collective Brutality",
+            "expected": "Collective Brutality",
+            "similarity": 1
+          },
+          {
             "predicted": "Time Walk",
             "expected": "Time Walk",
             "similarity": 1
@@ -1249,11 +1217,6 @@
           {
             "predicted": "Underground Mortuary",
             "expected": "Underground Mortuary",
-            "similarity": 1
-          },
-          {
-            "predicted": "Xander's Lounge",
-            "expected": "Xander's Lounge",
             "similarity": 1
           },
           {
@@ -1290,6 +1253,11 @@
             "predicted": "Breeding Pool",
             "expected": "Breeding Pool",
             "similarity": 1
+          },
+          {
+            "predicted": "Xander's Lounge",
+            "expected": "Xander's Lounge",
+            "similarity": 1
           }
         ]
       },
@@ -1297,16 +1265,16 @@
       "orientation_calls": 0,
       "extraction_calls": 2,
       "usage": {
-        "input_tokens": 11646,
-        "output_tokens": 4325,
-        "total_tokens": 15971
+        "input_tokens": 11701,
+        "output_tokens": 4252,
+        "total_tokens": 15953
       },
       "cost_usd": {
-        "input_usd": 0.0023067,
-        "output_usd": 0.00865,
-        "total_usd": 0.0109567
+        "input_usd": 0.00209005,
+        "output_usd": 0.008504,
+        "total_usd": 0.010594049999999999
       },
-      "duration_ms": 59713,
+      "duration_ms": 64031,
       "job_status": "done"
     },
     {
@@ -1320,14 +1288,19 @@
         "Immolation",
         "Preordain",
         "Witness Protection",
+        "Botanical Sanctum",
+        "Seachrome Coast",
+        "Adarkar Wastes",
+        "Hallowed Fountain",
+        "Watery Grave",
         "Medomai's Prophecy",
         "Scholar of New Horizons",
         "The Modern Age",
         "Cathartic Reunion",
         "Resurgent Belief",
         "Rediscover the Way",
-        "Savor the Moment",
         "Awaken the Honored Dead",
+        "Savor the Moment",
         "Bello, Bard of the Brambles",
         "The Elder Dragon War",
         "Summon: Esper Valigarmanda",
@@ -1340,11 +1313,6 @@
         "Yorion, Sky Nomad",
         "Roar of Endless Song",
         "The Kami War",
-        "Botanical Sanctum",
-        "Seachrome Coast",
-        "Adarkar Wastes",
-        "Hallowed Fountain",
-        "Watery Grave",
         "Valgavoth's Lair",
         "Vivid Meadow",
         "Vivid Crag",
@@ -1384,6 +1352,26 @@
             "similarity": 1
           },
           {
+            "predicted": "Botanical Sanctum",
+            "expected": "Botanical Sanctum",
+            "similarity": 1
+          },
+          {
+            "predicted": "Seachrome Coast",
+            "expected": "Seachrome Coast",
+            "similarity": 1
+          },
+          {
+            "predicted": "Hallowed Fountain",
+            "expected": "Hallowed Fountain",
+            "similarity": 1
+          },
+          {
+            "predicted": "Watery Grave",
+            "expected": "Watery Grave",
+            "similarity": 1
+          },
+          {
             "predicted": "Medomai's Prophecy",
             "expected": "Medomai's Prophecy",
             "similarity": 1
@@ -1414,13 +1402,13 @@
             "similarity": 1
           },
           {
-            "predicted": "Savor the Moment",
-            "expected": "Savor the Moment",
+            "predicted": "Awaken the Honored Dead",
+            "expected": "Awaken the Honored Dead",
             "similarity": 1
           },
           {
-            "predicted": "Awaken the Honored Dead",
-            "expected": "Awaken the Honored Dead",
+            "predicted": "Savor the Moment",
+            "expected": "Savor the Moment",
             "similarity": 1
           },
           {
@@ -1484,26 +1472,6 @@
             "similarity": 1
           },
           {
-            "predicted": "Botanical Sanctum",
-            "expected": "Botanical Sanctum",
-            "similarity": 1
-          },
-          {
-            "predicted": "Seachrome Coast",
-            "expected": "Seachrome Coast",
-            "similarity": 1
-          },
-          {
-            "predicted": "Hallowed Fountain",
-            "expected": "Hallowed Fountain",
-            "similarity": 1
-          },
-          {
-            "predicted": "Watery Grave",
-            "expected": "Watery Grave",
-            "similarity": 1
-          },
-          {
             "predicted": "Valgavoth's Lair",
             "expected": "Valgavoth's Lair",
             "similarity": 1
@@ -1534,16 +1502,16 @@
       "orientation_calls": 0,
       "extraction_calls": 3,
       "usage": {
-        "input_tokens": 15330,
-        "output_tokens": 4453,
-        "total_tokens": 19783
+        "input_tokens": 15403,
+        "output_tokens": 4505,
+        "total_tokens": 19908
       },
       "cost_usd": {
-        "input_usd": 0.0038325,
-        "output_usd": 0.008906,
-        "total_usd": 0.0127385
+        "input_usd": 0.00385075,
+        "output_usd": 0.00901,
+        "total_usd": 0.01286075
       },
-      "duration_ms": 68866,
+      "duration_ms": 71286,
       "job_status": "done"
     },
     {
@@ -1555,6 +1523,7 @@
       ],
       "cube_id": "SagasCube",
       "predicted_card_names": [
+        "Hard Evidence",
         "Troublemaker Ouphe",
         "Naturalize",
         "Candy Grapple",
@@ -1562,10 +1531,11 @@
         "O'aka, Traveling Merchant",
         "Experimental Augury",
         "Medomai's Prophecy",
+        "Ballad of the Black Flag",
         "Awaken the Honored Dead",
+        "Vengeful Rebel",
         "Squirming Emergence",
         "City of Death",
-        "Ballad of the Black Flag",
         "Binding the Old Gods",
         "Mythos of Illuna",
         "Chisei, Heart of Oceans",
@@ -1573,6 +1543,7 @@
         "Sentinel of the Pearl Trident",
         "Kiora Bests the Sea God",
         "Island",
+        "Swamp",
         "Yavimaya Coast",
         "Darkslick Shores",
         "Botanical Sanctum",
@@ -1580,21 +1551,19 @@
         "Blooming Marsh",
         "Vivid Marsh",
         "Valgavoth's Lair",
-        "Vengeful Rebel",
-        "Hard Evidence",
         "Greta, Sweettooth Scourge"
       ],
       "metrics": {
-        "predicted_count": 28,
+        "predicted_count": 29,
         "expected_count": 39,
-        "count_error": -11,
+        "count_error": -10,
         "exact_set_match": false,
-        "true_positives": 27,
+        "true_positives": 28,
         "false_positives": 1,
-        "false_negatives": 5,
-        "precision": 0.9642857142857143,
-        "recall": 0.84375,
-        "f1": 0.8999999999999999,
+        "false_negatives": 4,
+        "precision": 0.9655172413793104,
+        "recall": 0.875,
+        "f1": 0.9180327868852458,
         "false_positive_names": [
           "Greta, Sweettooth Scourge"
         ],
@@ -1602,10 +1571,14 @@
           "Stalactite Stalker",
           "Green Slime",
           "Murerous Cut",
-          "Swamp",
           "Forest"
         ],
         "matches": [
+          {
+            "predicted": "Hard Evidence",
+            "expected": "Hard Evidence",
+            "similarity": 1
+          },
           {
             "predicted": "Troublemaker Ouphe",
             "expected": "Troublemaker Ouphe",
@@ -1642,8 +1615,18 @@
             "similarity": 1
           },
           {
+            "predicted": "Ballad of the Black Flag",
+            "expected": "Ballad of the Black Flag",
+            "similarity": 1
+          },
+          {
             "predicted": "Awaken the Honored Dead",
             "expected": "Awaken the Honored Dead",
+            "similarity": 1
+          },
+          {
+            "predicted": "Vengeful Rebel",
+            "expected": "Vengeful Rebel",
             "similarity": 1
           },
           {
@@ -1654,11 +1637,6 @@
           {
             "predicted": "City of Death",
             "expected": "City of Death",
-            "similarity": 1
-          },
-          {
-            "predicted": "Ballad of the Black Flag",
-            "expected": "Ballad of the Black Flag",
             "similarity": 1
           },
           {
@@ -1697,6 +1675,11 @@
             "similarity": 1
           },
           {
+            "predicted": "Swamp",
+            "expected": "Swamp",
+            "similarity": 1
+          },
+          {
             "predicted": "Yavimaya Coast",
             "expected": "Yavimaya Coast",
             "similarity": 1
@@ -1730,16 +1713,6 @@
             "predicted": "Valgavoth's Lair",
             "expected": "Valgavoth's Lair",
             "similarity": 1
-          },
-          {
-            "predicted": "Vengeful Rebel",
-            "expected": "Vengeful Rebel",
-            "similarity": 1
-          },
-          {
-            "predicted": "Hard Evidence",
-            "expected": "Hard Evidence",
-            "similarity": 1
           }
         ]
       },
@@ -1747,16 +1720,16 @@
       "orientation_calls": 0,
       "extraction_calls": 3,
       "usage": {
-        "input_tokens": 15531,
-        "output_tokens": 6398,
-        "total_tokens": 21929
+        "input_tokens": 15618,
+        "output_tokens": 5695,
+        "total_tokens": 21313
       },
       "cost_usd": {
-        "input_usd": 0.0035083500000000004,
-        "output_usd": 0.012796,
-        "total_usd": 0.016304350000000002
+        "input_usd": 0.0035301,
+        "output_usd": 0.01139,
+        "total_usd": 0.0149201
       },
-      "duration_ms": 115107,
+      "duration_ms": 86679,
       "job_status": "done"
     }
   ]
