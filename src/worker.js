@@ -6,6 +6,11 @@
  */
 
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import { ANALYTICS_EXCLUDED_CARD_NAMES as ANALYTICS_EXCLUDED_CARD_NAMES_LIST } from "./shared/analyticsExcludedCardNames.js";
+import {
+  normalizeStagingImage,
+  parseStagingImageConfig,
+} from "./pipeline/images/normalizeStagingImage.ts";
 
 export default {
   async fetch(request, env, ctx) {
@@ -1415,9 +1420,8 @@ async function handleTriggerHedronSync(cubeId, env, ctx) {
     var result = await syncHedronCube(env, id, ctx);
     return jsonResponse(result || { ok: true, cube_id: id, decks_queued: 0 }, 200);
   } catch (e) {
-    var msg = e && e.message ? String(e.message) : String(e);
-    console.error("hedron manual sync handler", msg, e && e.stack ? e.stack : "");
-    return jsonResponse({ error: "Failed to start Hedron sync", detail: msg.slice(0, 200) }, 500);
+    console.error("hedron manual sync handler", e);
+    return jsonResponse({ error: "Failed to start Hedron sync" }, 500);
   }
 }
 
@@ -1744,18 +1748,7 @@ async function handlePutDeckCards(deckIdStr, request, env) {
 // ============================================================
 
 /** Oracle names omitted from charts and cube-wide analytics (deck modal still lists full deck). */
-var ANALYTICS_EXCLUDED_CARD_NAMES = new Set([
-  "Island",
-  "Plains",
-  "Mountain",
-  "Swamp",
-  "Forest",
-  "Snow-Covered Island",
-  "Snow-Covered Plains",
-  "Snow-Covered Mountain",
-  "Snow-Covered Swamp",
-  "Snow-Covered Forest",
-]);
+var ANALYTICS_EXCLUDED_CARD_NAMES = new Set(ANALYTICS_EXCLUDED_CARD_NAMES_LIST);
 
 function isExcludedFromAnalyticsCardName(name) {
   return ANALYTICS_EXCLUDED_CARD_NAMES.has(String(name || "").trim());
@@ -2428,9 +2421,25 @@ async function handleUpload(request, env) {
     };
     var ext = extMap[imageFile.type] || "jpg";
 
-    var imageKey = prefix + "/image." + ext;
-    await env.BUCKET.put(imageKey, imageFile.stream(), {
-      httpMetadata: { contentType: imageFile.type },
+    var stagingOpts = parseStagingImageConfig(env);
+    var rawBytes = new Uint8Array(await imageFile.arrayBuffer());
+    var normalized;
+    try {
+      normalized = await normalizeStagingImage(env.IMAGES, rawBytes, stagingOpts);
+    } catch (normErr) {
+      console.error("Upload staging normalize failed:", normErr);
+      return jsonResponse(
+        {
+          success: false,
+          errors: ["Could not process image. Try a smaller photo or a different format."],
+        },
+        500
+      );
+    }
+
+    var imageKey = prefix + "/image.jpg";
+    await env.BUCKET.put(imageKey, normalized.bytes, {
+      httpMetadata: { contentType: "image/jpeg" },
       customMetadata: { pilotName: pilotName, cubeId: cubeId },
     });
 
@@ -2445,7 +2454,18 @@ async function handleUpload(request, env) {
       record_logged: now.toISOString(),
       image_key: imageKey,
       original_filename: imageFile.name,
+      original_content_type: imageFile.type,
+      original_ext: ext,
+      uploaded_bytes: rawBytes.byteLength,
+      staging_normalized: true,
+      staging_max_side: stagingOpts.maxSide,
+      staging_width: normalized.width,
+      staging_height: normalized.height,
     };
+    if (normalized.originalWidth != null) {
+      metadata.original_width = normalized.originalWidth;
+      metadata.original_height = normalized.originalHeight;
+    }
 
     var metadataKey = prefix + "/metadata.json";
     await env.BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
@@ -2647,9 +2667,31 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+function sanitizeJsonResponseBody(body) {
+  if (body === null || body === undefined) return body;
+  if (typeof body !== "object") return body;
+  if (body instanceof Error) {
+    return { error: "Internal error" };
+  }
+  if (Array.isArray(body)) {
+    var arr = [];
+    for (var ai = 0; ai < body.length; ai++) {
+      arr.push(sanitizeJsonResponseBody(body[ai]));
+    }
+    return arr;
+  }
+  var out = {};
+  for (var k in body) {
+    if (!Object.prototype.hasOwnProperty.call(body, k)) continue;
+    if (k === "stack" || k === "stackTrace") continue;
+    out[k] = sanitizeJsonResponseBody(body[k]);
+  }
+  return out;
+}
+
 function jsonResponse(body, status) {
   if (status === undefined) status = 200;
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify(sanitizeJsonResponseBody(body)), {
     status: status,
     headers: {
       "Content-Type": "application/json",

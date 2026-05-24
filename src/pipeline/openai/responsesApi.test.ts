@@ -63,9 +63,10 @@ describe("callOpenAiVisionJsonSchema", () => {
     };
     const fetchImpl = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as {
-        input: { content: { image_url?: string }[] }[];
+        input: { role: string; content: { image_url?: string }[] }[];
       };
-      const img = body.input[0]?.content[1]?.image_url;
+      const userMsg = body.input.find((m) => m.role === "user");
+      const img = userMsg?.content[1]?.image_url;
       expect(img).toBe("https://cdn.example.com/tmp/vision/u1/orient.jpg");
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -99,9 +100,10 @@ describe("callOpenAiVisionJsonSchema", () => {
     };
     const fetchImpl = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as {
-        input: { content: { image_url?: string }[] }[];
+        input: { role: string; content: { image_url?: string }[] }[];
       };
-      const img = body.input[0]?.content[1]?.image_url;
+      const userMsg = body.input.find((m) => m.role === "user");
+      const img = userMsg?.content[1]?.image_url;
       expect(img).toMatch(/^data:image\/jpeg;base64,/);
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -158,5 +160,46 @@ describe("callOpenAiVisionJsonSchema", () => {
     expect(log.mock.calls.some((c) => c[0] === "openai_model_output")).toBe(true);
     expect(log.mock.calls.some((c) => c[0] === "openai_vision_request")).toBe(false);
     log.mockRestore();
+  });
+
+  it("sends developer message, user image, and prompt_cache_key", async () => {
+    const payload = {
+      output: [
+        {
+          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        prompt_cache_key?: string;
+        input: { role: string; content: { type: string; text?: string }[] }[];
+      };
+      expect(body.prompt_cache_key).toBe("cube:test-cube");
+      const dev = body.input.find((m) => m.role === "developer");
+      expect(dev?.content[0]?.text).toContain("Magic");
+      const user = body.input.find((m) => m.role === "user");
+      expect(user?.content[0]?.text).toBe("orient this deck");
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gpt-test",
+        maxOutputTokens: 100,
+        developerText: "Analyze Magic cards.",
+        userText: "orient this deck",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient.jpg",
+        promptCacheKey: "cube:test-cube",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+      OrientationResultSchema
+    );
   });
 });

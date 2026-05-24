@@ -1,0 +1,10 @@
+{
+  "description": "Replace with a short note about this photo (lighting, card count, etc.).",
+  "cube_id": "optional-cubecobra-cube-id",
+  "expected_card_names": [
+    "Lightning Bolt",
+    "Counterspell"
+  ],
+  "expected_count": 2,
+  "tags": ["template"]
+}

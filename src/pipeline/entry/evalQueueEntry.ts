@@ -1,191 +1,447 @@
 import { ModelOutputInvalidError } from "../openai/responsesApi";
+
 import { configureScryfallGlobalThrottle } from "../scryfall/globalThrottle";
+
 import { parseEvalMaxConsumers } from "../orchestrator/evalConsumerScale";
+
 import {
+
   buildDlqError,
+
   buildRetriesExhaustedError,
+
   failEvalJobFromQueue,
+
   uploadIdFromEvalTaskBody,
+
 } from "../orchestrator/failEvalJobFromQueue";
+
 import {
-  isEvalDlqQueue,
+
   isEvalRetriesExhausted,
+
   parseEvalMaxRetries,
+
+  isEvalDlqQueue,
+
 } from "../orchestrator/evalQueueRetries";
-import { PermanentEvalError, runEvalTask, type RunEvalTaskEnv } from "../orchestrator/runEvalTask";
+
+import { shouldRunExtractPhase } from "../orchestrator/evalQueueRouting";
+
+import { PermanentEvalError, runExtractTask, runOrientTask, type RunEvalTaskEnv } from "../orchestrator/runEvalTask";
+
 import { evalErrorFields, formatEvalError } from "../util/formatEvalError";
+
+import { resetEvalUsageReporterGlobal } from "../evalUsage/evalUsageReport";
+import {
+
+  logEvalConsumer,
+
+  logEvalConsumerError,
+
+  resetEvalConsumerLogGlobals,
+
+  runWithEvalConsumerLog,
+
+} from "../util/evalConsumerLog";
+
+import { clearActiveEvalBufferEstimates } from "../util/evalMemoryProbe";
 import { parseEvalTaskBody } from "../util/queueMessageBody";
 
+/** Per-message cleanup so module globals never retain deck state across invocations. */
+function resetEvalInvocationGlobals(): void {
+  resetEvalConsumerLogGlobals();
+  resetEvalUsageReporterGlobal();
+  clearActiveEvalBufferEstimates();
+}
+
 type QueueMessage = {
+
   id: string;
+
   body: unknown;
+
   ack(): void;
+
   retry(opts: { delaySeconds: number }): void;
+
   attempts?: number;
+
 };
 
+
+
 async function processEvalDlqMessage(
+
   message: QueueMessage,
+
   env: RunEvalTaskEnv,
+
   queueName: string
+
 ): Promise<void> {
+
   const taskBody = parseEvalTaskBody(message.body);
+
   const uploadId = uploadIdFromEvalTaskBody(taskBody ?? message.body);
+
   const error = buildDlqError(queueName, message.attempts, message.id);
-  console.error("eval_consumer_dlq", {
+
+  logEvalConsumerError("dlq_message", {
+
     message_id: message.id,
+
     upload_id: uploadId,
+
     queue: queueName,
-    attempts: message.attempts,
+
+    attempts: message.attempts ?? null,
+
     error,
+
   });
+
   await failEvalJobFromQueue(env.cubewizard_db, uploadId, error);
+
   try {
+
     message.ack();
+
   } catch (ackErr) {
-    console.error("eval_consumer_dlq_ack_failed", {
+
+    logEvalConsumerError("dlq_ack_failed", {
+
       message_id: message.id,
+
       ...evalErrorFields(ackErr),
+
     });
+
   }
+
 }
+
+
 
 async function processEvalQueueMessage(
+
   message: QueueMessage,
+
   env: RunEvalTaskEnv,
-  maxRetries: number
+
+  maxRetries: number,
+
+  queueName: string
+
 ): Promise<void> {
+
   const taskBody = parseEvalTaskBody(message.body);
+
   if (!taskBody) {
+
     throw new PermanentEvalError("invalid_task_request: queue body must be a JSON object");
+
   }
+
   const uploadId = uploadIdFromEvalTaskBody(taskBody);
+
   const cubeId = typeof taskBody.cube_id === "string" ? taskBody.cube_id : undefined;
-  console.log("eval_consumer received", {
-    message_id: message.id,
-    upload_id: uploadId,
-    cube_id: cubeId,
-    attempts: message.attempts,
-  });
+
+  const phase = shouldRunExtractPhase(queueName, taskBody) ? "extract" : "orient";
+
+  resetEvalInvocationGlobals();
   try {
-    await runEvalTask(taskBody, env);
-    console.log("eval_consumer finished", {
+  await runWithEvalConsumerLog(env, uploadId, async () => {
+
+    logEvalConsumer("queue_job_start", {
+
       message_id: message.id,
+
       upload_id: uploadId,
-      cube_id: cubeId,
-    });
-    message.ack();
-  } catch (e) {
-    const err = evalErrorFields(e);
-    console.error("eval_consumer_error", {
-      message_id: message.id,
-      upload_id: uploadId,
-      cube_id: cubeId,
-      attempts: message.attempts,
-      max_retries: maxRetries,
-      ...err,
+
+      cube_id: cubeId ?? null,
+
+      attempts: message.attempts ?? null,
+
+      phase,
+
+      queue: queueName,
+
     });
 
-    if (e instanceof PermanentEvalError || e instanceof ModelOutputInvalidError) {
-      await failEvalJobFromQueue(env.cubewizard_db, uploadId, formatEvalError(e));
-      try {
-        message.ack();
-      } catch (ackErr) {
-        console.error("eval_consumer_ack_failed", {
-          message_id: message.id,
-          ...evalErrorFields(ackErr),
-        });
-      }
-      return;
-    }
 
-    if (isEvalRetriesExhausted(message.attempts, maxRetries)) {
-      const failMsg = buildRetriesExhaustedError(message.attempts, maxRetries, err.message);
-      await failEvalJobFromQueue(env.cubewizard_db, uploadId, failMsg);
-      console.error("eval_consumer_retries_exhausted", {
-        message_id: message.id,
-        upload_id: uploadId,
-        error: failMsg,
-      });
-      try {
-        message.ack();
-      } catch (ackErr) {
-        console.error("eval_consumer_ack_failed", {
-          message_id: message.id,
-          ...evalErrorFields(ackErr),
-        });
-      }
-      return;
-    }
 
-    const delay = Math.min(300, 30 * Math.max(1, message.attempts || 1));
     try {
-      message.retry({ delaySeconds: delay });
-      console.log("eval_consumer_retry_scheduled", {
-        message_id: message.id,
-        upload_id: uploadId,
-        delay_seconds: delay,
-        error: err.message,
-      });
-    } catch (retryErr) {
-      console.error("eval_consumer_retry_failed", {
-        message_id: message.id,
-        upload_id: uploadId,
-        ...evalErrorFields(retryErr),
-        original_error: err.message,
-      });
-      const failMsg = buildRetriesExhaustedError(
-        message.attempts,
-        maxRetries,
-        `retry_failed: ${err.message}`
-      );
-      await failEvalJobFromQueue(env.cubewizard_db, uploadId, failMsg);
-      try {
-        message.ack();
-      } catch {
-        throw e;
+
+      if (phase === "extract") {
+
+        await runExtractTask(taskBody, env);
+
+      } else {
+
+        await runOrientTask(taskBody, env);
+
       }
+
+      logEvalConsumer("queue_job_done", {
+
+        message_id: message.id,
+
+        upload_id: uploadId,
+
+        cube_id: cubeId ?? null,
+
+        phase,
+
+      });
+
+      message.ack();
+
+    } catch (e) {
+
+      const err = evalErrorFields(e);
+
+      logEvalConsumerError("queue_job_failed", {
+
+        message_id: message.id,
+
+        upload_id: uploadId,
+
+        cube_id: cubeId ?? null,
+
+        attempts: message.attempts ?? null,
+
+        max_retries: maxRetries,
+
+        phase,
+
+        ...err,
+
+      });
+
+
+
+      if (e instanceof PermanentEvalError || e instanceof ModelOutputInvalidError) {
+
+        await failEvalJobFromQueue(env.cubewizard_db, uploadId, formatEvalError(e));
+
+        try {
+
+          message.ack();
+
+        } catch (ackErr) {
+
+          logEvalConsumerError("ack_failed", {
+
+            message_id: message.id,
+
+            ...evalErrorFields(ackErr),
+
+          });
+
+        }
+
+        return;
+
+      }
+
+
+
+      if (isEvalRetriesExhausted(message.attempts, maxRetries)) {
+
+        const failMsg = buildRetriesExhaustedError(message.attempts, maxRetries, err.message);
+
+        await failEvalJobFromQueue(env.cubewizard_db, uploadId, failMsg);
+
+        logEvalConsumerError("retries_exhausted", {
+
+          message_id: message.id,
+
+          upload_id: uploadId,
+
+          error: failMsg,
+
+          phase,
+
+        });
+
+        try {
+
+          message.ack();
+
+        } catch (ackErr) {
+
+          logEvalConsumerError("ack_failed", {
+
+            message_id: message.id,
+
+            ...evalErrorFields(ackErr),
+
+          });
+
+        }
+
+        return;
+
+      }
+
+
+
+      const delay = Math.min(300, 30 * Math.max(1, message.attempts || 1));
+
+      try {
+
+        message.retry({ delaySeconds: delay });
+
+        logEvalConsumer("queue_retry_scheduled", {
+
+          message_id: message.id,
+
+          upload_id: uploadId,
+
+          delay_seconds: delay,
+
+          error: err.message,
+
+          phase,
+
+        });
+
+      } catch (retryErr) {
+
+        logEvalConsumerError("retry_failed", {
+
+          message_id: message.id,
+
+          upload_id: uploadId,
+
+          ...evalErrorFields(retryErr),
+
+          original_error: err.message,
+
+        });
+
+        const failMsg = buildRetriesExhaustedError(
+
+          message.attempts,
+
+          maxRetries,
+
+          `retry_failed: ${err.message}`
+
+        );
+
+        await failEvalJobFromQueue(env.cubewizard_db, uploadId, failMsg);
+
+        try {
+
+          message.ack();
+
+        } catch {
+
+          throw e;
+
+        }
+
+      }
+
     }
+
+  });
+
+  } finally {
+    resetEvalInvocationGlobals();
   }
 }
 
+
+
 /**
- * Cloudflare Queue consumer: one deck per invocation on the main queue; DLQ consumer marks
- * `processing_jobs` failed when messages land on `*-dlq` after retries are exhausted.
+
+ * Cloudflare Queue consumer: orient queue → `runOrientTask`; extract queue → `runExtractTask`.
+
+ * One deck per message (`max_batch_size: 1`).
+
  */
+
 export default {
+
   async queue(
+
     batch: { queue: string; messages: QueueMessage[] },
+
     env: RunEvalTaskEnv
+
   ): Promise<void> {
+
     try {
+
       const queueName = batch.queue ?? "";
+
       const fromDlq = isEvalDlqQueue(queueName);
 
+
+
       if (!fromDlq) {
+
         const maxConsumers = parseEvalMaxConsumers(env.CW_EVAL_MAX_CONSUMERS);
+
         configureScryfallGlobalThrottle(maxConsumers);
+
       }
+
+
 
       const maxRetries = parseEvalMaxRetries(env.CW_EVAL_MAX_RETRIES);
 
+
+
       if (batch.messages.length > 1 && !fromDlq) {
+
         console.warn("eval_consumer unexpected_batch_size", {
+
           size: batch.messages.length,
+
           hint: "set max_batch_size to 1 in wrangler-eval-consumer.jsonc",
+
         });
+
       }
 
+
+
       for (const message of batch.messages) {
+
         if (fromDlq) {
+
           await processEvalDlqMessage(message, env, queueName);
+
         } else {
-          await processEvalQueueMessage(message, env, maxRetries);
+
+          await processEvalQueueMessage(message, env, maxRetries, queueName);
+
         }
+
       }
+
     } catch (e) {
-      console.error("eval_consumer_batch_fatal", evalErrorFields(e));
+
+      const err = evalErrorFields(e);
+
+      logEvalConsumerError("batch_fatal", {
+
+        error: err.message,
+
+        likely_memory_limit: err.likely_memory_limit ?? false,
+
+      }, env);
+
       throw e;
+
     }
+
   },
+
 };
+
+

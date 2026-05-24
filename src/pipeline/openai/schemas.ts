@@ -8,6 +8,12 @@ export const OrientationResultSchema = z.object({
 
 export type OrientationResult = z.infer<typeof OrientationResultSchema>;
 
+export const OrientationConfirmResultSchema = z.object({
+  correctly_oriented: z.boolean(),
+});
+
+export type OrientationConfirmResult = z.infer<typeof OrientationConfirmResultSchema>;
+
 export const CardExtractionResultSchema = z.object({
   card_names: z.array(z.string()),
   confidence_level: z.enum(["high", "medium", "low"]),

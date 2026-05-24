@@ -7,7 +7,22 @@ export const orientationJsonSchema = {
   properties: {
     rotation_needed: { type: "integer", enum: [0, 90, 180, 270] },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
-    reasoning: { type: "string" },
+    reasoning: {
+      type: "string",
+      description: "Omit unless confidence is low; at most one short sentence.",
+    },
+  },
+} as const;
+
+export const orientationConfirmJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["correctly_oriented"],
+  properties: {
+    correctly_oriented: {
+      type: "boolean",
+      description: "true when the main deck pile reads upright (title bars on top).",
+    },
   },
 } as const;
 

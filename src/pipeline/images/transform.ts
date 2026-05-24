@@ -47,6 +47,7 @@ export function resizeToMaxSide(
   maxWidth: number,
   maxHeight: number
 ): RgbaFrame {
+  if (maxWidth <= 0 || maxHeight <= 0) return frame;
   const { width: w, height: h, data } = frame;
   if (w <= maxWidth && h <= maxHeight) return frame;
   const scale = Math.min(maxWidth / w, maxHeight / h);
@@ -73,59 +74,48 @@ export function combineClockwiseRotations(a: number, b: number): number {
   return (((a + b) % 360) + 360) % 360;
 }
 
-/** One 90° clockwise step: new size (H×W), maps old (x,y) → new (y, x). */
-function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
-  const w = frame.width;
-  const h = frame.height;
-  const src = frame.data;
-  const nw = h;
-  const nh = w;
-  const out = new Uint8ClampedArray(nw * nh * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const nx = y;
-      const ny = x;
-      const si = (y * w + x) * 4;
-      const di = (ny * nw + nx) * 4;
-      out[di] = src[si]!;
-      out[di + 1] = src[si + 1]!;
-      out[di + 2] = src[si + 2]!;
-      out[di + 3] = src[si + 3]!;
+/**
+ * Center crop by `fraction` of width/height (0–1], preserving aspect of the source frame.
+ * Used for orientation API input so edge deck-bleed does not dominate rotation.
+ */
+export function cropCenter(frame: RgbaFrame, fraction: number): RgbaFrame {
+  const f = Math.min(1, Math.max(0.1, fraction));
+  const cw = Math.max(1, Math.floor(frame.width * f));
+  const ch = Math.max(1, Math.floor(frame.height * f));
+  const x0 = Math.floor((frame.width - cw) / 2);
+  const y0 = Math.floor((frame.height - ch) / 2);
+  const out = new Uint8ClampedArray(cw * ch * 4);
+  const sw = frame.width;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const si = ((y0 + y) * sw + (x0 + x)) * 4;
+      const di = (y * cw + x) * 4;
+      out[di] = frame.data[si]!;
+      out[di + 1] = frame.data[si + 1]!;
+      out[di + 2] = frame.data[si + 2]!;
+      out[di + 3] = frame.data[si + 3]!;
     }
   }
-  return { width: nw, height: nh, data: out };
+  return { width: cw, height: ch, data: out };
 }
 
-function rotate180(frame: RgbaFrame): RgbaFrame {
-  const w = frame.width;
-  const h = frame.height;
-  const src = frame.data;
-  const out = new Uint8ClampedArray(w * h * 4);
-  const n = w * h;
-  for (let i = 0; i < n; i++) {
-    const si = i * 4;
-    const di = (n - 1 - i) * 4;
-    out[di] = src[si]!;
-    out[di + 1] = src[si + 1]!;
-    out[di + 2] = src[si + 2]!;
-    out[di + 3] = src[si + 3]!;
-  }
-  return { width: w, height: h, data: out };
-}
-
-function rotate270ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
+/**
+ * One 90° clockwise step with expand (no flips / transpose — rotation only).
+ * Top-left origin, +x right, +y down. W×H → H×W.
+ */
+export function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
   const w = frame.width;
   const h = frame.height;
   const src = frame.data;
   const nw = h;
   const nh = w;
   const out = new Uint8ClampedArray(nw * nh * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const nx = h - 1 - y;
-      const ny = x;
-      const si = (y * w + x) * 4;
-      const di = (ny * nw + nx) * 4;
+  for (let oy = 0; oy < nh; oy++) {
+    for (let ox = 0; ox < nw; ox++) {
+      const sx = oy;
+      const sy = h - 1 - ox;
+      const si = (sy * w + sx) * 4;
+      const di = (oy * nw + ox) * 4;
       out[di] = src[si]!;
       out[di + 1] = src[si + 1]!;
       out[di + 2] = src[si + 2]!;
@@ -136,13 +126,14 @@ function rotate270ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
 }
 
 /**
- * Clockwise rotation (0, 90, 180, 270), expand canvas like PIL `rotate(..., expand=True)`.
- * Uses one output buffer per call (no chained 90° steps for 180/270).
+ * Clockwise rotation by repeated 90° steps only (0, 90, 180, 270).
  */
 export function rotateClockwise(frame: RgbaFrame, degrees: number): RgbaFrame {
-  const d = (((degrees % 360) + 360) % 360) as 0 | 90 | 180 | 270;
-  if (d === 0) return frame;
-  if (d === 90) return rotate90ClockwiseOnce(frame);
-  if (d === 180) return rotate180(frame);
-  return rotate270ClockwiseOnce(frame);
+  const steps = ((((degrees % 360) + 360) % 360) / 90) | 0;
+  if (steps === 0) return frame;
+  let out = frame;
+  for (let i = 0; i < steps; i++) {
+    out = rotate90ClockwiseOnce(out);
+  }
+  return out;
 }

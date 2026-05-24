@@ -31,7 +31,9 @@
 	"vars": {
 		"CWW_ENV": "local",
 		"CWW_DEPLOY_VERSION": "dev",
-		"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+		"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+		"CW_STAGING_MAX_IMAGE_SIDE": "3072",
+		"CW_STAGING_JPEG_QUALITY": "90"
 	},
 	"d1_databases": [
 		{
@@ -58,6 +60,9 @@
 				"queue": "cubewizard-eval-local"
 			}
 		]
+	},
+	"images": {
+		"binding": "IMAGES"
 	},
 	"env": {
 		"stg": {
@@ -86,7 +91,12 @@
 			"vars": {
 				"CWW_ENV": "staging",
 				"CWW_DEPLOY_VERSION": "",
-				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+				"CW_STAGING_MAX_IMAGE_SIDE": "3072",
+				"CW_STAGING_JPEG_QUALITY": "90"
+			},
+			"images": {
+				"binding": "IMAGES"
 			},
 			"r2_buckets": [
 				{
@@ -137,7 +147,12 @@
 			"vars": {
 				"CWW_ENV": "production",
 				"CWW_DEPLOY_VERSION": "",
-				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+				"CW_STAGING_MAX_IMAGE_SIDE": "3072",
+				"CW_STAGING_JPEG_QUALITY": "90"
+			},
+			"images": {
+				"binding": "IMAGES"
 			},
 			"r2_buckets": [
 				{

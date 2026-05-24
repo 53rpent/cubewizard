@@ -7,7 +7,9 @@ export { decodeToRgba } from "./decode";
 export { encodeJpeg, encodePng, frameHasTransparency } from "./encode";
 export {
   combineClockwiseRotations,
+  cropCenter,
   resizeToMaxSide,
+  rotate90ClockwiseOnce,
   rotateClockwise,
 } from "./transform";
 export {
@@ -18,8 +20,8 @@ export {
 } from "./compatible";
 
 /** Default max decode dimensions for vision (overridable via `CW_EVAL_MAX_IMAGE_SIDE`). */
-export const DEFAULT_MAX_IMAGE_WIDTH = 2048;
-export const DEFAULT_MAX_IMAGE_HEIGHT = 2048;
+export const DEFAULT_MAX_IMAGE_WIDTH = 3072;
+export const DEFAULT_MAX_IMAGE_HEIGHT = 3072;
 
 export function resizeForVisionIfNeeded(
   frame: RgbaFrame,

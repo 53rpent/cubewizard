@@ -3,7 +3,7 @@
 	"name": "cubewizard-eval-consumer",
 	"main": "src/pipeline/entry/evalQueueEntry.ts",
 	"compatibility_date": "2024-12-01",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": ["nodejs_compat", "enable_nodejs_process_v2"],
 	"limits": {
 		"cpu_ms": 30000
 	},
@@ -24,11 +24,12 @@
 		"OPENAI_REASONING_EFFORT": "medium",
 		"CW_EVAL_USE_MULTI_PASS": "true",
 		"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
-		"CW_EVAL_JPEG_QUALITY": "95",
-		"CW_EVAL_MAX_IMAGE_SIDE": "2048",
-		"CW_EVAL_ORIENT_MAX_SIDE": "1280",
-		"CW_EVAL_MAX_CONSUMERS": "1",
+		"CW_EVAL_JPEG_QUALITY": "100",
+		"CW_EVAL_MAX_IMAGE_SIDE": "3072",
+		"CW_EVAL_MAX_CONSUMERS": "2",
 		"CW_EVAL_MAX_RETRIES": "5",
+		// Override in `.dev.vars` (off: 0 | false). Ensures the binding exists on queue `env` in multi-worker dev.
+		"CW_EVAL_MEMORY_LOG": "1",
 		"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 	},
 	"r2_buckets": [
@@ -49,18 +50,39 @@
 			// Local dev: Miniflare D1. For hosted DB: add "remote": true
 		}
 	],
+	// Orient queue (site/Hedron producers) → extract queue (orient consumer producer). max_concurrency ↔ CW_EVAL_MAX_CONSUMERS.
 	"queues": {
+		"producers": [
+			{
+				"binding": "EVAL_EXTRACT_QUEUE",
+				"queue": "cubewizard-eval-extract-local"
+			}
+		],
 		"consumers": [
 			{
 				"queue": "cubewizard-eval-local",
 				"max_batch_size": 1,
 				"max_batch_timeout": 30,
 				"max_retries": 5,
-				"max_concurrency": 1,
+				"max_concurrency": 2,
 				"dead_letter_queue": "cubewizard-eval-local-dlq"
 			},
 			{
+				"queue": "cubewizard-eval-extract-local",
+				"max_batch_size": 1,
+				"max_batch_timeout": 30,
+				"max_retries": 5,
+				"max_concurrency": 2,
+				"dead_letter_queue": "cubewizard-eval-extract-local-dlq"
+			},
+			{
 				"queue": "cubewizard-eval-local-dlq",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 1
+			},
+			{
+				"queue": "cubewizard-eval-extract-local-dlq",
 				"max_batch_size": 10,
 				"max_batch_timeout": 30,
 				"max_retries": 1
@@ -83,10 +105,9 @@
 				"OPENAI_REASONING_EFFORT": "medium",
 				"CW_EVAL_USE_MULTI_PASS": "true",
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
-				"CW_EVAL_JPEG_QUALITY": "95",
-				"CW_EVAL_MAX_IMAGE_SIDE": "2048",
-				"CW_EVAL_ORIENT_MAX_SIDE": "1280",
-				"CW_EVAL_MAX_CONSUMERS": "1",
+				"CW_EVAL_JPEG_QUALITY": "100",
+				"CW_EVAL_MAX_IMAGE_SIDE": "3072",
+				"CW_EVAL_MAX_CONSUMERS": "4",
 				"CW_EVAL_MAX_RETRIES": "5",
 				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 			},
@@ -109,17 +130,37 @@
 				}
 			],
 			"queues": {
+				"producers": [
+					{
+						"binding": "EVAL_EXTRACT_QUEUE",
+						"queue": "cubewizard-eval-extract-stg"
+					}
+				],
 				"consumers": [
 					{
 						"queue": "cubewizard-eval-stg",
 						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 1,
+						"max_concurrency": 4,
 						"dead_letter_queue": "cubewizard-eval-stg-dlq"
 					},
 					{
+						"queue": "cubewizard-eval-extract-stg",
+						"max_batch_size": 1,
+						"max_batch_timeout": 30,
+						"max_retries": 5,
+						"max_concurrency": 4,
+						"dead_letter_queue": "cubewizard-eval-extract-stg-dlq"
+					},
+					{
 						"queue": "cubewizard-eval-stg-dlq",
+						"max_batch_size": 10,
+						"max_batch_timeout": 30,
+						"max_retries": 1
+					},
+					{
+						"queue": "cubewizard-eval-extract-stg-dlq",
 						"max_batch_size": 10,
 						"max_batch_timeout": 30,
 						"max_retries": 1
@@ -142,10 +183,9 @@
 				"OPENAI_REASONING_EFFORT": "medium",
 				"CW_EVAL_USE_MULTI_PASS": "true",
 				"CW_EVAL_MAX_CUBECOBRA_CARDS": "1000",
-				"CW_EVAL_JPEG_QUALITY": "95",
-				"CW_EVAL_MAX_IMAGE_SIDE": "2048",
-				"CW_EVAL_ORIENT_MAX_SIDE": "1280",
-				"CW_EVAL_MAX_CONSUMERS": "1",
+				"CW_EVAL_JPEG_QUALITY": "100",
+				"CW_EVAL_MAX_IMAGE_SIDE": "3072",
+				"CW_EVAL_MAX_CONSUMERS": "4",
 				"CW_EVAL_MAX_RETRIES": "5",
 				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
 			},
@@ -168,17 +208,37 @@
 				}
 			],
 			"queues": {
+				"producers": [
+					{
+						"binding": "EVAL_EXTRACT_QUEUE",
+						"queue": "cubewizard-eval-extract-prod"
+					}
+				],
 				"consumers": [
 					{
 						"queue": "cubewizard-eval-prod",
 						"max_batch_size": 1,
 						"max_batch_timeout": 30,
 						"max_retries": 5,
-						"max_concurrency": 1,
+						"max_concurrency": 4,
 						"dead_letter_queue": "cubewizard-eval-prod-dlq"
 					},
 					{
+						"queue": "cubewizard-eval-extract-prod",
+						"max_batch_size": 1,
+						"max_batch_timeout": 30,
+						"max_retries": 5,
+						"max_concurrency": 4,
+						"dead_letter_queue": "cubewizard-eval-extract-prod-dlq"
+					},
+					{
 						"queue": "cubewizard-eval-prod-dlq",
+						"max_batch_size": 10,
+						"max_batch_timeout": 30,
+						"max_retries": 1
+					},
+					{
+						"queue": "cubewizard-eval-extract-prod-dlq",
 						"max_batch_size": 10,
 						"max_batch_timeout": 30,
 						"max_retries": 1

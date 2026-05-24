@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   combineClockwiseRotations,
+  cropCenter,
   decodeToRgba,
   encodeJpeg,
   prepareBytesForOpenAiVision,
@@ -50,6 +51,17 @@ describe("rotateClockwise", () => {
     expect(rotateClockwise(frame, 0)).toBe(frame);
   });
 
+  it("180° CW matches two 90° steps on landscape aspect", () => {
+    const w = 4;
+    const h = 3;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < data.length; i++) data[i] = (i * 11) % 256;
+    const frame = { width: w, height: h, data };
+    const twice = rotateClockwise(rotateClockwise(frame, 90), 90);
+    const direct = rotateClockwise(frame, 180);
+    expect(Array.from(direct.data)).toEqual(Array.from(twice.data));
+  });
+
   it("270° CW matches three 90° steps", () => {
     const data = new Uint8ClampedArray([
       255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
@@ -61,6 +73,72 @@ describe("rotateClockwise", () => {
     expect(direct.height).toBe(once.height);
     expect(Array.from(direct.data)).toEqual(Array.from(once.data));
   });
+
+  it("0/90/180/270 are four distinct orientations on landscape aspect", () => {
+    const w = 4;
+    const h = 3;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < data.length; i++) data[i] = (i * 13 + 7) % 256;
+    const frame = { width: w, height: h, data };
+    const fps = [0, 90, 180, 270].map((deg) => {
+      const f = deg === 0 ? frame : rotateClockwise(frame, deg);
+      let hsh = 0;
+      for (let i = 0; i < f.data.length; i++) hsh = (hsh * 31 + f.data[i]!) | 0;
+      return `${deg}:${hsh}`;
+    });
+    expect(new Set(fps).size).toBe(4);
+    expect(fps[0]).not.toBe(fps[2]);
+  });
+
+  it("is not matrix transpose (reflection on non-square frames)", () => {
+    const w = 4;
+    const h = 3;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        data[i] = x * 40 + y;
+        data[i + 3] = 255;
+      }
+    }
+    const frame = { width: w, height: h, data };
+    const transposed = new Uint8ClampedArray(h * w * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const si = (y * w + x) * 4;
+        const di = (x * h + y) * 4;
+        transposed[di] = data[si]!;
+        transposed[di + 1] = data[si + 1]!;
+        transposed[di + 2] = data[si + 2]!;
+        transposed[di + 3] = data[si + 3]!;
+      }
+    }
+    const rotated = rotateClockwise(frame, 90).data;
+    expect(Array.from(rotated)).not.toEqual(Array.from(transposed));
+  });
+
+  it("four 90° steps restore the original (not a mirrored copy)", () => {
+    const w = 4;
+    const h = 3;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < data.length; i++) data[i] = (i * 17 + 3) % 256;
+    const frame = { width: w, height: h, data };
+    let out = frame;
+    for (let i = 0; i < 4; i++) out = rotateClockwise(out, 90);
+    expect(out.width).toBe(frame.width);
+    expect(out.height).toBe(frame.height);
+    expect(Array.from(out.data)).toEqual(Array.from(frame.data));
+
+    const flipped = new Uint8ClampedArray(frame.data);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const si = (y * w + x) * 4;
+        const di = (y * w + (w - 1 - x)) * 4;
+        for (let c = 0; c < 4; c++) flipped[di + c] = frame.data[si + c]!;
+      }
+    }
+    expect(Array.from(out.data)).not.toEqual(Array.from(flipped));
+  });
 });
 
 describe("combineClockwiseRotations", () => {
@@ -70,7 +148,26 @@ describe("combineClockwiseRotations", () => {
   });
 });
 
+describe("cropCenter", () => {
+  it("crops the middle fraction of the frame", () => {
+    const data = new Uint8ClampedArray(4 * 4 * 4);
+    data.fill(0);
+    data[(1 * 4 + 1) * 4] = 255;
+    const frame = { width: 4, height: 4, data };
+    const out = cropCenter(frame, 0.5);
+    expect(out.width).toBe(2);
+    expect(out.height).toBe(2);
+    expect(out.data[0]).toBe(255);
+  });
+});
+
 describe("resizeToMaxSide", () => {
+  it("is a no-op when max side is 0 (unlimited)", () => {
+    const data = new Uint8ClampedArray(100 * 200 * 4);
+    const frame = { width: 100, height: 200, data };
+    expect(resizeToMaxSide(frame, 0, 0)).toBe(frame);
+  });
+
   it("shrinks when larger than max", () => {
     const data = new Uint8ClampedArray(100 * 200 * 4);
     data.fill(255);

@@ -27,7 +27,7 @@ export function buildDlqError(
   if (lastError?.trim()) {
     return `${base}; last_error: ${lastError.trim()}`.slice(0, 4000);
   }
-  return `${base}; see eval consumer logs (eval_consumer_error)`.slice(0, 4000);
+  return `${base}; see eval consumer logs (eval_consumer queue_job_failed)`.slice(0, 4000);
 }
 
 export async function failEvalJobFromQueue(

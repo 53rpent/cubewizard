@@ -11,7 +11,12 @@
 	},
 	"vars": {
 		"CWW_ENV": "local",
-		"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+		"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+		"CW_STAGING_MAX_IMAGE_SIDE": "3072",
+		"CW_STAGING_JPEG_QUALITY": "90"
+	},
+	"images": {
+		"binding": "IMAGES"
 	},
 	"r2_buckets": [
 		{
@@ -52,7 +57,12 @@
 			},
 			"vars": {
 				"CWW_ENV": "staging",
-				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+				"CW_STAGING_MAX_IMAGE_SIDE": "3072",
+				"CW_STAGING_JPEG_QUALITY": "90"
+			},
+			"images": {
+				"binding": "IMAGES"
 			},
 			"r2_buckets": [
 				{
@@ -94,7 +104,12 @@
 			},
 			"vars": {
 				"CWW_ENV": "production",
-				"R2_STAGING_BUCKET_NAME": "decklist-uploads"
+				"R2_STAGING_BUCKET_NAME": "decklist-uploads",
+				"CW_STAGING_MAX_IMAGE_SIDE": "3072",
+				"CW_STAGING_JPEG_QUALITY": "90"
+			},
+			"images": {
+				"binding": "IMAGES"
 			},
 			"r2_buckets": [
 				{
