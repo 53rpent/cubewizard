@@ -33,8 +33,6 @@ export interface RunEvalTaskEnv {
   CW_EVAL_MAX_RETRIES?: string;
   CW_EVAL_MAX_IMAGE_SIDE?: string;
   CW_EVAL_MEMORY_LOG?: string;
-  /** jpeg-js decode cap (MB); `0` = unlimited. Golden harness sets `0` by default. */
-  CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;

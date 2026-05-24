@@ -124,8 +124,6 @@ After `golden:eval`, the CLI prints aggregate metrics and a **comparison vs `sco
 
 If `golden:eval` exits immediately with no scores, check the error message: missing `OPENAI_API_KEY` or no valid case folders under `cases/`.
 
-Golden runs set `CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB=0` so full-resolution fixture JPEGs (e.g. 24 MP phone photos) decode during staging normalize without jpeg-js’s 512 MB safety cap. Production Workers keep the default cap unless you override this var.
-
 
 
 ## Scores

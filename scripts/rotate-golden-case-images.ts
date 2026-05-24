@@ -8,8 +8,8 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import jpeg from "jpeg-js";
 import UPNG from "upng-js";
+import { decodeToRgba } from "../src/pipeline/images/decode";
 import { encodeJpeg, encodePng } from "../src/pipeline/images/encode";
 import { sniffImageFormat } from "../src/pipeline/images/sniff";
 import type { ImageFormatHint, RgbaFrame } from "../src/pipeline/images/types";
@@ -17,10 +17,6 @@ import { rotateClockwise } from "../src/pipeline/images/transform";
 
 const repoRoot = join(fileURLToPath(import.meta.url), "..", "..");
 const casesRoot = join(repoRoot, "fixtures/eval-golden/cases");
-
-process.env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB = "0";
-
-const JPEG_DECODE_UNLIMITED_MB = 16_384;
 
 function mulberry32(seed: number): () => number {
   return () => {
@@ -38,23 +34,6 @@ const rand =
     ? mulberry32(parseInt(seedRaw, 10) || 0)
     : Math.random;
 
-function jpegDecodeMaxMemoryMb(): number {
-  const raw = process.env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB;
-  if (raw === undefined || raw === "") return JPEG_DECODE_UNLIMITED_MB;
-  if (/^0|unlimited|none|off|false$/i.test(raw.trim())) return JPEG_DECODE_UNLIMITED_MB;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : JPEG_DECODE_UNLIMITED_MB;
-}
-
-function decodeJpeg(bytes: Uint8Array): RgbaFrame {
-  const raw = jpeg.decode(bytes, {
-    useTArray: true,
-    formatAsRGBA: true,
-    maxMemoryUsageInMB: jpegDecodeMaxMemoryMb(),
-  });
-  return { width: raw.width, height: raw.height, data: new Uint8ClampedArray(raw.data) };
-}
-
 function decodePng(bytes: Uint8Array): RgbaFrame {
   const copy = Uint8Array.from(bytes);
   const png = UPNG.decode(copy.buffer);
@@ -65,9 +44,9 @@ function decodePng(bytes: Uint8Array): RgbaFrame {
   return { width: png.width, height: png.height, data: new Uint8ClampedArray(bufs[0]) };
 }
 
-function decodeImage(bytes: Uint8Array, hint: ImageFormatHint): RgbaFrame {
+async function decodeImage(bytes: Uint8Array, hint: ImageFormatHint): Promise<RgbaFrame> {
   const fmt = hint !== "unknown" ? hint : sniffImageFormat(bytes);
-  if (fmt === "jpeg") return decodeJpeg(bytes);
+  if (fmt === "jpeg") return decodeToRgba(bytes, "jpeg");
   if (fmt === "png") return decodePng(bytes);
   throw new Error(`unsupported_format:${fmt}`);
 }
@@ -81,12 +60,16 @@ function imageFileInCase(dir: string): { path: string; format: ImageFormatHint }
   return null;
 }
 
-function rotateCaseImage(caseId: string, imagePath: string, hint: ImageFormatHint): number {
+async function rotateCaseImage(
+  caseId: string,
+  imagePath: string,
+  hint: ImageFormatHint
+): Promise<number> {
   const steps = Math.floor(rand() * 4) as 0 | 1 | 2 | 3;
   const bytes = new Uint8Array(readFileSync(imagePath));
   const fmt = hint !== "unknown" ? hint : sniffImageFormat(bytes);
 
-  let frame = decodeImage(bytes, fmt);
+  let frame = await decodeImage(bytes, fmt);
   if (steps > 0) {
     frame = rotateClockwise(frame, steps * 90);
   }
@@ -96,7 +79,7 @@ function rotateCaseImage(caseId: string, imagePath: string, hint: ImageFormatHin
   return steps;
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const caseDirs = readdirSync(casesRoot, { withFileTypes: true })
     .filter((d) => d.isDirectory() && !d.name.startsWith("_"))
     .map((d) => d.name)
@@ -119,11 +102,14 @@ function main(): void {
       console.warn(`  skip ${caseId}: no image.jpg/png`);
       continue;
     }
-    const steps = rotateCaseImage(caseId, img.path, img.format);
+    const steps = await rotateCaseImage(caseId, img.path, img.format);
     console.log(`  ${caseId}: ${steps} step(s) → ${steps * 90}° CW  (${img.path})`);
   }
 
   console.log("Done.");
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

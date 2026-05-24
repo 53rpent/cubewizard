@@ -1,4 +1,4 @@
-import jpeg from "jpeg-js";
+import jpegModule from "jpeg-js";
 import UPNG from "upng-js";
 import webpDecode from "@jsquash/webp/decode";
 import { ensureJsquashWebpDecoderInit } from "./jsquashWebpInit";
@@ -6,37 +6,21 @@ import { sniffImageFormat } from "./sniff";
 import type { ImageFormatHint, RgbaFrame } from "./types";
 import { decodeHeicToRgba } from "./heic";
 
-/** jpeg-js default safety cap (production Workers / untrusted uploads). */
-export const JPEG_DECODE_DEFAULT_MAX_MEMORY_MB = 512;
+/** Headroom for full-res camera JPEGs before staging/eval downscale (jpeg-js default is 512 MiB). */
+const JPEG_DECODE_MEMORY_MB = 16_384;
 
-/** Practical “unlimited” for golden / local full-resolution fixtures. */
-export const JPEG_DECODE_UNLIMITED_MEMORY_MB = 16_384;
-
-export interface JpegDecodeEnv {
-  CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB?: string;
-}
-
-/**
- * `CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB`: positive MB cap, or `0` / `unlimited` for no cap.
- * Unset → {@link JPEG_DECODE_DEFAULT_MAX_MEMORY_MB}.
- */
-export function parseJpegDecodeMaxMemoryMb(
-  env: JpegDecodeEnv = {}
-): number {
-  const raw =
-    env.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB ??
-    (typeof process !== "undefined"
-      ? (process as NodeJS.Process).env?.CW_EVAL_JPEG_DECODE_MAX_MEMORY_MB
-      : undefined);
-  if (raw === undefined || raw === "") {
-    return JPEG_DECODE_DEFAULT_MAX_MEMORY_MB;
-  }
-  if (/^0|unlimited|none|off|false$/i.test(String(raw).trim())) {
-    return JPEG_DECODE_UNLIMITED_MEMORY_MB;
-  }
-  const n = parseInt(String(raw), 10);
-  return Number.isFinite(n) && n > 0 ? n : JPEG_DECODE_DEFAULT_MAX_MEMORY_MB;
-}
+const jpeg = {
+  decode(
+    data: Uint8Array,
+    opts?: { useTArray?: boolean; formatAsRGBA?: boolean }
+  ) {
+    return jpegModule.decode(data, {
+      useTArray: opts?.useTArray ?? false,
+      formatAsRGBA: opts?.formatAsRGBA ?? true,
+      maxMemoryUsageInMB: JPEG_DECODE_MEMORY_MB,
+    });
+  },
+};
 
 function ensureRgbaFrame(w: number, h: number, data: Uint8Array): RgbaFrame {
   const n = w * h;
@@ -81,7 +65,6 @@ function decodeJpegToRgba(bytes: Uint8Array): RgbaFrame {
   const raw = jpeg.decode(bytes, {
     useTArray: true,
     formatAsRGBA: true,
-    maxMemoryUsageInMB: parseJpegDecodeMaxMemoryMb(),
   });
   return ensureRgbaFrame(raw.width, raw.height, raw.data as Uint8Array);
 }
