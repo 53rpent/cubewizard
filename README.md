@@ -11,9 +11,9 @@ Magic: The Gathering cube analytics: deck photos are processed with OpenAI Visio
 | Piece | Config | Role |
 |--------|--------|------|
 | **Site Worker** | `src/worker.js`, `wrangler.jsonc` | Serves the dashboard (`docs/`), REST API, uploads deck images to R2, enqueues eval jobs |
-| **Eval consumer** | `src/pipeline/entry/evalQueueEntry.ts`, `wrangler-eval-consumer.jsonc` | Queue consumer: orientation → card extraction (OpenAI) → Scryfall → D1 → oriented images on R2 |
+| **Eval consumer** | `src/pipeline/entry/evalQueueEntry.ts`, `wrangler-eval-consumer.jsonc` | Queue consumer: orientation â†’ card extraction (OpenAI) â†’ Scryfall â†’ D1 â†’ oriented images on R2 |
 | **Hedron consumer** | `src/hedron-consumer.js`, `wrangler-hedron-consumer.jsonc` | Consumes Hedron sync jobs, stages images in R2, enqueues eval tasks |
-| **Redirect Worker** | `wrangler-redirect.jsonc` | Production only: `cubewizard.org` → `cube-wizard.com` |
+| **Redirect Worker** | `wrangler-redirect.jsonc` | Production only: `cubewizard.org` â†’ `cube-wizard.com` |
 | **D1** | `schema.sql`, `migrations/` | Cubes, decks, cards, stats, `processing_jobs`, Hedron sync state |
 | **R2** | `decklist-uploads`, `cubewizard-deck-images` | Raw uploads + metadata; oriented deck images and thumbnails |
 
@@ -58,14 +58,7 @@ flowchart LR
 
 **Hedron sync:** `POST /api/hedron-sync/:cubeId` enqueues the Hedron consumer, which fetches deck images from Hedron, stages them under the same R2 layout, then enqueues the eval consumer with `upload_id` prefixed `hedron:`.
 
-**Eval pipeline** (two queue stages — separate queue invocations; isolates may be reused by the platform but deck buffers are not retained across messages):
-
-1. **Orient** (`runOrientTask` on `EVAL_QUEUE`): load staging image → orient (OpenAI) → upload oriented JPEG to `cubewizard-deck-images` → enqueue extract message.
-2. **Extract** (`runExtractTask` on `EVAL_EXTRACT_QUEUE`): load oriented JPEG → extract card names (OpenAI) → upload WebP thumb → release RGBA → Scryfall → D1 → mark `processing_jobs` done.
-
-Hosted accounts need extract queues created once, e.g. `npx wrangler queues create cubewizard-eval-extract-stg` (and `-dlq`, plus prod names) before deploy.
-
-**Eval queue concurrency:** `max_batch_size: 1` (one deck per invocation) and `max_concurrency` > 1 in `wrangler-eval-consumer.jsonc` so Cloudflare runs multiple consumer isolates when the queue has backlog (stg/prod: 4). Keep `CW_EVAL_MAX_CONSUMERS` equal to `max_concurrency` so Scryfall HTTP stays near ~10 req/s account-wide. **Local `wrangler dev` does not run multiple queue consumers in parallel** ([Cloudflare Queues local dev](https://developers.cloudflare.com/queues/configuration/local-development/)) — you will only see one eval at a time locally even with `max_concurrency: 2`; deploy to staging/production for real parallelism.
+**Eval pipeline** (`runEvalTask`): load staging image from R2 â†’ orient (OpenAI) â†’ extract card names (OpenAI, optional multi-pass) â†’ optional CubeCobra list â†’ Scryfall enrichment â†’ D1 deck/cards/stats â†’ upload oriented WebP + thumb to `cubewizard-deck-images` â†’ mark `processing_jobs` done or failed.
 
 ### Local vs staging vs production
 
@@ -77,7 +70,7 @@ Hosted accounts need extract queues created once, e.g. `npx wrangler queues crea
 | **Hedron consumer** | bundled in dev @ :8789 | `cubewizard-hedron-consumer-stg` | `cubewizard-hedron-consumer-prod` |
 | **`CWW_ENV`** | `local` | `staging` | `production` |
 | **D1** | Miniflare under `.wrangler/local-shared` (`npm run d1:bootstrap:local`) | Remote `cubewizard-db-stg` | Remote `cubewizard-db` |
-| **Queues** | `*-local` / `*-local-dlq` (Miniflare only) | `cubewizard-eval-stg`, `cubewizard-hedron-stg`, … | `cubewizard-eval-prod`, `cubewizard-hedron-prod`, … |
+| **Queues** | `*-local` / `*-local-dlq` (Miniflare only) | `cubewizard-eval-stg`, `cubewizard-hedron-stg`, â€¦ | `cubewizard-eval-prod`, `cubewizard-hedron-prod`, â€¦ |
 | **R2** | Local Miniflare buckets (same binding names) | Hosted `decklist-uploads`, `cubewizard-deck-images` | Same buckets as staging |
 | **OpenAI vision images** | Inline JPEG base64 (`CWW_ENV=local`) | Presigned R2 GET URLs | Same as staging |
 | **Eval secrets** | `.dev.vars`: `OPENAI_API_KEY` only | + `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Same as staging |
@@ -111,7 +104,7 @@ npm run dev:all                   # site + eval + hedron in one Wrangler session
 
 Open the dashboard at **http://127.0.0.1:8787**.
 
-Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a new window). Running `dev`, `dev:eval-consumer`, and `dev:hedron-consumer` in **separate** terminals does **not** share queues locally—the eval queue will not drain.
+Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a new window). Running `dev`, `dev:eval-consumer`, and `dev:hedron-consumer` in **separate** terminals does **not** share queues locallyâ€”the eval queue will not drain.
 
 ### Configuration files
 
@@ -124,15 +117,11 @@ Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a
 | Variable | Required locally | Notes |
 |----------|------------------|--------|
 | `OPENAI_API_KEY` | Yes (for eval) | Eval consumer secret |
-| `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` — see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
-| `CW_EVAL_MAX_IMAGE_SIDE` | No | Default in wrangler eval config: `3072` px max side; unset/`0`/`full` = source resolution |
-| `CW_EVAL_MAX_CONSUMERS` | No | Must match queue `max_concurrency` in `wrangler-eval-consumer.jsonc` (Scryfall throttle) |
-| `CW_EVAL_MEMORY_LOG` | No | `1` / `true` / `yes` → attach `heap_used_mb` / `rss_mb` to each `eval_consumer` log line (see [Memory debugging](#memory-debugging-eval-consumer)) |
-| `CW_STAGING_MAX_IMAGE_SIDE` | No | Site + Hedron staging normalize via Cloudflare Images (default `3072` in wrangler) |
-| `CW_STAGING_JPEG_QUALITY` | No | JPEG quality for normalized staging uploads (default `90`) |
+| `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` â€” see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
+| `CW_EVAL_MAX_IMAGE_SIDE` | No | Unset/`0`/`full` = source resolution for orient + extract; set px only to cap Workers memory |
 | `TURNSTILE_SECRET` | No | Site upload bot check; skipped when `CWW_ENV=local` |
 
-Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` — see [Deploy](#deploy-cloudflare).
+Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 API token) via `wrangler secret put` â€” see [Deploy](#deploy-cloudflare).
 
 ### npm scripts (dev)
 
@@ -145,7 +134,7 @@ Hosted eval also needs `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (same R2 AP
 | `npm run d1:bootstrap:local` | Apply `schema.sql` to local D1 |
 | `npm run test:pipeline` | Vitest pipeline unit tests |
 | `npm run golden:eval` | Golden-set run (eval consumer + live OpenAI); writes `scores/latest.json` and compares to baseline |
-| `npm run golden:baseline` | Promote `scores/latest.json` → `scores/baseline.json` after confirmation (`--yes` to skip prompt) |
+| `npm run golden:baseline` | Promote `scores/latest.json` â†’ `scores/baseline.json` after confirmation (`--yes` to skip prompt) |
 | `npm run wrangler:check` | Dry-run deploy all Wrangler configs |
 
 ### Tests and CI parity
@@ -175,25 +164,6 @@ npm run d1:bootstrap:local
 ```
 
 
-#### Memory debugging (eval consumer)
-
-Workers have a **128 MiB per-isolate** limit. Cloudflare does not expose a production heap profiler; use a mix of platform tools and opt-in pipeline logs.
-
-**Staging normalize (Phase 1):** Upload and Hedron staging use the **Cloudflare Images** Worker binding (`env.IMAGES`) to downscale photos to `CW_STAGING_MAX_IMAGE_SIDE` (default 3072 px) **before** R2 — transform runs outside the isolate, avoiding full-resolution RGBA decode (~93 MB on 12 MP JPEGs). Each normalize is one Images transformation (see [Images pricing](https://developers.cloudflare.com/images/pricing/)); binding calls may require **Images Paid** on your account. Local `wrangler dev` uses a low-fidelity Images sim; set `"remote": true` on the `images` binding or use `wrangler dev --remote` for production parity.
-
-| Approach | When to use |
-|----------|-------------|
-| **`CW_EVAL_MEMORY_LOG=1`** in `.dev.vars` or eval worker vars | Each **`eval_consumer`** JSON line includes `est_*` buffer MB (RGBA/JPEG sizes) plus `heap_used_mb` / `rss_mb` when `process.memoryUsage()` is real (`enable_nodejs_process_v2` on the eval worker). All-zero heap → `heap_probe_unavailable` and rely on `est_*`. |
-| **Cloudflare Images staging** (`IMAGES` binding on site + hedron workers) | Caps eval input size; avoids OOM from decode-before-resize on camera photos. |
-| **`wrangler tail cubewizard-eval-consumer-stg`** (or `-prod`) | Live hosted logs; OOM failures often show `Exceeded Memory`, Error **1102**, or `likely_memory_limit: true` on `eval_consumer` with `kind: queue_job_failed`. |
-| **Dashboard → Workers → eval consumer → Observability → Logs** | Query `eval_consumer` or `$metadata.trigger` / invocation errors; Metrics → Errors → **Exceeded Memory**. |
-| **Local DevTools memory snapshots** | `npm run dev:all`, press **`D`**, Memory tab, reproduce with production-like image size ([CF docs](https://developers.cloudflare.com/workers/observability/dev-tools/memory-usage/)). |
-| **Lower `CW_EVAL_MAX_IMAGE_SIDE`** (default `3072` in wrangler) | Primary lever when `est_rgba_mb` or `est_rgba_peak_mb` approaches ~100+ MB. |
-
-`CW_EVAL_LOG_LEVEL=medium|high` still adds human-readable OpenAI/orientation detail on top of the structured `eval_consumer` lines. `eval_usage_report` at the end of extract still summarizes token totals per upload.
-
-`est_rgba_mb` is the oriented frame at max side (W×H×4); `est_rgba_peak_mb` adds a rotation scratch during orient scoring. These are estimates, not isolate heap — compare them to the 128 MiB limit when `heap_used_mb` is unavailable locally.
-
 #### OpenAI log levels (`CW_EVAL_LOG_LEVEL`)
 
 | Level | Behavior |
@@ -208,7 +178,7 @@ Workers have a **128 MiB per-isolate** limit. Cloudflare does not expose a produ
 | Branch | Role |
 |--------|------|
 | **`staging`** | Integration branch. Contributor PRs merge here. Pushes deploy the **staging** stack ([`deploy-cloudflare-stg.yml`](.github/workflows/deploy-cloudflare-stg.yml)). |
-| **`main`** | Production. Updated when maintainers **promote** `staging` → `main`. Pushes deploy **production** ([`deploy-cloudflare-prod.yml`](.github/workflows/deploy-cloudflare-prod.yml)). |
+| **`main`** | Production. Updated when maintainers **promote** `staging` â†’ `main`. Pushes deploy **production** ([`deploy-cloudflare-prod.yml`](.github/workflows/deploy-cloudflare-prod.yml)). |
 
 Do not open PRs directly against `main` unless a maintainer requests a hotfix exception.
 
@@ -230,7 +200,7 @@ After merge to `staging`, the next deploy ships to the staging environment. Prod
 
 ### Maintainer notes
 
-- **Promote to production:** merge `staging` into `main` (PR or direct merge) after staging validation.
+- **Promote to production:** open a PR from `staging` into `main` after staging validation. `main` and `staging` are protected by [repository rulesets](https://github.com/53rpent/cubewizard/rules); merges require one approval from a [CODEOWNERS](.github/CODEOWNERS) maintainer and a passing `test` CI check.
 - **Repo secrets (GitHub):** `CLOUDFLARE_API_TOKEN` (Workers, Queues, D1, R2). Optional `CLOUDFLARE_ACCOUNT_ID` if Wrangler cannot infer it from the token.
 
 ### Third-party assets
@@ -270,7 +240,7 @@ Reproduce CI locally: `npm ci && npm run test:pipeline && npm run wrangler:check
 | `/api/decks/:cubeId` | GET | Deck list with image URLs |
 | `/api/deck/:deckId` | GET | Single deck + cards |
 | `/api/deck/:deckId/cards` | PUT | Replace deck card list (Scryfall resolve) |
-| `/api/upload` | POST | Upload deck image → R2 → eval queue |
+| `/api/upload` | POST | Upload deck image â†’ R2 â†’ eval queue |
 | `/api/processing-decks/:cubeId` | GET | In-flight `processing_jobs` |
 | `/api/hedron-sync/:cubeId` | POST | Trigger Hedron import |
 | `/api/validate-cube` | POST | CubeCobra cube check |
@@ -286,20 +256,20 @@ Tables include `cubes`, `decks`, `deck_cards`, `deck_stats`, `cube_mapping`, `pr
 
 ```
 CubeWizard/
-├── src/
-│   ├── worker.js                 # Site Worker
-│   ├── hedron-consumer.js        # Hedron queue consumer
-│   ├── processingJobsD1.js       # Shared processing_jobs upsert
-│   └── pipeline/                 # Eval pipeline (TypeScript, Vitest)
-├── docs/                         # Static site (HTML/CSS/JS)
-├── fixtures/pipeline/            # Task JSON schema + examples
-├── vendor/jsquash-webp/          # Vendored WebP WASM
-├── migrations/                   # D1 incremental SQL
-├── schema.sql
-├── wrangler.jsonc
-├── wrangler-eval-consumer.jsonc
-├── wrangler-hedron-consumer.jsonc
-└── wrangler-redirect.jsonc
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ worker.js                 # Site Worker
+â”‚   â”œâ”€â”€ hedron-consumer.js        # Hedron queue consumer
+â”‚   â”œâ”€â”€ processingJobsD1.js       # Shared processing_jobs upsert
+â”‚   â””â”€â”€ pipeline/                 # Eval pipeline (TypeScript, Vitest)
+â”œâ”€â”€ docs/                         # Static site (HTML/CSS/JS)
+â”œâ”€â”€ fixtures/pipeline/            # Task JSON schema + examples
+â”œâ”€â”€ vendor/jsquash-webp/          # Vendored WebP WASM
+â”œâ”€â”€ migrations/                   # D1 incremental SQL
+â”œâ”€â”€ schema.sql
+â”œâ”€â”€ wrangler.jsonc
+â”œâ”€â”€ wrangler-eval-consumer.jsonc
+â”œâ”€â”€ wrangler-hedron-consumer.jsonc
+â””â”€â”€ wrangler-redirect.jsonc
 ```
 
 
