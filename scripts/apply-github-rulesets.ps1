@@ -37,4 +37,13 @@ foreach ($entry in $files) {
     Write-Host "  OK"
 }
 
-Write-Host "Done. Verify: gh api repos/$Repo/rules/branches/staging"
+Write-Host ""
+Write-Host "Done. Verify via the rulesets API (same as apply), not rules/branches:"
+Write-Host "  gh api repos/$Repo/rulesets"
+foreach ($entry in $files) {
+    $path = Join-Path $RulesetsDir $entry.File
+    $name = (Get-Content $path -Raw | ConvertFrom-Json).name
+    $id = $idByName[$name]
+    if (-not $id) { $id = $entry.FallbackId }
+    Write-Host "  gh api repos/$Repo/rulesets/$id   # $name"
+}

@@ -33,4 +33,18 @@ apply_one() {
 apply_one protect-staging.json 16801448
 apply_one protect-main.json 16801449
 
-echo "Done. Verify: gh api repos/$REPO/rules/branches/staging"
+echo ""
+echo "Done. Verify via the rulesets API (same as apply), not rules/branches:"
+echo "  gh api repos/$REPO/rulesets"
+for file in protect-staging.json protect-main.json; do
+  path="$RULESETS_DIR/$file"
+  name="$(jq -r .name "$path")"
+  id="$(gh api "repos/$REPO/rulesets" --jq ".[] | select(.name==\"$name\") | .id" | head -n1)"
+  if [[ -z "$id" ]]; then
+    case "$file" in
+      protect-staging.json) id=16801448 ;;
+      protect-main.json) id=16801449 ;;
+    esac
+  fi
+  echo "  gh api repos/$REPO/rulesets/$id   # $name"
+done
