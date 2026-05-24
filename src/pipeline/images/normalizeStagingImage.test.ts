@@ -60,8 +60,8 @@ describe("readImageDimensions", () => {
     );
     const bytes = new Uint8Array(readFileSync(path));
     const dims = readImageDimensions(bytes, "jpeg");
-    expect(dims.width).toBe(5712);
-    expect(dims.height).toBe(4284);
+    expect(Math.max(dims.width, dims.height)).toBe(5712);
+    expect(Math.min(dims.width, dims.height)).toBe(4284);
   });
 });
 

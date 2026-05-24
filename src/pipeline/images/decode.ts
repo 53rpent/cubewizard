@@ -1,10 +1,26 @@
-import jpeg from "jpeg-js";
+import jpegModule from "jpeg-js";
 import UPNG from "upng-js";
 import webpDecode from "@jsquash/webp/decode";
 import { ensureJsquashWebpDecoderInit } from "./jsquashWebpInit";
 import { sniffImageFormat } from "./sniff";
 import type { ImageFormatHint, RgbaFrame } from "./types";
 import { decodeHeicToRgba } from "./heic";
+
+/** Headroom for full-res camera JPEGs before staging/eval downscale (jpeg-js default is 512 MiB). */
+const JPEG_DECODE_MEMORY_MB = 16_384;
+
+const jpeg = {
+  decode(
+    data: Uint8Array,
+    opts?: { useTArray?: boolean; formatAsRGBA?: boolean }
+  ) {
+    return jpegModule.decode(data, {
+      useTArray: opts?.useTArray ?? false,
+      formatAsRGBA: opts?.formatAsRGBA ?? true,
+      maxMemoryUsageInMB: JPEG_DECODE_MEMORY_MB,
+    });
+  },
+};
 
 function ensureRgbaFrame(w: number, h: number, data: Uint8Array): RgbaFrame {
   const n = w * h;
@@ -46,7 +62,10 @@ function decodePngToRgba(bytes: Uint8Array): RgbaFrame {
 }
 
 function decodeJpegToRgba(bytes: Uint8Array): RgbaFrame {
-  const raw = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true });
+  const raw = jpeg.decode(bytes, {
+    useTArray: true,
+    formatAsRGBA: true,
+  });
   return ensureRgbaFrame(raw.width, raw.height, raw.data as Uint8Array);
 }
 

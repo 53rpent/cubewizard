@@ -5,6 +5,7 @@
     "test:pipeline:qa": "vitest run --config vitest.config.ts visualQa.manual",
     "golden:eval": "vitest run --config vitest.golden.config.ts",
     "golden:baseline": "tsx src/pipeline/golden/runGoldenBaselineCli.ts",
+    "golden:rotate-cases": "tsx scripts/rotate-golden-case-images.ts",
     "test:pipeline:watch": "vitest --config vitest.config.ts",
     "build:eval-consumer": "wrangler deploy --config wrangler-eval-consumer.jsonc --dry-run --outdir=.wrangler/check-eval-bundle --env=\"\"",
     "dev": "wrangler dev --persist-to .wrangler/local-shared",
