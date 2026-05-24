@@ -230,7 +230,8 @@ After merge to `staging`, the next deploy ships to the staging environment. Prod
 
 ### Maintainer notes
 
-- **Promote to production:** merge `staging` into `main` (PR or direct merge) after staging validation.
+- **Promote to production:** open a PR from `staging` into `main` after staging validation (no direct pushes to `main`).
+- **Branch protection:** `staging` and `main` use [repository rulesets](https://github.com/53rpent/cubewizard/rules). Merges require one approval from a [CODEOWNERS](.github/CODEOWNERS) maintainer and passing CI checks **`test`** and **`wrangler-check`**. After editing [`.github/rulesets/`](.github/rulesets/), run [`scripts/apply-github-rulesets.ps1`](scripts/apply-github-rulesets.ps1) or [`scripts/apply-github-rulesets.sh`](scripts/apply-github-rulesets.sh).
 - **Repo secrets (GitHub):** `CLOUDFLARE_API_TOKEN` (Workers, Queues, D1, R2). Optional `CLOUDFLARE_ACCOUNT_ID` if Wrangler cannot infer it from the token.
 
 ### Third-party assets
