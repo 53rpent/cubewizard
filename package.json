@@ -1,6 +1,7 @@
 {
   "license": "GPL-3.0-or-later",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.pipeline.json",
     "test:pipeline": "vitest run --config vitest.config.ts",
     "test:pipeline:qa": "vitest run --config vitest.config.ts visualQa.manual",
     "golden:eval": "vitest run --config vitest.golden.config.ts",
