@@ -7,10 +7,7 @@ describe("computeImageId", () => {
     const cubeId = "test-cube";
     const pilot = "Ada";
     const ts = "20260101_120000";
-    const py = createHash("sha256")
-      .update(`${cubeId}|${pilot}|${ts}`)
-      .digest("hex")
-      .slice(0, 16);
+    const py = createHash("sha256").update(`${cubeId}|${pilot}|${ts}`).digest("hex").slice(0, 16);
     await expect(computeImageId(cubeId, pilot, ts)).resolves.toBe(py);
   });
 });

@@ -9,8 +9,7 @@ export function formatEvalError(e: unknown): string {
   return String(e).slice(0, 4000);
 }
 
-const MEMORY_LIMIT_RE =
-  /exceeded\s+memory|exceeded\s+resource|error\s*1102|worker exceeded resource limits/i;
+const MEMORY_LIMIT_RE = /exceeded\s+memory|exceeded\s+resource|error\s*1102|worker exceeded resource limits/i;
 
 export function isLikelyWorkerMemoryLimitError(e: unknown): boolean {
   if (!(e instanceof Error)) return MEMORY_LIMIT_RE.test(String(e));

@@ -19,9 +19,7 @@ describe("evalQueueRouting", () => {
       record_logged: "r",
     };
     expect(shouldRunExtractPhase("cubewizard-eval-local", body)).toBe(true);
-    expect(shouldRunExtractPhase("cubewizard-eval-extract-stg", { oriented_image_r2_key: "x" })).toBe(
-      true
-    );
+    expect(shouldRunExtractPhase("cubewizard-eval-extract-stg", { oriented_image_r2_key: "x" })).toBe(true);
     expect(shouldRunExtractPhase("cubewizard-eval-stg", { upload_id: "u" })).toBe(false);
   });
 });

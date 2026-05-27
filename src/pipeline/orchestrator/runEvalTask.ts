@@ -9,7 +9,7 @@ export interface R2BucketGetPut {
   put(
     key: string,
     value: Uint8Array | ReadableStream,
-    options?: { httpMetadata?: { contentType?: string } }
+    options?: { httpMetadata?: { contentType?: string } },
   ): Promise<void>;
 }
 
@@ -44,5 +44,5 @@ export interface RunEvalTaskEnv {
   EVAL_EXTRACT_QUEUE?: EvalExtractQueueBinding;
 }
 
-export { runOrientTask } from "./runOrientTask";
 export { runExtractTask } from "./runExtractTask";
+export { runOrientTask } from "./runOrientTask";

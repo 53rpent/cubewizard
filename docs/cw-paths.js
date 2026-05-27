@@ -43,11 +43,19 @@
     return id;
   }
 
+  function hasAsciiControlChar(s) {
+    for (var i = 0; i < s.length; i++) {
+      var code = s.charCodeAt(i);
+      if (code <= 0x1f || code === 0x7f) return true;
+    }
+    return false;
+  }
+
   /** Same-origin relative path only (blocks open redirects via `//` or schemes). */
   function safeAppPath(path) {
     var p = String(path || "").trim();
-    if (!p || p.charAt(0) !== "/" || p.indexOf("//") === 0) return "/";
-    if (/[\x00-\x1f\x7f]/.test(p)) return "/";
+    if (p?.charAt(0) !== "/" || p.indexOf("//") === 0) return "/";
+    if (hasAsciiControlChar(p)) return "/";
     return p;
   }
 
@@ -63,7 +71,7 @@
   function decSeg(s) {
     try {
       return decodeURIComponent(String(s));
-    } catch (e) {
+    } catch (_e) {
       return String(s);
     }
   }
@@ -88,7 +96,9 @@
     },
     /** @param {'decks'|'cards'|'colors'|'synergies'} view */
     dataPath: function (cubeId, view) {
-      var v = String(view || "").toLowerCase().trim();
+      var v = String(view || "")
+        .toLowerCase()
+        .trim();
       if (!DATA_VIEWS[v]) return "/";
       return safeAppPath(cubePath(cubeId, "/" + v));
     },
@@ -106,7 +116,9 @@
     },
     /** @deprecated Use cards/colors/synergies; kept for any stale references */
     analysis: function (cubeId, type) {
-      var t = String(type || "").toLowerCase().trim();
+      var t = String(type || "")
+        .toLowerCase()
+        .trim();
       if (t === "performance") return this.cards(cubeId);
       if (t === "color") return this.colors(cubeId);
       if (t === "synergies") return this.synergies(cubeId);
@@ -133,7 +145,7 @@
       if (parts.length === 1) {
         try {
           return { cubeId: normalizeCubeId(decSeg(seg0)) };
-        } catch (e) {
+        } catch (_e) {
           return { cubeId: normalizeCubeId(seg0) };
         }
       }
@@ -143,7 +155,7 @@
           if (isReservedSegment(seg0)) return {};
           try {
             return { cubeId: normalizeCubeId(decSeg(seg0)), dataView: seg1 };
-          } catch (e2) {
+          } catch (_e2) {
             return { cubeId: normalizeCubeId(seg0), dataView: seg1 };
           }
         }
@@ -161,7 +173,7 @@
               dataView: legacyMap[at],
               legacyAnalysisType: at,
             };
-          } catch (e3) {
+          } catch (_e3) {
             return {
               cubeId: normalizeCubeId(seg0),
               dataView: legacyMap[at],
@@ -179,12 +191,12 @@
         try {
           var q = new URLSearchParams(window.location.search).get("cube");
           if (q) id = normalizeCubeId(q);
-        } catch (e) {}
+        } catch (_e) {}
       }
       if (!id) {
         try {
           id = normalizeCubeId(localStorage.getItem("selectedCubeId") || "");
-        } catch (e2) {
+        } catch (_e2) {
           id = "";
         }
       }
@@ -192,11 +204,11 @@
       if (!id) {
         try {
           localStorage.removeItem("selectedCubeId");
-        } catch (e4) {}
+        } catch (_e4) {}
       } else {
         try {
           localStorage.setItem("selectedCubeId", id);
-        } catch (e3) {}
+        } catch (_e3) {}
       }
       return id;
     },
@@ -220,7 +232,7 @@
       function dec(s) {
         try {
           return decodeURIComponent(s);
-        } catch (e) {
+        } catch (_e) {
           return s;
         }
       }
@@ -237,7 +249,7 @@
           if (dec(hp[off + i]) !== dec(wp[i])) return false;
         }
         return true;
-      } catch (e2) {
+      } catch (_e2) {
         return false;
       }
     },
@@ -252,7 +264,7 @@
       for (var i = 0; i < wp.length; i++) {
         try {
           if (decodeURIComponent(hp[off + i]) !== decodeURIComponent(wp[i])) return want;
-        } catch (e) {
+        } catch (_e) {
           if (hp[off + i] !== wp[i]) return want;
         }
       }
@@ -263,7 +275,9 @@
     },
     /** @deprecated */
     analysisPathMatches: function (cubeId, analysisType) {
-      var t = String(analysisType || "").toLowerCase().trim();
+      var t = String(analysisType || "")
+        .toLowerCase()
+        .trim();
       var dv = t === "performance" ? "cards" : t === "color" ? "colors" : t === "synergies" ? "synergies" : "cards";
       return this.dataViewPathMatches(cubeId, dv);
     },

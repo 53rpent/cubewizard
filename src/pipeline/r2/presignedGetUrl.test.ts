@@ -13,12 +13,12 @@ describe("presignedGetUrl", () => {
         CLOUDFLARE_ACCOUNT_ID: "abc123456789",
         R2_ACCESS_KEY_ID: "key",
         R2_SECRET_ACCESS_KEY: "secret",
-      })
+      }),
     ).toBe(true);
     expect(
       hasR2PresignCredentials({
         CLOUDFLARE_ACCOUNT_ID: "abc123456789",
-      })
+      }),
     ).toBe(false);
   });
 });

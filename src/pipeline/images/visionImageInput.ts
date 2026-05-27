@@ -1,6 +1,6 @@
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
-import { PermanentEvalError } from "../orchestrator/evalErrors";
 import type { VisionImageInput } from "../openai/responsesApi";
+import { PermanentEvalError } from "../orchestrator/evalErrors";
 import type { VisionImagePublisher } from "./visionPublish";
 
 function jpegBytesToBase64(jpegBytes: Uint8Array): string {
@@ -17,18 +17,18 @@ export async function visionUrlFromJpegBytes(
   publisher: VisionImagePublisher,
   jpegBytes: Uint8Array,
   purpose: "orient",
-  step: number
+  step: number,
 ): Promise<VisionImageInput>;
 export async function visionUrlFromJpegBytes(
   publisher: VisionImagePublisher,
   jpegBytes: Uint8Array,
-  purpose: "extract"
+  purpose: "extract",
 ): Promise<VisionImageInput>;
 export async function visionUrlFromJpegBytes(
   publisher: VisionImagePublisher,
   jpegBytes: Uint8Array,
   purpose: "orient" | "extract",
-  step?: number
+  step?: number,
 ): Promise<VisionImageInput> {
   const url =
     purpose === "orient"

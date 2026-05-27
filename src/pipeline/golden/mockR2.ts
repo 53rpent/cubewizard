@@ -1,5 +1,23 @@
 import type { R2BucketGetPut } from "../orchestrator/runEvalTask";
 
+async function readStreamToUint8Array(stream: ReadableStream): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    const { done, value: chunk } = await reader.read();
+    if (done) break;
+    if (chunk) chunks.push(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk));
+  }
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    merged.set(c, off);
+    off += c.byteLength;
+  }
+  return merged;
+}
+
 /** In-memory R2 for golden staging + deck image uploads. */
 export function createMockR2Bucket(): R2BucketGetPut {
   const objects = new Map<string, Uint8Array>();
@@ -18,21 +36,7 @@ export function createMockR2Bucket(): R2BucketGetPut {
     },
     async put(key: string, value: Uint8Array | ReadableStream) {
       if (value instanceof ReadableStream) {
-        const reader = value.getReader();
-        const chunks: Uint8Array[] = [];
-        for (;;) {
-          const { done, value: chunk } = await reader.read();
-          if (done) break;
-          if (chunk) chunks.push(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk));
-        }
-        const total = chunks.reduce((n, c) => n + c.byteLength, 0);
-        const merged = new Uint8Array(total);
-        let off = 0;
-        for (const c of chunks) {
-          merged.set(c, off);
-          off += c.byteLength;
-        }
-        objects.set(key, merged);
+        objects.set(key, await readStreamToUint8Array(value));
         return;
       }
       objects.set(key, value);

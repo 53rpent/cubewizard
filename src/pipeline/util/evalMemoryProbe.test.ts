@@ -38,9 +38,7 @@ describe("evalMemoryProbe memory log flag", () => {
         arrayBuffers: 0,
       }),
     });
-    expect(isStubNodeMemoryUsage({ heapUsed: 0, rss: 0, external: 0, arrayBuffers: 0 })).toBe(
-      true
-    );
+    expect(isStubNodeMemoryUsage({ heapUsed: 0, rss: 0, external: 0, arrayBuffers: 0 })).toBe(true);
     expect(readNodeMemoryUsageMb()).toBeNull();
   });
 

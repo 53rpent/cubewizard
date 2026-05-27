@@ -1,12 +1,9 @@
 import { readFileSync } from "node:fs";
 import { basename, extname } from "node:path";
-import type { R2BucketGetPut } from "../orchestrator/runEvalTask";
-import {
-  normalizeStagingImage,
-  parseStagingImageConfig,
-} from "../images/normalizeStagingImage";
-import { contentTypeForExt } from "../r2/orientedKeys";
 import type { TaskRequest } from "../contracts/taskRequest.zod";
+import { normalizeStagingImage, parseStagingImageConfig } from "../images/normalizeStagingImage";
+import type { R2BucketGetPut } from "../orchestrator/runEvalTask";
+import { contentTypeForExt } from "../r2/orientedKeys";
 import type { GoldenCaseDefinition } from "./types";
 
 const GOLDEN_R2_BUCKET = "decklist-uploads";
@@ -21,7 +18,7 @@ export interface StagedGoldenCase {
 /** Stage a golden photo + metadata into mock R2 (same layout as site upload). */
 export async function stageGoldenCaseOnR2(
   bucket: R2BucketGetPut,
-  goldenCase: GoldenCaseDefinition
+  goldenCase: GoldenCaseDefinition,
 ): Promise<StagedGoldenCase> {
   const upload_id = `golden:${goldenCase.case_id}`;
   const r2_prefix = `golden/${goldenCase.case_id}/`;
@@ -65,13 +62,11 @@ export async function stageGoldenCaseOnR2(
     metadata.expected_deck_size = Math.floor(expectedCount);
   }
 
-  await bucket.put(
-    metaKey,
-    new TextEncoder().encode(JSON.stringify(metadata)),
-    { httpMetadata: { contentType: "application/json" } } as {
-      httpMetadata?: { contentType?: string };
-    }
-  );
+  await bucket.put(metaKey, new TextEncoder().encode(JSON.stringify(metadata)), {
+    httpMetadata: { contentType: "application/json" },
+  } as {
+    httpMetadata?: { contentType?: string };
+  });
 
   const task: TaskRequest = {
     upload_id,

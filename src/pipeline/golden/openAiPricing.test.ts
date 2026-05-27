@@ -21,7 +21,7 @@ describe("openAiPricing", () => {
   it("matches dated model ids via prefix when only base name is in table", () => {
     const table = loadOpenAiPricingCsv(
       "model_id,usd_per_1m_input,usd_per_1m_cached_input,usd_per_1m_output,tier,pricing_as_of\n" +
-        "gpt-5-mini,0.25,0.025,2,standard,2026-05-17\n"
+        "gpt-5-mini,0.25,0.025,2,standard,2026-05-17\n",
     );
     const m = matchPricingRates("gpt-5-mini-2099-01-01", table);
     expect(m?.usd_per_1m_output).toBe(2);
@@ -38,7 +38,7 @@ describe("openAiPricing", () => {
         usd_per_1m_output: 2,
         source: "pricing_csv",
         fetched_at: "2026-05-17",
-      }
+      },
     );
     expect(cost.input_usd).toBeCloseTo(0.25);
     expect(cost.output_usd).toBeCloseTo(1);
@@ -56,7 +56,7 @@ describe("openAiPricing", () => {
         usd_per_1m_output: 2,
         source: "pricing_csv",
         fetched_at: "2026-05-17",
-      }
+      },
     );
     expect(cost.input_usd).toBeCloseTo(0.25 * 0.4 + 0.025 * 0.6);
   });

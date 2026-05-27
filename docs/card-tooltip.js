@@ -7,11 +7,7 @@
   var active = false;
 
   function escText(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   /** Only http(s) image URLs (blocks javascript: and other schemes in tooltip img src). */
@@ -21,7 +17,7 @@
     try {
       var u = new URL(s, window.location.href);
       if (u.protocol === "https:" || u.protocol === "http:") return u.href;
-    } catch (e) {}
+    } catch (_e) {}
     return "";
   }
 
@@ -74,14 +70,14 @@
   document.addEventListener(
     "mouseover",
     function (ev) {
-      var el = ev.target.closest && ev.target.closest(".cw-card-name[data-cw-img]");
+      var el = ev.target.closest?.(".cw-card-name[data-cw-img]");
       if (!el) return;
       var enc = el.getAttribute("data-cw-img");
       if (!enc) return;
       var decoded;
       try {
         decoded = decodeURIComponent(enc);
-      } catch (e) {
+      } catch (_e) {
         decoded = enc;
       }
       var url = safeHttpImageUrl(decoded);
@@ -92,7 +88,7 @@
       t.style.display = "block";
       position(ev);
     },
-    true
+    true,
   );
 
   document.addEventListener(
@@ -103,18 +99,18 @@
       if (t.style.display === "none") return;
       position(ev);
     },
-    true
+    true,
   );
 
   document.addEventListener(
     "mouseout",
     function (ev) {
-      var el = ev.target.closest && ev.target.closest(".cw-card-name[data-cw-img]");
+      var el = ev.target.closest?.(".cw-card-name[data-cw-img]");
       if (!el) return;
       var rel = ev.relatedTarget;
       if (rel && el.contains(rel)) return;
       hide();
     },
-    true
+    true,
   );
 })();

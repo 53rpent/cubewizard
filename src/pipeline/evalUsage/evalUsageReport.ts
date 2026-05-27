@@ -55,8 +55,7 @@ function extractUsage(json: unknown): EvalOpenAiUsageTotals {
   let cached_input_tokens = 0;
   const details = usage.input_tokens_details;
   if (details && typeof details === "object") {
-    cached_input_tokens =
-      Number((details as Record<string, unknown>).cached_tokens ?? 0) || 0;
+    cached_input_tokens = Number((details as Record<string, unknown>).cached_tokens ?? 0) || 0;
   }
   return { input_tokens: input, output_tokens: output, total_tokens: total, cached_input_tokens };
 }
@@ -96,13 +95,9 @@ export function createEvalUsageReporter(uploadId: string): EvalUsageReporter {
       let orientation_calls = 0;
       let extraction_calls = 0;
       for (const c of calls) {
-        if (
-          c.schema_name === "orientation_result" ||
-          c.schema_name === "orientation_confirm"
-        ) {
+        if (c.schema_name === "orientation_result" || c.schema_name === "orientation_confirm") {
           orientation_calls += 1;
-        }
-        else if (c.schema_name === "card_extraction") extraction_calls += 1;
+        } else if (c.schema_name === "card_extraction") extraction_calls += 1;
       }
       return {
         upload_id: uploadId,
@@ -121,10 +116,7 @@ export function createEvalUsageReporter(uploadId: string): EvalUsageReporter {
 
 let activeReporter: EvalUsageReporter | null = null;
 
-export function runWithEvalUsageReporter<T>(
-  reporter: EvalUsageReporter,
-  fn: () => Promise<T>
-): Promise<T> {
+export function runWithEvalUsageReporter<T>(reporter: EvalUsageReporter, fn: () => Promise<T>): Promise<T> {
   const prev = activeReporter;
   activeReporter = reporter;
   return fn().finally(() => {

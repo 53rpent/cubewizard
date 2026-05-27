@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunEvalTaskEnv } from "../orchestrator/runEvalTask";
 import { loadDevVarsIntoEnv } from "./loadDevVars";
-import { createGoldenSqliteD1 } from "./sqliteD1";
 import { createMockR2Bucket } from "./mockR2";
+import { createGoldenSqliteD1 } from "./sqliteD1";
 
 /** Best-effort parse of string values from `wrangler-eval-consumer.jsonc` `vars`. */
 export function loadWranglerEvalConsumerVars(repoRoot: string): Record<string, string> {
@@ -16,9 +16,12 @@ export function loadWranglerEvalConsumerVars(repoRoot: string): Record<string, s
   }
   const out: Record<string, string> = {};
   const varRe = /"([A-Z][A-Z0-9_]*)"\s*:\s*"([^"]*)"/g;
-  let m: RegExpExecArray | null;
-  while ((m = varRe.exec(text)) !== null) {
-    out[m[1]!] = m[2]!;
+  for (;;) {
+    const m = varRe.exec(text);
+    if (m === null) break;
+    const key = m[1];
+    const val = m[2];
+    if (key !== undefined && val !== undefined) out[key] = val;
   }
   return out;
 }

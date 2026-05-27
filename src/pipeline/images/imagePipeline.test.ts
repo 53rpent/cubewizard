@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   combineClockwiseRotations,
@@ -17,8 +17,7 @@ import {
 
 /** Canonical 1×1 red PNG (valid IDAT). */
 function minimalRedPng(): Uint8Array {
-  const b64 =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   return new Uint8Array(Buffer.from(b64, "base64"));
 }
 
@@ -33,9 +32,7 @@ describe("sniffImageFormat", () => {
 
 describe("rotateClockwise", () => {
   it("rotates 3×1 RGB strip 90° CW to 1×3 (left→top)", () => {
-    const data = new Uint8ClampedArray([
-      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
-    ]);
+    const data = new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]);
     const frame = { width: 3, height: 1, data };
     const r = rotateClockwise(frame, 90);
     expect(r.width).toBe(1);
@@ -63,9 +60,7 @@ describe("rotateClockwise", () => {
   });
 
   it("270° CW matches three 90° steps", () => {
-    const data = new Uint8ClampedArray([
-      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
-    ]);
+    const data = new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]);
     const frame = { width: 3, height: 1, data };
     const once = rotateClockwise(rotateClockwise(rotateClockwise(frame, 90), 90), 90);
     const direct = rotateClockwise(frame, 270);
@@ -83,7 +78,7 @@ describe("rotateClockwise", () => {
     const fps = [0, 90, 180, 270].map((deg) => {
       const f = deg === 0 ? frame : rotateClockwise(frame, deg);
       let hsh = 0;
-      for (let i = 0; i < f.data.length; i++) hsh = (hsh * 31 + f.data[i]!) | 0;
+      for (let i = 0; i < f.data.length; i++) hsh = (hsh * 31 + (f.data[i] ?? 0)) | 0;
       return `${deg}:${hsh}`;
     });
     expect(new Set(fps).size).toBe(4);
@@ -107,10 +102,10 @@ describe("rotateClockwise", () => {
       for (let x = 0; x < w; x++) {
         const si = (y * w + x) * 4;
         const di = (x * h + y) * 4;
-        transposed[di] = data[si]!;
-        transposed[di + 1] = data[si + 1]!;
-        transposed[di + 2] = data[si + 2]!;
-        transposed[di + 3] = data[si + 3]!;
+        transposed[di] = data[si] ?? 0;
+        transposed[di + 1] = data[si + 1] ?? 0;
+        transposed[di + 2] = data[si + 2] ?? 0;
+        transposed[di + 3] = data[si + 3] ?? 0;
       }
     }
     const rotated = rotateClockwise(frame, 90).data;
@@ -134,7 +129,7 @@ describe("rotateClockwise", () => {
       for (let x = 0; x < w; x++) {
         const si = (y * w + x) * 4;
         const di = (y * w + (w - 1 - x)) * 4;
-        for (let c = 0; c < 4; c++) flipped[di + c] = frame.data[si + c]!;
+        for (let c = 0; c < 4; c++) flipped[di + c] = frame.data[si + c] ?? 0;
       }
     }
     expect(Array.from(out.data)).not.toEqual(Array.from(flipped));

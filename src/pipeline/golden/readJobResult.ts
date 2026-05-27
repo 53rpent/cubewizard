@@ -1,6 +1,6 @@
 import type { EvalRunReport } from "../evalUsage/evalUsageReport";
-import type { D1DatabaseLike } from "../orchestrator/processingJobRepo";
 import { processingJobDocIdFromUploadId } from "../orchestrator/jobId";
+import type { D1DatabaseLike } from "../orchestrator/processingJobRepo";
 
 export interface ProcessingJobOutcome {
   status: string;
@@ -24,13 +24,11 @@ export function parseEvalReportFromResultJson(resultJson: string | null): EvalRu
 
 export async function readProcessingJobOutcome(
   db: D1DatabaseLike,
-  uploadId: string
+  uploadId: string,
 ): Promise<ProcessingJobOutcome | null> {
   const id = processingJobDocIdFromUploadId(uploadId);
   const row = await db
-    .prepare(
-      "SELECT status, error, result_json FROM processing_jobs WHERE id = ? LIMIT 1"
-    )
+    .prepare("SELECT status, error, result_json FROM processing_jobs WHERE id = ? LIMIT 1")
     .bind(id)
     .first<{ status: string; error: string | null; result_json: string | null }>();
 

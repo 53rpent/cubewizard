@@ -18,7 +18,7 @@ const DEFAULT_JPEG_QUALITY = 95;
  */
 export function rasterToOpenAiCompatible(
   frame: RgbaFrame,
-  jpegQuality: number = DEFAULT_JPEG_QUALITY
+  jpegQuality: number = DEFAULT_JPEG_QUALITY,
 ): VisionRasterBytes {
   if (frameHasTransparency(frame)) {
     return { bytes: encodePng(frame), mime: "image/png" };
@@ -33,10 +33,9 @@ export function rasterToOpenAiCompatible(
 export async function prepareBytesForOpenAiVision(
   bytes: Uint8Array,
   hint?: ImageFormatHint,
-  jpegQuality: number = DEFAULT_JPEG_QUALITY
+  jpegQuality: number = DEFAULT_JPEG_QUALITY,
 ): Promise<VisionRasterBytes> {
-  const fmt =
-    hint && hint !== "unknown" ? hint : sniffImageFormat(bytes);
+  const fmt = hint && hint !== "unknown" ? hint : sniffImageFormat(bytes);
   if (fmt === "jpeg") {
     return { bytes: new Uint8Array(bytes), mime: "image/jpeg" };
   }

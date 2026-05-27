@@ -15,7 +15,7 @@ declare module "upng-js" {
       h: number,
       ps?: number,
       dels?: unknown,
-      forbidPlte?: unknown
+      forbidPlte?: unknown,
     ): ArrayBuffer;
   };
   export default UPNG;

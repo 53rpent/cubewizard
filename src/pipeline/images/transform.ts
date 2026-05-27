@@ -1,10 +1,10 @@
 import type { RgbaFrame } from "./types";
 
-function sampleBilinear(
-  src: RgbaFrame,
-  sx: number,
-  sy: number
-): [number, number, number, number] {
+function rgbaAt(d: Uint8ClampedArray, idx: number): number {
+  return d[idx] ?? 0;
+}
+
+function sampleBilinear(src: RgbaFrame, sx: number, sy: number): [number, number, number, number] {
   const x0 = Math.floor(sx);
   const y0 = Math.floor(sy);
   const x1 = Math.min(x0 + 1, src.width - 1);
@@ -14,7 +14,7 @@ function sampleBilinear(
   const w = src.width;
   const d = src.data;
   function px(x: number, y: number, c: number) {
-    return d[(y * w + x) * 4 + c]!;
+    return rgbaAt(d, (y * w + x) * 4 + c);
   }
   const r =
     px(x0, y0, 0) * (1 - fx) * (1 - fy) +
@@ -42,13 +42,9 @@ function sampleBilinear(
 /**
  * Downscale if either dimension exceeds max; preserves aspect ratio (PIL thumbnail semantics).
  */
-export function resizeToMaxSide(
-  frame: RgbaFrame,
-  maxWidth: number,
-  maxHeight: number
-): RgbaFrame {
+export function resizeToMaxSide(frame: RgbaFrame, maxWidth: number, maxHeight: number): RgbaFrame {
   if (maxWidth <= 0 || maxHeight <= 0) return frame;
-  const { width: w, height: h, data } = frame;
+  const { width: w, height: h } = frame;
   if (w <= maxWidth && h <= maxHeight) return frame;
   const scale = Math.min(maxWidth / w, maxHeight / h);
   const nw = Math.max(1, Math.floor(w * scale));
@@ -90,10 +86,10 @@ export function cropCenter(frame: RgbaFrame, fraction: number): RgbaFrame {
     for (let x = 0; x < cw; x++) {
       const si = ((y0 + y) * sw + (x0 + x)) * 4;
       const di = (y * cw + x) * 4;
-      out[di] = frame.data[si]!;
-      out[di + 1] = frame.data[si + 1]!;
-      out[di + 2] = frame.data[si + 2]!;
-      out[di + 3] = frame.data[si + 3]!;
+      out[di] = rgbaAt(frame.data, si);
+      out[di + 1] = rgbaAt(frame.data, si + 1);
+      out[di + 2] = rgbaAt(frame.data, si + 2);
+      out[di + 3] = rgbaAt(frame.data, si + 3);
     }
   }
   return { width: cw, height: ch, data: out };
@@ -116,10 +112,10 @@ export function rotate90ClockwiseOnce(frame: RgbaFrame): RgbaFrame {
       const sy = h - 1 - ox;
       const si = (sy * w + sx) * 4;
       const di = (oy * nw + ox) * 4;
-      out[di] = src[si]!;
-      out[di + 1] = src[si + 1]!;
-      out[di + 2] = src[si + 2]!;
-      out[di + 3] = src[si + 3]!;
+      out[di] = rgbaAt(src, si);
+      out[di + 1] = rgbaAt(src, si + 1);
+      out[di + 2] = rgbaAt(src, si + 2);
+      out[di + 3] = rgbaAt(src, si + 3);
     }
   }
   return { width: nw, height: nh, data: out };

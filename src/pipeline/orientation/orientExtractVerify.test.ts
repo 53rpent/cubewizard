@@ -4,8 +4,8 @@ import {
   bestRotationFromHistory,
   bestRotationFromRound,
   emptyRotationScoreHistory,
-  scoreLightExtractionResult,
   type OrientLightExtractScore,
+  scoreLightExtractionResult,
 } from "./orientExtractVerify";
 
 function score(n: number): OrientLightExtractScore {
@@ -21,15 +21,12 @@ describe("scoreLightExtractionResult", () => {
   it("weights cube matches and confidence", () => {
     const withCube = scoreLightExtractionResult(
       { card_names: ["Lightning Bolt", "Island"], confidence_level: "high" },
-      ["Lightning Bolt", "Island", "Forest"]
+      ["Lightning Bolt", "Island", "Forest"],
     );
     expect(withCube.cube_matched_count).toBe(2);
     expect(withCube.score).toBeGreaterThan(40);
 
-    const noCube = scoreLightExtractionResult(
-      { card_names: ["Lightning Bolt"], confidence_level: "low" },
-      ["Island"]
-    );
+    const noCube = scoreLightExtractionResult({ card_names: ["Lightning Bolt"], confidence_level: "low" }, ["Island"]);
     expect(noCube.cube_matched_count).toBe(0);
     expect(noCube.score).toBeLessThan(withCube.score);
   });

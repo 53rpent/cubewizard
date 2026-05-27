@@ -60,24 +60,24 @@ function pickImageUris(card: ScryfallCardJson): Record<string, string> {
   return {};
 }
 
+function parseScryfallCmc(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const parsed = parseFloat(String(raw));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function mapScryfallCardToRow(card: ScryfallCardJson): EnrichedDeckCardRow {
-  let cmc = card.cmc ?? 0;
-  if (typeof cmc !== "number" || !Number.isFinite(cmc)) {
-    const parsed = parseFloat(String(card.cmc));
-    cmc = Number.isFinite(parsed) ? parsed : 0;
-  }
   return {
     name: card.name ?? null,
     mana_cost: card.mana_cost ?? "",
-    cmc,
+    cmc: parseScryfallCmc(card.cmc),
     type_line: card.type_line ?? "",
     colors: card.colors ?? [],
     color_identity: card.color_identity ?? [],
     rarity: card.rarity ?? "",
     set: card.set ?? "",
     set_name: card.set_name ?? "",
-    collector_number:
-      card.collector_number != null ? String(card.collector_number) : "",
+    collector_number: card.collector_number != null ? String(card.collector_number) : "",
     power: card.power ?? null,
     toughness: card.toughness ?? null,
     oracle_text: card.oracle_text ?? "",

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isEvalDlqQueue,
-  isEvalRetriesExhausted,
-  parseEvalMaxRetries,
-} from "./evalQueueRetries";
+import { isEvalDlqQueue, isEvalRetriesExhausted, parseEvalMaxRetries } from "./evalQueueRetries";
 import { buildDlqError, buildRetriesExhaustedError } from "./failEvalJobFromQueue";
 
 describe("evalQueueRetries", () => {
@@ -25,8 +21,6 @@ describe("evalQueueRetries", () => {
 
   it("builds descriptive errors", () => {
     expect(buildRetriesExhaustedError(5, 5, "OpenAI HTTP 429")).toContain("retries_exhausted");
-    expect(buildDlqError("cubewizard-eval-stg-dlq", 5, "msg-1", "timeout")).toContain(
-      "dead_letter_queue"
-    );
+    expect(buildDlqError("cubewizard-eval-stg-dlq", 5, "msg-1", "timeout")).toContain("dead_letter_queue");
   });
 });

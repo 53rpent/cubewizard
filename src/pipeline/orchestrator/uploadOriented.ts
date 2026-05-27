@@ -1,17 +1,10 @@
+import { normalizeStoredImagePathRelativeToOutput } from "../d1/storedPath";
 import { encodeJpeg } from "../images/encode";
 import { orientedObjectKey, orientedThumbObjectKey } from "../r2/orientedKeys";
-import {
-  buildThumbWebpBytesFromImageBytes,
-  buildThumbWebpBytesFromRgba,
-} from "../r2/thumbWebp";
-import { normalizeStoredImagePathRelativeToOutput } from "../d1/storedPath";
+import { buildThumbWebpBytesFromRgba } from "../r2/thumbWebp";
 
 export interface R2PutBucket {
-  put(
-    key: string,
-    value: Uint8Array,
-    options?: { httpMetadata?: { contentType?: string } }
-  ): Promise<void>;
+  put(key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<void>;
 }
 
 export async function uploadOrientedJpeg(opts: {

@@ -1,41 +1,30 @@
-import { ExtractTaskRequestSchema } from "../contracts/extractTaskRequest.zod";
-import { createEvalScryfallClient } from "../scryfall/client";
-import type { CardsEnrichmentBlock, DeckCardRow, DeckPayload } from "../d1/types";
-import { executeDeckWritePlan } from "../d1/executeDeckWritePlan";
-import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
 import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
+import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
+import { ExtractTaskRequestSchema } from "../contracts/extractTaskRequest.zod";
+import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
+import { executeDeckWritePlan } from "../d1/executeDeckWritePlan";
+import type { CardsEnrichmentBlock, DeckCardRow, DeckPayload } from "../d1/types";
+import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
+import { createEvalUsageReporter, logEvalUsageReport, runWithEvalUsageReporter } from "../evalUsage/evalUsageReport";
+import { decodeToRgba } from "../images/decode";
+import type { RgbaFrame } from "../images/types";
+import { assertVisionPublishConfigured, createVisionImagePublisher } from "../images/visionPublish";
 import { extractCardNamesFromRgba } from "../openai/extractCardNames";
 import { ModelOutputInvalidError } from "../openai/responsesApi";
-import { decodeToRgba } from "../images/decode";
-import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
-import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
-import {
-  assertVisionPublishConfigured,
-  createVisionImagePublisher,
-} from "../images/visionPublish";
-import { PermanentEvalError } from "./evalErrors";
-import { safeMarkJobFailed } from "./safeMarkJobFailed";
-import { formatEvalError } from "../util/formatEvalError";
-import {
-  createEvalUsageReporter,
-  logEvalUsageReport,
-  runWithEvalUsageReporter,
-} from "../evalUsage/evalUsageReport";
-import { markJobDone } from "./processingJobRepo";
-import { uploadOrientedThumb } from "./uploadOriented";
-import type { RunEvalTaskEnv } from "./runEvalTask";
-import type { RgbaFrame } from "../images/types";
+import { createEvalScryfallClient } from "../scryfall/client";
 import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
+import { formatEvalError } from "../util/formatEvalError";
+import { PermanentEvalError } from "./evalErrors";
 import { resolveEvalPipelineConfig, updateDeckAuxiliaryKeys } from "./evalTaskShared";
+import { markJobDone } from "./processingJobRepo";
+import type { RunEvalTaskEnv } from "./runEvalTask";
+import { safeMarkJobFailed } from "./safeMarkJobFailed";
+import { uploadOrientedThumb } from "./uploadOriented";
 
 /**
  * Phase 2: load oriented JPEG from R2 → extract → thumb upload → release RGBA → Scryfall → D1.
  */
-export async function runExtractTask(
-  rawBody: unknown,
-  env: RunEvalTaskEnv,
-  fetchImpl?: typeof fetch
-): Promise<void> {
+export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetchImpl?: typeof fetch): Promise<void> {
   const parsed = ExtractTaskRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
     throw new PermanentEvalError(`invalid_extract_task: ${parsed.error.message}`);
@@ -60,6 +49,7 @@ export async function runExtractTask(
   const usageReporter = createEvalUsageReporter(task.upload_id);
 
   try {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: extract phase loads image, vision, Scryfall, and D1 writes
     await runWithEvalUsageReporter(usageReporter, async () => {
       const imgObj = await env.DECK_IMAGES_BLOB.get(task.oriented_image_r2_key);
       if (!imgObj) {
@@ -159,7 +149,7 @@ export async function runExtractTask(
             duplicate: true,
             image_id: write.imageId,
             eval_report: evalReport,
-          })
+          }),
         );
         return;
       }
@@ -182,7 +172,7 @@ export async function runExtractTask(
           oriented_image_r2_key: task.oriented_image_r2_key,
           oriented_thumb_r2_key: thumb.thumbKey,
           eval_report: evalReport,
-        })
+        }),
       );
     });
   } catch (e) {
