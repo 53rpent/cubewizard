@@ -29,7 +29,7 @@ function readScoresFile(path: string): GoldenScoresFile {
   } catch {
     return { version: 1, runs: [] };
   }
-  if (!raw || raw.version !== 1 || !Array.isArray(raw.runs)) {
+  if (raw?.version !== 1 || !Array.isArray(raw.runs)) {
     return { version: 1, runs: [] };
   }
   return raw;

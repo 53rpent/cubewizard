@@ -8,20 +8,13 @@ import { THUMB_MAX_SIDE, THUMB_WEBP_QUALITY } from "./orientedKeys";
 export { THUMB_MAX_SIDE, THUMB_WEBP_QUALITY };
 
 /** `@jsquash/webp` encoder signature (injectable for tests — WASM fetch can fail under Vitest/Node). */
-export type WebpEncodeFn = (
-  data: ImageData,
-  options?: { quality?: number }
-) => Promise<ArrayBuffer>;
+export type WebpEncodeFn = (data: ImageData, options?: { quality?: number }) => Promise<ArrayBuffer>;
 
 /**
  * `@jsquash/webp` only reads `data` / `width` / `height` (see `encode.js` in the package).
  * Avoid relying on `globalThis.ImageData` so Vitest runs on Node without canvas.
  */
-function frameAsImageDataLike(frame: {
-  width: number;
-  height: number;
-  data: Uint8ClampedArray;
-}): ImageData {
+function frameAsImageDataLike(frame: { width: number; height: number; data: Uint8ClampedArray }): ImageData {
   return {
     data: new Uint8ClampedArray(frame.data),
     width: frame.width,
@@ -37,7 +30,7 @@ function frameAsImageDataLike(frame: {
 export async function buildThumbWebpBytesFromImageBytes(
   bytes: Uint8Array,
   format: ImageFormatHint,
-  encodeImpl: WebpEncodeFn = encodeWebp
+  encodeImpl: WebpEncodeFn = encodeWebp,
 ): Promise<Uint8Array> {
   let frame = await decodeToRgba(bytes, format);
   frame = resizeToMaxSide(frame, THUMB_MAX_SIDE, THUMB_MAX_SIDE);
@@ -47,7 +40,7 @@ export async function buildThumbWebpBytesFromImageBytes(
 /** Build thumb from an in-memory RGBA frame (avoids re-decoding the oriented JPEG). */
 export async function buildThumbWebpBytesFromRgba(
   frame: { width: number; height: number; data: Uint8ClampedArray },
-  encodeImpl: WebpEncodeFn = encodeWebp
+  encodeImpl: WebpEncodeFn = encodeWebp,
 ): Promise<Uint8Array> {
   if (encodeImpl === encodeWebp) {
     await ensureJsquashWebpEncoderInit();

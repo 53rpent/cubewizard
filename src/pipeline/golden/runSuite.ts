@@ -1,12 +1,11 @@
 import { join } from "node:path";
 import type { EvalRunReport } from "../evalUsage/evalUsageReport";
-import { aggregateCaseMetrics, computeCaseMetrics } from "./metrics";
-import { buildGoldenEvalConsumerEnv, loadWranglerEvalConsumerVars } from "./loadEvalConsumerEnv";
-import { loadDevVarsIntoEnv } from "./loadDevVars";
-import { loadGoldenCases } from "./loadCases";
-import { resolveOpenAiKeyFromEnv } from "./loadDevVars";
-import { computeUsageCostUsd, resolveOpenAiModelPricing, type OpenAiPricingRates } from "./openAiPricing";
 import { parseEvalJpegQuality, parseEvalMaxImageSide } from "../orchestrator/evalImageLimits";
+import { loadGoldenCases } from "./loadCases";
+import { loadDevVarsIntoEnv, resolveOpenAiKeyFromEnv } from "./loadDevVars";
+import { buildGoldenEvalConsumerEnv, loadWranglerEvalConsumerVars } from "./loadEvalConsumerEnv";
+import { aggregateCaseMetrics, computeCaseMetrics } from "./metrics";
+import { computeUsageCostUsd, type OpenAiPricingRates, resolveOpenAiModelPricing } from "./openAiPricing";
 import { runGoldenCaseViaEvalConsumer } from "./runViaEvalConsumer";
 import type { GoldenCaseRunResult, GoldenSuiteConfig, GoldenSuiteRunResult } from "./types";
 
@@ -15,20 +14,15 @@ export function defaultGoldenSuiteConfig(env: NodeJS.ProcessEnv = process.env): 
     model: String(env.OPENAI_VISION_MODEL || "gpt-5-mini-2025-08-07").trim(),
     max_output_tokens: Math.min(
       32000,
-      Math.max(1000, parseInt(String(env.OPENAI_MAX_OUTPUT_TOKENS || "20000"), 10) || 20000)
+      Math.max(1000, parseInt(String(env.OPENAI_MAX_OUTPUT_TOKENS || "20000"), 10) || 20000),
     ),
     reasoning_effort: (String(env.OPENAI_REASONING_EFFORT || "medium").trim() ||
       "medium") as GoldenSuiteConfig["reasoning_effort"],
     use_multi_pass: !/^0|false|no$/i.test(String(env.CW_EVAL_USE_MULTI_PASS || "true")),
-    max_cubecobra_cards: Math.min(
-      2000,
-      parseInt(String(env.CW_EVAL_MAX_CUBECOBRA_CARDS || "1000"), 10) || 1000
-    ),
+    max_cubecobra_cards: Math.min(2000, parseInt(String(env.CW_EVAL_MAX_CUBECOBRA_CARDS || "1000"), 10) || 1000),
     jpeg_quality: parseEvalJpegQuality(env.CW_EVAL_JPEG_QUALITY),
     max_image_side: parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE),
-    orient_max_side: parseEvalMaxImageSide(
-      env.CW_EVAL_ORIENT_MAX_SIDE ?? env.CW_EVAL_MAX_IMAGE_SIDE
-    ),
+    orient_max_side: parseEvalMaxImageSide(env.CW_EVAL_ORIENT_MAX_SIDE ?? env.CW_EVAL_MAX_IMAGE_SIDE),
   };
 }
 
@@ -39,13 +33,13 @@ function caseResultFromEvalReport(
   report: EvalRunReport | null,
   jobStatus: string,
   jobError: string | null,
-  pricing: OpenAiPricingRates
+  pricing: OpenAiPricingRates,
 ): GoldenCaseRunResult {
   const predicted = report?.extracted_card_names ?? [];
   const metrics = computeCaseMetrics(
     predicted,
     goldenCase.expected.expected_card_names,
-    goldenCase.expected.expected_count
+    goldenCase.expected.expected_count,
   );
 
   const openai = report?.openai;
@@ -56,16 +50,16 @@ function caseResultFromEvalReport(
     cached_input_tokens: 0,
   };
   const cost_usd =
-    usage.input_tokens || usage.output_tokens ?
-      computeUsageCostUsd(
-        {
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
-          cached_input_tokens: usage.cached_input_tokens,
-        },
-        pricing
-      )
-    : ZERO_COST;
+    usage.input_tokens || usage.output_tokens
+      ? computeUsageCostUsd(
+          {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+          },
+          pricing,
+        )
+      : ZERO_COST;
   const ok = jobStatus === "done" && report != null;
   return {
     case_id: goldenCase.case_id,
@@ -97,6 +91,7 @@ export interface RunGoldenSuiteOptions {
 }
 
 /** Run all golden cases via the eval consumer (no direct OpenAI calls from the harness). */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: golden harness coordinates env, cases, scoring, and baseline comparison
 export async function runGoldenSuite(opts: RunGoldenSuiteOptions): Promise<GoldenSuiteRunResult> {
   loadDevVarsIntoEnv(opts.repoRoot);
   const wranglerVars = loadWranglerEvalConsumerVars(opts.repoRoot);
@@ -117,19 +112,16 @@ export async function runGoldenSuite(opts: RunGoldenSuiteOptions): Promise<Golde
   console.log(
     `Pricing (${pricing.source}, as of ${pricing.fetched_at}): ` +
       `$${pricing.usd_per_1m_input}/1M in, $${pricing.usd_per_1m_output}/1M out` +
-      (pricing.verified_model_id ? ` [row: ${pricing.verified_model_id}]` : "")
+      (pricing.verified_model_id ? ` [row: ${pricing.verified_model_id}]` : ""),
   );
 
   const allCases = loadGoldenCases(opts.repoRoot);
-  const cases =
-    opts.caseIds?.length ?
-      allCases.filter((c) => opts.caseIds!.includes(c.case_id))
-    : allCases;
+  const cases = opts.caseIds?.length ? allCases.filter((c) => opts.caseIds?.includes(c.case_id)) : allCases;
 
   if (!cases.length) {
     throw new Error(
       `no golden cases found under ${join(opts.repoRoot, "fixtures/eval-golden/cases")} ` +
-        `(need expected.json + image per folder; copy cases/_template)`
+        `(need expected.json + image per folder; copy cases/_template)`,
     );
   }
 
@@ -156,13 +148,7 @@ export async function runGoldenSuite(opts: RunGoldenSuiteOptions): Promise<Golde
       });
 
       if (run.job_status !== "done") {
-        const row = caseResultFromEvalReport(
-          c,
-          run.eval_report,
-          run.job_status,
-          run.job_error,
-          pricing
-        );
+        const row = caseResultFromEvalReport(c, run.eval_report, run.job_status, run.job_error, pricing);
         caseResults.push(row);
         metricsRows.push({
           metrics: row.metrics,
@@ -175,13 +161,7 @@ export async function runGoldenSuite(opts: RunGoldenSuiteOptions): Promise<Golde
       }
 
       if (!run.eval_report) {
-        const row = caseResultFromEvalReport(
-          c,
-          null,
-          run.job_status,
-          "missing_eval_report_in_result_json",
-          pricing
-        );
+        const row = caseResultFromEvalReport(c, null, run.job_status, "missing_eval_report_in_result_json", pricing);
         caseResults.push(row);
         metricsRows.push({
           metrics: row.metrics,
@@ -229,13 +209,7 @@ export async function runGoldenSuite(opts: RunGoldenSuiteOptions): Promise<Golde
     }
   }
 
-  const aggregate = aggregateCaseMetrics(
-    metricsRows,
-    tokenTotals,
-    totalOpenAiCalls,
-    totalDuration,
-    totalCostUsd
-  );
+  const aggregate = aggregateCaseMetrics(metricsRows, tokenTotals, totalOpenAiCalls, totalDuration, totalCostUsd);
 
   const now = new Date();
   return {

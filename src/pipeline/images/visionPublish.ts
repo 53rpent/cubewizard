@@ -1,4 +1,5 @@
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
+import { PermanentEvalError } from "../orchestrator/evalErrors";
 import type { R2PutBucket } from "../orchestrator/uploadOriented";
 import {
   createR2PresignedGetUrl,
@@ -7,7 +8,6 @@ import {
   R2_VISION_BUCKET_DEFAULT,
   type R2PresignEnv,
 } from "../r2/presignedGetUrl";
-import { PermanentEvalError } from "../orchestrator/evalErrors";
 
 export interface VisionPublishEnv extends R2PresignEnv {
   CWW_ENV?: string;
@@ -17,7 +17,7 @@ export interface VisionPublishEnv extends R2PresignEnv {
 export function safeUploadIdForKey(uploadId: string): string {
   return String(uploadId || "unknown")
     .replace(/[:/]/g, "_")
-    .replace(/[^a-zA-Z0-9_\-]/g, "_")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
     .slice(0, 200);
 }
 
@@ -41,7 +41,7 @@ export function assertVisionPublishConfigured(env: VisionPublishEnv): void {
   if (hasR2PresignCredentials(env)) return;
   throw new PermanentEvalError(
     "vision_url_config_missing: set R2 presign secrets " +
-      "(CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)"
+      "(CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)",
   );
 }
 
@@ -55,11 +55,7 @@ export function createVisionImagePublisher(opts: {
   const expires = opts.presignExpiresSeconds ?? R2_PRESIGN_EXPIRES_SECONDS_DEFAULT;
   const bucket = String(opts.env.CW_EVAL_VISION_R2_BUCKET ?? R2_VISION_BUCKET_DEFAULT).trim();
 
-  async function putAndPresignUrl(
-    objectKey: string,
-    jpegBytes: Uint8Array,
-    fetchImpl?: typeof fetch
-  ): Promise<string> {
+  async function putAndPresignUrl(objectKey: string, jpegBytes: Uint8Array, fetchImpl?: typeof fetch): Promise<string> {
     await opts.blob.put(objectKey, jpegBytes, {
       httpMetadata: { contentType: "image/jpeg" },
     });
@@ -68,7 +64,7 @@ export function createVisionImagePublisher(opts: {
         { ...opts.env, CW_EVAL_VISION_R2_BUCKET: bucket },
         objectKey,
         expires,
-        fetchImpl
+        fetchImpl,
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -78,11 +74,7 @@ export function createVisionImagePublisher(opts: {
 
   return {
     publishOrientStep(step, jpegBytes) {
-      return putAndPresignUrl(
-        visionOrientObjectKey(opts.uploadId, step),
-        jpegBytes,
-        opts.fetchImpl
-      );
+      return putAndPresignUrl(visionOrientObjectKey(opts.uploadId, step), jpegBytes, opts.fetchImpl);
     },
     publishExtract(jpegBytes) {
       return putAndPresignUrl(visionExtractObjectKey(opts.uploadId), jpegBytes, opts.fetchImpl);

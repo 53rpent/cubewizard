@@ -40,7 +40,7 @@ export function computeCaseMetrics(
   predictedRaw: string[],
   expectedRaw: string[],
   expectedCount?: number,
-  fuzzyThreshold = GOLDEN_FUZZY_MATCH_THRESHOLD
+  fuzzyThreshold = GOLDEN_FUZZY_MATCH_THRESHOLD,
 ): GoldenCaseMetrics {
   const predicted = [...new Set(predictedRaw.map((s) => s.trim()).filter(Boolean))];
   const expected = [...new Set(expectedRaw.map((s) => s.trim()).filter(Boolean))];
@@ -56,7 +56,7 @@ export function computeCaseMetrics(
   const pairs: { pi: number; ei: number; sim: number }[] = [];
   for (let pi = 0; pi < predNorm.length; pi++) {
     for (let ei = 0; ei < expNorm.length; ei++) {
-      const sim = nameSimilarity(predNorm[pi]!.raw, expNorm[ei]!.raw);
+      const sim = nameSimilarity(predNorm[pi]?.raw, expNorm[ei]?.raw);
       if (sim >= fuzzyThreshold) pairs.push({ pi, ei, sim });
     }
   }
@@ -66,8 +66,8 @@ export function computeCaseMetrics(
     usedPred.add(pi);
     usedExp.add(ei);
     matches.push({
-      predicted: predNorm[pi]!.raw,
-      expected: expNorm[ei]!.raw,
+      predicted: predNorm[pi]?.raw,
+      expected: expNorm[ei]?.raw,
       similarity: sim,
     });
   }
@@ -135,7 +135,7 @@ export function aggregateCaseMetrics(
   tokenTotals: { input: number; output: number; total: number },
   totalOpenAiCalls: number,
   totalDurationMs: number,
-  totalCostUsd: number
+  totalCostUsd: number,
 ): GoldenAggregateMetrics {
   const n = cases.length;
   let tp = 0;

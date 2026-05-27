@@ -7,7 +7,7 @@ type HeifModule = {
       get_height: () => number;
       display: (
         opts: { data: Uint8ClampedArray; width: number; height: number },
-        cb: (out: { data: Uint8ClampedArray; width: number; height: number } | null) => void
+        cb: (out: { data: Uint8ClampedArray; width: number; height: number } | null) => void,
       ) => void;
     }>;
   };
@@ -18,16 +18,15 @@ type HeifModule = {
  * Dynamic import works in Vitest, esbuild Worker bundles, and Node ESM.
  */
 export async function decodeHeicToRgba(bytes: Uint8Array): Promise<RgbaFrame> {
-  const libheif = (await import(
-    "libheif-js/wasm-bundle.js"
-  )) as unknown as HeifModule;
+  const libheif = (await import("libheif-js/wasm-bundle.js")) as unknown as HeifModule;
 
   const decoder = new libheif.HeifDecoder();
   const data = decoder.decode(bytes);
   if (!data || data.length === 0) {
     throw new Error("heic_decode_empty");
   }
-  const image = data[0]!;
+  const image = data[0];
+  if (!image) throw new Error("heic_decode_no_image");
   const width = image.get_width();
   const height = image.get_height();
   const rgba = new Uint8ClampedArray(width * height * 4);

@@ -1,5 +1,5 @@
 import { buildDeckWritePlan, deckInsertWasDuplicate } from "./deckWriteBatches";
-import type { DeckPayload, D1Statement } from "./types";
+import type { D1Statement, DeckPayload } from "./types";
 
 export interface D1DatabaseLike {
   prepare(sql: string): {
@@ -20,7 +20,7 @@ function bindStatement(db: D1DatabaseLike, s: D1Statement): unknown {
 export async function executeDeckWritePlan(
   db: D1DatabaseLike,
   cubeId: string,
-  deck: DeckPayload
+  deck: DeckPayload,
 ): Promise<{ success: boolean; duplicate: boolean; deckId?: number; imageId: string }> {
   const plan = await buildDeckWritePlan(cubeId, deck);
   const batchAResults = await db.batch(plan.batchA.map((s) => bindStatement(db, s)));
@@ -32,8 +32,7 @@ export async function executeDeckWritePlan(
     first: <T = unknown>() => Promise<T | null>;
   };
   const first = await lookupBound.first<{ deck_id?: number }>();
-  const deckId =
-    first && typeof first.deck_id === "number" ? first.deck_id : undefined;
+  const deckId = first && typeof first.deck_id === "number" ? first.deck_id : undefined;
   if (deckId == null) {
     return { success: false, duplicate: false, imageId: plan.imageId };
   }

@@ -1,18 +1,10 @@
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
-import {
-  assertWithinBaselineTolerance,
-  compareGoldenToBaseline,
-  formatBaselineComparison,
-} from "./compareToBaseline";
-import { loadDevVarsIntoEnv, resolveOpenAiKeyFromEnv } from "./loadDevVars";
-import { loadGoldenCases } from "./loadCases";
-import { runGoldenSuite } from "./runSuite";
+import { assertWithinBaselineTolerance, compareGoldenToBaseline, formatBaselineComparison } from "./compareToBaseline";
 import { GoldenEvalCliError } from "./goldenCliError";
-import {
-  formatAggregateSummary,
-  loadBaseline,
-  persistGoldenRun,
-} from "./scoresStore";
+import { loadGoldenCases } from "./loadCases";
+import { loadDevVarsIntoEnv, resolveOpenAiKeyFromEnv } from "./loadDevVars";
+import { runGoldenSuite } from "./runSuite";
+import { formatAggregateSummary, loadBaseline, persistGoldenRun } from "./scoresStore";
 
 export { GoldenEvalCliError } from "./goldenCliError";
 
@@ -30,16 +22,14 @@ export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<v
 
   const apiKey = resolveOpenAiKeyFromEnv();
   if (!apiKey) {
-    throw new GoldenEvalCliError(
-      "OPENAI_API_KEY is not set. Copy .dev.vars.example to .dev.vars and add your key."
-    );
+    throw new GoldenEvalCliError("OPENAI_API_KEY is not set. Copy .dev.vars.example to .dev.vars and add your key.");
   }
 
   const cases = loadGoldenCases(opts.repoRoot);
   if (!cases.length) {
     throw new GoldenEvalCliError(
       "No golden cases found under fixtures/eval-golden/cases/ " +
-        "(each folder needs expected.json + an image file; see cases/_template/)."
+        "(each folder needs expected.json + an image file; see cases/_template/).",
     );
   }
 
@@ -69,7 +59,7 @@ export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<v
     if (/^1|true|yes$/i.test(String(process.env.GOLDEN_FAIL_ON_REGRESSION ?? "").trim())) {
       throw new GoldenEvalCliError(
         `Run exceeded baseline tolerance (${toleranceErrors.length} issue(s)). ` +
-          "Set GOLDEN_FAIL_ON_REGRESSION=0 to only warn."
+          "Set GOLDEN_FAIL_ON_REGRESSION=0 to only warn.",
       );
     }
   }
@@ -83,7 +73,7 @@ export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<v
       console.log(
         `  [OK] ${c.case_id}: F1 ${(c.metrics.f1 * 100).toFixed(1)}% | ` +
           `${c.predicted_card_names.length} predicted | ${c.openai_calls} API calls | ` +
-          `${c.usage.total_tokens} tokens | $${c.cost_usd.total_usd.toFixed(4)}`
+          `${c.usage.total_tokens} tokens | $${c.cost_usd.total_usd.toFixed(4)}`,
       );
     }
   }

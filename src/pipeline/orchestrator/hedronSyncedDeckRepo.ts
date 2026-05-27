@@ -1,5 +1,5 @@
-import type { D1DatabaseLike } from "./processingJobRepo";
 import { evalErrorFields } from "../util/formatEvalError";
+import type { D1DatabaseLike } from "./processingJobRepo";
 
 const HEDRON_UPLOAD_PREFIX = "hedron:";
 
@@ -22,23 +22,16 @@ export function deckImageUuidFromEvalTaskBody(body: unknown): string | null {
  * Remove a deck from `hedron_synced_decks` so the next Hedron sync can enqueue it again.
  * No-op when the row is absent (e.g. manual site uploads).
  */
-export async function releaseHedronSyncedDeck(
-  db: D1DatabaseLike,
-  deckImageUuid: string
-): Promise<number> {
+export async function releaseHedronSyncedDeck(db: D1DatabaseLike, deckImageUuid: string): Promise<number> {
   const uuid = deckImageUuid.trim();
   if (!uuid) return 0;
-  const result = (await db
-    .prepare("DELETE FROM hedron_synced_decks WHERE deck_image_uuid = ?")
-    .bind(uuid)
-    .run()) as { meta?: { changes?: number } };
+  const result = (await db.prepare("DELETE FROM hedron_synced_decks WHERE deck_image_uuid = ?").bind(uuid).run()) as {
+    meta?: { changes?: number };
+  };
   return result?.meta?.changes ?? 0;
 }
 
-export async function safeReleaseHedronSyncedDeckForUpload(
-  db: D1DatabaseLike,
-  uploadId: string
-): Promise<void> {
+export async function safeReleaseHedronSyncedDeckForUpload(db: D1DatabaseLike, uploadId: string): Promise<void> {
   const deckUuid = deckImageUuidFromHedronUploadId(uploadId);
   if (!deckUuid) return;
   try {

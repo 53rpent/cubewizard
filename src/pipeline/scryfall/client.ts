@@ -1,6 +1,6 @@
+import { scryfallGlobalThrottle } from "./globalThrottle";
 import type { EnrichCardListResult, EnrichedDeckCardRow, ScryfallCardJson } from "./types";
 import { mapScryfallCardToRow, stubDeckCardRowForName } from "./types";
-import { scryfallGlobalThrottle } from "./globalThrottle";
 
 const DEFAULT_BASE = "https://api.scryfall.com";
 const NAMED_TIMEOUT_MS = 12_000;
@@ -76,10 +76,7 @@ export class ScryfallClient {
     if (this.rateLimitMs > 0) await sleep(this.rateLimitMs);
   }
 
-  private async fetchScryfall(
-    input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> {
+  private async fetchScryfall(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     let last: Response | null = null;
     for (let attempt = 0; attempt < SCRYFALL_429_MAX_ATTEMPTS; attempt++) {
       await this.throttle();
@@ -88,7 +85,8 @@ export class ScryfallClient {
       const retrySec = parseInt(last.headers.get("retry-after") || "1", 10);
       await sleep(Math.min(5000, Math.max(500, (Number.isFinite(retrySec) ? retrySec : 1) * 1000)));
     }
-    return last!;
+    if (!last) throw new Error("scryfall_fetch_exhausted_retries");
+    return last;
   }
 
   async searchCardByName(cardName: string): Promise<ScryfallCardJson | null> {
@@ -116,9 +114,7 @@ export class ScryfallClient {
     }
   }
 
-  private async postCollection(
-    identifiers: { name: string }[]
-  ): Promise<{ data: ScryfallCardJson[] }> {
+  private async postCollection(identifiers: { name: string }[]): Promise<{ data: ScryfallCardJson[] }> {
     const res = await this.fetchScryfall(`${this.baseUrl}/cards/collection`, {
       method: "POST",
       headers: {
@@ -139,6 +135,7 @@ export class ScryfallClient {
    * Resolve one Scryfall row per requested name (order preserved), using batched
    * `/cards/collection` plus parallel fuzzy `/cards/named` for misses.
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: batched collection lookup with fuzzy fallback and ordered assembly
   async resolveCardNamesInOrder(cardNames: string[]): Promise<{
     rows: EnrichedDeckCardRow[];
     notFoundNames: string[];
@@ -160,7 +157,7 @@ export class ScryfallClient {
         const pool = buildNamePool(data);
         for (let i = 0; i < chunk.length; i++) {
           const globalIdx = start + i;
-          const reqName = chunk[i]!;
+          const reqName = chunk[i] ?? "";
           const card = takeFromNamePool(pool, reqName);
           if (card) {
             foundRows[globalIdx] = mapScryfallCardToRow(card);
@@ -172,7 +169,7 @@ export class ScryfallClient {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("scryfall_collection_batch_failed", msg);
         for (let i = 0; i < chunk.length; i++) {
-          fuzzyQueue.push({ index: start + i, name: chunk[i]! });
+          fuzzyQueue.push({ index: start + i, name: chunk[i] ?? "" });
         }
       }
     }
@@ -185,7 +182,7 @@ export class ScryfallClient {
           if (card) {
             foundRows[q.index] = mapScryfallCardToRow(card);
           }
-        })
+        }),
       );
     }
 
@@ -196,8 +193,9 @@ export class ScryfallClient {
       if (row?.scryfall_uri) {
         rows.push(row);
       } else {
-        rows.push(stubDeckCardRowForName(trimmed[i]!));
-        notFoundNames.push(trimmed[i]!);
+        const missing = trimmed[i] ?? "";
+        rows.push(stubDeckCardRowForName(missing));
+        notFoundNames.push(missing);
       }
     }
 

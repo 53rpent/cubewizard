@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { R2BucketGetPut } from "../orchestrator/runEvalTask";
-import type { GoldenCaseDefinition } from "./types";
 import { stageGoldenCaseOnR2 } from "./stageGoldenCase";
+import type { GoldenCaseDefinition } from "./types";
 
 const REPO_ROOT = join(__dirname, "../../..");
 const PNG_FIXTURE = join(REPO_ROOT, "fixtures/eval-golden/cases/ProxyBacon1/image.png");

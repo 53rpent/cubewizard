@@ -1,19 +1,10 @@
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import path from "node:path";
+import { stdin as input, stdout as output } from "node:process";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import {
-  compareGoldenToBaseline,
-  formatBaselineComparison,
-} from "./compareToBaseline";
+import { compareGoldenToBaseline, formatBaselineComparison } from "./compareToBaseline";
 import { GoldenEvalCliError } from "./goldenCliError";
-import {
-  formatAggregateSummary,
-  goldenScoresPaths,
-  loadBaseline,
-  loadLatest,
-  promoteLatestToBaseline,
-} from "./scoresStore";
+import { formatAggregateSummary, loadBaseline, loadLatest, promoteLatestToBaseline } from "./scoresStore";
 
 export interface RunGoldenBaselineCliOptions {
   repoRoot: string;
@@ -37,9 +28,7 @@ async function confirm(message: string): Promise<boolean> {
 export async function runGoldenBaselineCli(opts: RunGoldenBaselineCliOptions): Promise<void> {
   const latest = loadLatest(opts.repoRoot);
   if (!latest) {
-    throw new GoldenEvalCliError(
-      "No scores/latest.json found. Run npm run golden:eval first."
-    );
+    throw new GoldenEvalCliError("No scores/latest.json found. Run npm run golden:eval first.");
   }
 
   const baseline = loadBaseline(opts.repoRoot);
@@ -49,9 +38,7 @@ export async function runGoldenBaselineCli(opts: RunGoldenBaselineCliOptions): P
   console.log(formatBaselineComparison(comparison));
 
   if (baseline) {
-    console.log(
-      "\nThis will overwrite fixtures/eval-golden/scores/baseline.json with the latest run."
-    );
+    console.log("\nThis will overwrite fixtures/eval-golden/scores/baseline.json with the latest run.");
   } else {
     console.log("\nThis will create fixtures/eval-golden/scores/baseline.json from latest.json.");
   }

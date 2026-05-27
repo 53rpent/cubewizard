@@ -4,7 +4,7 @@
 export async function runPool<T>(
   items: readonly T[],
   concurrency: number,
-  fn: (item: T, index: number) => Promise<void>
+  fn: (item: T, index: number) => Promise<void>,
 ): Promise<void> {
   if (!items.length) return;
   const limit = Math.max(1, Math.min(concurrency, items.length));
@@ -14,7 +14,9 @@ export async function runPool<T>(
     for (;;) {
       const i = next++;
       if (i >= items.length) return;
-      await fn(items[i]!, i);
+      const item = items[i];
+      if (item === undefined) return;
+      await fn(item, i);
     }
   }
 

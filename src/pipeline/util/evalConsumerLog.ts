@@ -1,17 +1,14 @@
 import {
+  type EvalMemoryProbeEnv,
   enrichEvalMemoryLogEnv,
   isEvalMemoryLoggingEnabled,
   readActiveEvalBufferEstimates,
   readNodeMemoryUsageMb,
-  type EvalMemoryProbeEnv,
 } from "./evalMemoryProbe";
 
 export type EvalConsumerLogEnv = EvalMemoryProbeEnv;
 
-export type EvalConsumerLogDetails = Record<
-  string,
-  string | number | boolean | null | undefined
->;
+export type EvalConsumerLogDetails = Record<string, string | number | boolean | null | undefined>;
 
 let activeLogEnv: EvalConsumerLogEnv | null = null;
 let activeUploadId: string | null = null;
@@ -20,7 +17,7 @@ let activeUploadId: string | null = null;
 export async function runWithEvalConsumerLog<T>(
   env: EvalConsumerLogEnv,
   uploadId: string | null,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
 ): Promise<T> {
   const prevEnv = activeLogEnv;
   const prevUpload = activeUploadId;
@@ -48,10 +45,7 @@ export function resetEvalConsumerLogGlobals(): void {
   activeUploadId = null;
 }
 
-function attachMemorySnapshot(
-  env: EvalConsumerLogEnv | null | undefined,
-  payload: Record<string, unknown>
-): void {
+function attachMemorySnapshot(env: EvalConsumerLogEnv | null | undefined, payload: Record<string, unknown>): void {
   const e = env ? enrichEvalMemoryLogEnv(env) : activeLogEnv;
   if (!isEvalMemoryLoggingEnabled(e)) return;
   payload.memory_log_enabled = true;
@@ -66,32 +60,21 @@ function attachMemorySnapshot(
   payload.heap_probe_unavailable = true;
 }
 
-function emitEvalConsumerLog(
-  level: "log" | "error",
-  payload: Record<string, unknown>
-): void {
+function emitEvalConsumerLog(level: "log" | "error", payload: Record<string, unknown>): void {
   const line = JSON.stringify({ log: "eval_consumer", ...payload });
   if (level === "error") console.error(line);
   else console.log(line);
 }
 
 /** Structured eval consumer log (`wrangler tail` → filter `eval_consumer`). */
-export function logEvalConsumer(
-  kind: string,
-  details?: EvalConsumerLogDetails,
-  env?: EvalConsumerLogEnv
-): void {
+export function logEvalConsumer(kind: string, details?: EvalConsumerLogDetails, env?: EvalConsumerLogEnv): void {
   const payload: Record<string, unknown> = { kind, ...details };
   attachMemorySnapshot(env, payload);
   emitEvalConsumerLog("log", payload);
 }
 
 /** Same as {@link logEvalConsumer} but at error severity. */
-export function logEvalConsumerError(
-  kind: string,
-  details?: EvalConsumerLogDetails,
-  env?: EvalConsumerLogEnv
-): void {
+export function logEvalConsumerError(kind: string, details?: EvalConsumerLogDetails, env?: EvalConsumerLogEnv): void {
   const payload: Record<string, unknown> = { kind, ...details };
   attachMemorySnapshot(env, payload);
   emitEvalConsumerLog("error", payload);

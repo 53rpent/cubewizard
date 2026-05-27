@@ -55,10 +55,7 @@ Naming:
 Return JSON only via the schema: card_names (array of strings), confidence_level (high|medium|low), optional notes.
 `.trim();
 
-export function buildCubeListDeveloperSuffix(
-  cubeCardList: string[],
-  maxCardsInPrompt: number
-): string {
+export function buildCubeListDeveloperSuffix(cubeCardList: string[], maxCardsInPrompt: number): string {
   const lines = cubeCardList.slice(0, maxCardsInPrompt).map((c) => `- ${c}`);
   return `
 

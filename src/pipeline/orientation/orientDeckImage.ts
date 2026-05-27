@@ -1,29 +1,26 @@
 import { decodeToRgba } from "../images/decode";
 import { encodeJpeg } from "../images/encode";
-import { visionInputFromJpegBytes } from "../images/visionImageInput";
-import type { VisionImagePublisher } from "../images/visionPublish";
-import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
+import { sniffImageFormat } from "../images/sniff";
 import { cropCenter, resizeToMaxSide, rotateClockwise } from "../images/transform";
 import type { ImageFormatHint, RgbaFrame } from "../images/types";
-import { sniffImageFormat } from "../images/sniff";
-import {
-  ORIENTATION_CONFIRM_DEVELOPER_PROMPT,
-  ORIENTATION_CONFIRM_USER_PROMPT,
-} from "../openai/prompts";
+import { visionInputFromJpegBytes } from "../images/visionImageInput";
+import type { VisionImagePublisher } from "../images/visionPublish";
 import { orientationConfirmJsonSchema } from "../openai/jsonSchemas";
-import { OrientationConfirmResultSchema } from "../openai/schemas";
+import { ORIENTATION_CONFIRM_DEVELOPER_PROMPT, ORIENTATION_CONFIRM_USER_PROMPT } from "../openai/prompts";
 import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
+import { OrientationConfirmResultSchema } from "../openai/schemas";
+import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
+import { isEvalConsumerLogActive } from "../util/evalConsumerLog";
+import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
 import {
   appendRotationScores,
   bestRotationFromHistory,
   bestRotationFromRound,
   emptyRotationScoreHistory,
-  scoreAllRotationCandidates,
   type OrientLightExtractOptions,
   type RotationCandidate,
+  scoreAllRotationCandidates,
 } from "./orientExtractVerify";
-import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
-import { isEvalConsumerLogActive } from "../util/evalConsumerLog";
 
 export const ORIENT_DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 export const ORIENT_CENTER_CROP_FRACTION = 0.65;
@@ -55,8 +52,8 @@ function maybeResize(frame: RgbaFrame, maxSide: number): RgbaFrame {
 async function confirmOrientation(
   frame: RgbaFrame,
   opts: OrientDeckImageOptions,
-  rotation: RotationCandidate,
-  confirmStep: number
+  _rotation: RotationCandidate,
+  confirmStep: number,
 ): Promise<boolean> {
   const cropFraction = opts.orientCenterCropFraction ?? ORIENT_CENTER_CROP_FRACTION;
   const crop = cropCenter(frame, cropFraction);
@@ -84,7 +81,7 @@ async function confirmOrientation(
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },
-    OrientationConfirmResultSchema
+    OrientationConfirmResultSchema,
   );
   return result.correctly_oriented;
 }
@@ -92,12 +89,10 @@ async function confirmOrientation(
 function logRoundScores(
   level: EvalOpenAiLogLevel,
   roundIndex: number,
-  round: Record<RotationCandidate, { score: number; raw_name_count: number }>
+  round: Record<RotationCandidate, { score: number; raw_name_count: number }>,
 ): void {
   if (level !== "medium") return;
-  const parts = ([0, 90, 180, 270] as const).map(
-    (r) => `${r}°=${round[r].score} (${round[r].raw_name_count} names)`
-  );
+  const parts = ([0, 90, 180, 270] as const).map((r) => `${r}°=${round[r].score} (${round[r].raw_name_count} names)`);
   console.log(`Orient score round ${roundIndex + 1}: ${parts.join(", ")}`);
 }
 
@@ -106,10 +101,11 @@ function logRoundScores(
  * 2) Score each 90° rotation (light extract). 3) Confirm best with yes/no.
  * If no, score all four again; final rotation = peak score across both rounds.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-round rotation scoring with confirm and extract probes
 export async function orientDeckImageRgba(
   imageBytes: Uint8Array,
   hint: ImageFormatHint | undefined,
-  opts: OrientDeckImageOptions
+  opts: OrientDeckImageOptions,
 ): Promise<{ frame: RgbaFrame; sniffed: ImageFormatHint; cumulativeRotation: number }> {
   const fmt = hint && hint !== "unknown" ? hint : sniffImageFormat(imageBytes);
   if (fmt === "unknown") {
@@ -146,9 +142,8 @@ export async function orientDeckImageRgba(
   appendRotationScores(history, round1);
   logRoundScores(level, 0, round1);
 
-  let { rotation: candidateRot, bestScore } = bestRotationFromRound(round1);
-  let candidateFrame =
-    candidateRot === 0 ? baseFrame : rotateClockwise(baseFrame, candidateRot);
+  const { rotation: candidateRot, bestScore } = bestRotationFromRound(round1);
+  const candidateFrame = candidateRot === 0 ? baseFrame : rotateClockwise(baseFrame, candidateRot);
 
   if (level === "medium") {
     console.log(`Orient round 1 best: ${candidateRot}° (score ${bestScore}) — confirm upright?`);
@@ -157,8 +152,7 @@ export async function orientDeckImageRgba(
   const confirmed = await confirmOrientation(candidateFrame, opts, candidateRot, 50);
   if (confirmed) {
     if (level === "medium") console.log(`Orient confirm: yes @ ${candidateRot}°`);
-    const frame =
-      candidateRot === 0 ? baseFrame : rotateClockwise(baseFrame, candidateRot);
+    const frame = candidateRot === 0 ? baseFrame : rotateClockwise(baseFrame, candidateRot);
     return { frame, sniffed: fmt, cumulativeRotation: candidateRot };
   }
 
@@ -172,12 +166,9 @@ export async function orientDeckImageRgba(
 
   const final = bestRotationFromHistory(history);
   if (level === "medium") {
-    console.log(
-      `Orient final: ${final.rotation}° (peak score ${final.bestScore} across 2 rounds per angle)`
-    );
+    console.log(`Orient final: ${final.rotation}° (peak score ${final.bestScore} across 2 rounds per angle)`);
   }
 
-  const frame =
-    final.rotation === 0 ? baseFrame : rotateClockwise(baseFrame, final.rotation);
+  const frame = final.rotation === 0 ? baseFrame : rotateClockwise(baseFrame, final.rotation);
   return { frame, sniffed: fmt, cumulativeRotation: final.rotation };
 }

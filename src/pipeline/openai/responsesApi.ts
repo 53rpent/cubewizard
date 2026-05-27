@@ -1,18 +1,7 @@
 import type { ZodType } from "zod";
-import {
-  extractOpenAiUsageFromResponse,
-  getActiveEvalUsageReporter,
-} from "../evalUsage/evalUsageReport";
-import {
-  getActiveEvalConsumerUploadId,
-  isEvalConsumerLogActive,
-  logEvalConsumer,
-} from "../util/evalConsumerLog";
-import type {
-  CardExtractionResult,
-  OrientationConfirmResult,
-  OrientationResult,
-} from "./schemas";
+import { extractOpenAiUsageFromResponse, getActiveEvalUsageReporter } from "../evalUsage/evalUsageReport";
+import { getActiveEvalConsumerUploadId, isEvalConsumerLogActive, logEvalConsumer } from "../util/evalConsumerLog";
+import type { CardExtractionResult, OrientationConfirmResult, OrientationResult } from "./schemas";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
@@ -27,7 +16,9 @@ export function parseEvalOpenAiLogLevel(env: {
   CW_EVAL_LOG_LEVEL?: string;
   CW_EVAL_VERBOSE_LOG?: string;
 }): EvalOpenAiLogLevel {
-  const raw = String(env.CW_EVAL_LOG_LEVEL ?? "").trim().toLowerCase();
+  const raw = String(env.CW_EVAL_LOG_LEVEL ?? "")
+    .trim()
+    .toLowerCase();
   if (raw === "off" || raw === "low" || raw === "medium" || raw === "high") return raw;
   if (/^1|true|yes$/i.test(String(env.CW_EVAL_VERBOSE_LOG ?? "").trim())) return "high";
   return "off";
@@ -45,13 +36,18 @@ export class ModelOutputInvalidError extends Error {
 export class OpenAiApiError extends Error {
   readonly bodySnippet: string;
 
-  constructor(message: string, readonly status: number, bodySnippet: string) {
+  constructor(
+    message: string,
+    readonly status: number,
+    bodySnippet: string,
+  ) {
     super(message);
     this.name = "OpenAiApiError";
     this.bodySnippet = bodySnippet;
   }
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: walks nested OpenAI Responses output blocks for structured text
 function extractStructuredText(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const root = data as Record<string, unknown>;
@@ -137,10 +133,8 @@ function buildVisionInput(opts: VisionJsonCallOptions): Record<string, unknown>[
 /**
  * OpenAI **Responses** API with `text.format.type = json_schema`, then Zod-parse output.
  */
-export async function callOpenAiVisionJsonSchema<T>(
-  opts: VisionJsonCallOptions,
-  zodSchema: ZodType<T>
-): Promise<T> {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: vision request, logging, HTTP handling, and schema validation in one call site
+export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions, zodSchema: ZodType<T>): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
 
   const body: Record<string, unknown> = {
@@ -183,8 +177,7 @@ export async function callOpenAiVisionJsonSchema<T>(
   }
 
   if (isEvalConsumerLogActive()) {
-    const uploadId =
-      getActiveEvalConsumerUploadId() ?? getActiveEvalUsageReporter()?.uploadId ?? null;
+    const uploadId = getActiveEvalConsumerUploadId() ?? getActiveEvalUsageReporter()?.uploadId ?? null;
     logEvalConsumer("openai_request", {
       schema: opts.schemaName,
       model: opts.model,
@@ -212,15 +205,11 @@ export async function callOpenAiVisionJsonSchema<T>(
     const cap = 24_000;
     console.log(
       "openai_vision_response_raw",
-      rawText.length > cap ? `${rawText.slice(0, cap)}\n…truncated (${rawText.length} chars total)` : rawText
+      rawText.length > cap ? `${rawText.slice(0, cap)}\n…truncated (${rawText.length} chars total)` : rawText,
     );
   }
   if (!res.ok) {
-    throw new OpenAiApiError(
-      `OpenAI responses HTTP ${res.status}`,
-      res.status,
-      rawText.slice(0, 800)
-    );
+    throw new OpenAiApiError(`OpenAI responses HTTP ${res.status}`, res.status, rawText.slice(0, 800));
   }
 
   let json: unknown;
@@ -234,8 +223,7 @@ export async function callOpenAiVisionJsonSchema<T>(
 
   if (isEvalConsumerLogActive()) {
     const usage = extractOpenAiUsageFromResponse(json);
-    const uploadId =
-      getActiveEvalConsumerUploadId() ?? getActiveEvalUsageReporter()?.uploadId ?? null;
+    const uploadId = getActiveEvalConsumerUploadId() ?? getActiveEvalUsageReporter()?.uploadId ?? null;
     logEvalConsumer("openai_response", {
       schema: opts.schemaName,
       status: res.status,
@@ -255,7 +243,7 @@ export async function callOpenAiVisionJsonSchema<T>(
     const cap = 12_000;
     console.log(
       "openai_vision_structured_text",
-      text.length > cap ? `${text.slice(0, cap)}\n…truncated (${text.length} chars)` : text
+      text.length > cap ? `${text.slice(0, cap)}\n…truncated (${text.length} chars)` : text,
     );
   }
   if (!text) {
@@ -278,9 +266,7 @@ export async function callOpenAiVisionJsonSchema<T>(
   if (mediumLog) {
     if (opts.schemaName === "orientation_result") {
       const r = parsed.data as OrientationResult;
-      console.log(
-        `Orientation detection: ${r.rotation_needed}° rotation needed (${r.confidence} confidence)`
-      );
+      console.log(`Orientation detection: ${r.rotation_needed}° rotation needed (${r.confidence} confidence)`);
       if (r.reasoning) console.log(`Reasoning: ${r.reasoning}`);
     } else if (opts.schemaName === "orientation_confirm") {
       const r = parsed.data as OrientationConfirmResult;

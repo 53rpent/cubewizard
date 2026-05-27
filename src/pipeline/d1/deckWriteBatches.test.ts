@@ -49,9 +49,9 @@ describe("buildDeckWritePlan", () => {
     const cubeId = "abc123";
     const plan = await buildDeckWritePlan(cubeId, minimalDeck());
     expect(plan.batchA).toHaveLength(2);
-    expect(plan.batchA[0]!.sql).toContain("INSERT OR IGNORE INTO cubes");
-    expect(plan.batchA[1]!.sql).toContain("INSERT OR IGNORE INTO decks");
-    expect(plan.batchA[1]!.params![8]).toBe(plan.imageId);
+    expect(plan.batchA[0]?.sql).toContain("INSERT OR IGNORE INTO cubes");
+    expect(plan.batchA[1]?.sql).toContain("INSERT OR IGNORE INTO decks");
+    expect(plan.batchA[1]?.params?.[8]).toBe(plan.imageId);
     expect(plan.lookup.sql).toContain("SELECT deck_id FROM decks");
     expect(plan.lookup.params).toEqual([cubeId, "ts1", "P"]);
   });
@@ -59,12 +59,12 @@ describe("buildDeckWritePlan", () => {
   it("buildBatchB includes deck_stats, one deck_card, and cube counter update", async () => {
     const plan = await buildDeckWritePlan("c1", minimalDeck());
     const b = plan.buildBatchB(42);
-    expect(b[0]!.sql).toContain("INSERT INTO deck_stats");
-    expect(b[0]!.params![0]).toBe(42);
-    expect(b[1]!.sql).toContain("INSERT INTO deck_cards");
-    expect(b[1]!.params![0]).toBe(42);
-    expect(b[1]!.params![1]).toBe("Mountain");
-    expect(b[b.length - 1]!.sql).toContain("UPDATE cubes SET");
+    expect(b[0]?.sql).toContain("INSERT INTO deck_stats");
+    expect(b[0]?.params?.[0]).toBe(42);
+    expect(b[1]?.sql).toContain("INSERT INTO deck_cards");
+    expect(b[1]?.params?.[0]).toBe(42);
+    expect(b[1]?.params?.[1]).toBe("Mountain");
+    expect(b[b.length - 1]?.sql).toContain("UPDATE cubes SET");
   });
 
   it("defaults total_not_found from not_found length when omitted", async () => {
@@ -72,7 +72,7 @@ describe("buildDeckWritePlan", () => {
     deck.deck.cards.total_not_found = undefined;
     deck.deck.cards.not_found = ["Missing Card"];
     const plan = await buildDeckWritePlan("c", deck);
-    const notes = JSON.parse(plan.buildBatchB(1)[0]!.params![3] as string) as {
+    const notes = JSON.parse(plan.buildBatchB(1)[0]?.params?.[3] as string) as {
       total_not_found: number;
     };
     expect(notes.total_not_found).toBe(1);
