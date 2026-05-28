@@ -1,17 +1,14 @@
+import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
 import { encodeJpeg } from "../images/encode";
-import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
 import { resizeToMaxSide, rotateClockwise } from "../images/transform";
 import type { RgbaFrame } from "../images/types";
 import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
-import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
-import {
-  EXTRACTION_DEVELOPER_PROMPT,
-  buildExtractionUserPrompt,
-} from "../openai/prompts";
 import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
-import { CardExtractionResultSchema, type CardExtractionResult } from "../openai/schemas";
+import { buildExtractionUserPrompt, EXTRACTION_DEVELOPER_PROMPT } from "../openai/prompts";
 import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
+import { type CardExtractionResult, CardExtractionResultSchema } from "../openai/schemas";
+import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
 
 const LIGHT_EXTRACT_MAX_OUTPUT = 4096;
 
@@ -47,11 +44,10 @@ export function emptyRotationScoreHistory(): RotationScoreHistory {
 
 export function scoreLightExtractionResult(
   result: CardExtractionResult,
-  cubeCardList: string[] | null
+  cubeCardList: string[] | null,
 ): OrientLightExtractScore {
   const raw = result.card_names.map((s) => s.trim()).filter(Boolean);
-  const cubeMatched =
-    cubeCardList?.length ? normalizeNamesToCubeList(raw, cubeCardList) : raw;
+  const cubeMatched = cubeCardList?.length ? normalizeNamesToCubeList(raw, cubeCardList) : raw;
   let score = cubeMatched.length * 12 + raw.length * 4;
   if (result.confidence_level === "high") score += 24;
   else if (result.confidence_level === "medium") score += 12;
@@ -67,7 +63,7 @@ export function scoreLightExtractionResult(
 export async function lightExtractScoreFromRgba(
   frame: RgbaFrame,
   opts: OrientLightExtractOptions,
-  visionStep?: number
+  visionStep?: number,
 ): Promise<OrientLightExtractScore> {
   const side = opts.maxImageSide ?? EVAL_IMAGE_SIDE_UNLIMITED;
   const sized = resizeToMaxSide(frame, side, side);
@@ -95,7 +91,7 @@ export async function lightExtractScoreFromRgba(
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },
-    CardExtractionResultSchema
+    CardExtractionResultSchema,
   );
 
   return scoreLightExtractionResult(result, opts.cubeCardList);
@@ -109,7 +105,7 @@ function frameAtRotation(baseFrame: RgbaFrame, rotation: RotationCandidate): Rgb
 export async function scoreAllRotationCandidates(
   baseFrame: RgbaFrame,
   opts: OrientLightExtractOptions,
-  roundIndex: number
+  roundIndex: number,
 ): Promise<Record<RotationCandidate, OrientLightExtractScore>> {
   const out = {} as Record<RotationCandidate, OrientLightExtractScore>;
   for (const rot of ROTATION_CANDIDATES) {
@@ -121,7 +117,7 @@ export async function scoreAllRotationCandidates(
 
 export function appendRotationScores(
   history: RotationScoreHistory,
-  round: Record<RotationCandidate, OrientLightExtractScore>
+  round: Record<RotationCandidate, OrientLightExtractScore>,
 ): void {
   for (const rot of ROTATION_CANDIDATES) {
     history[rot].push(round[rot]);
@@ -146,9 +142,10 @@ export function bestRotationFromHistory(history: RotationScoreHistory): {
 }
 
 /** Best rotation from a single scoring round only. */
-export function bestRotationFromRound(
-  round: Record<RotationCandidate, OrientLightExtractScore>
-): { rotation: RotationCandidate; bestScore: number } {
+export function bestRotationFromRound(round: Record<RotationCandidate, OrientLightExtractScore>): {
+  rotation: RotationCandidate;
+  bestScore: number;
+} {
   let bestRotation: RotationCandidate = 0;
   let bestScore = -1;
   for (const rot of ROTATION_CANDIDATES) {

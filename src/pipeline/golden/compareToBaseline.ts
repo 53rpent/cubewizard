@@ -36,7 +36,7 @@ function delta(current: number, baseline: number): GoldenMetricDelta {
 
 export function compareGoldenToBaseline(
   current: GoldenSuiteRunResult,
-  baseline: GoldenSuiteRunResult | null
+  baseline: GoldenSuiteRunResult | null,
 ): GoldenBaselineComparison {
   if (!baseline) {
     return {
@@ -132,6 +132,7 @@ function fmtUsd(n: number): string {
 }
 
 /** Human-readable comparison report for console output. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: formats aggregate, per-case, and regression sections for CLI output
 export function formatBaselineComparison(report: GoldenBaselineComparison): string {
   const lines: string[] = ["", "── Comparison vs baseline ──"];
 
@@ -144,19 +145,19 @@ export function formatBaselineComparison(report: GoldenBaselineComparison): stri
   lines.push(
     `Baseline: ${b.label} @ ${b.recorded_at} (micro F1 ${fmtPct(b.aggregate.micro_f1)})`,
     `Current:  ${report.current.label} @ ${report.current.recorded_at} (micro F1 ${fmtPct(report.current.aggregate.micro_f1)})`,
-    ""
+    "",
   );
 
   const agg = report.aggregate;
   if (agg.micro_f1) {
     lines.push(
       `Micro F1:        ${fmtPct(agg.micro_f1.current)} (${fmtDelta(agg.micro_f1.delta, true)} vs baseline)`,
-      `Micro recall:    ${fmtPct(agg.micro_recall!.current)} (${fmtDelta(agg.micro_recall!.delta, true)})`,
-      `Micro precision: ${fmtPct(agg.micro_precision!.current)} (${fmtDelta(agg.micro_precision!.delta, true)})`,
-      `Exact-set cases: ${agg.exact_match_cases!.current}/${report.current.aggregate.case_count} (${fmtDelta(agg.exact_match_cases!.delta)} vs ${agg.exact_match_cases!.baseline})`,
-      `Mean |count err|: ${agg.mean_count_error!.current.toFixed(2)} (${fmtDelta(agg.mean_count_error!.delta)})`,
-      `Tokens:          ${agg.total_tokens!.current} (${fmtDelta(agg.total_tokens!.delta, false)} )`,
-      `Est. cost:       ${fmtUsd(agg.total_cost_usd!.current)} (${fmtDelta(agg.total_cost_usd!.delta)} USD)`
+      `Micro recall:    ${fmtPct(agg.micro_recall?.current)} (${fmtDelta(agg.micro_recall?.delta, true)})`,
+      `Micro precision: ${fmtPct(agg.micro_precision?.current)} (${fmtDelta(agg.micro_precision?.delta, true)})`,
+      `Exact-set cases: ${agg.exact_match_cases?.current}/${report.current.aggregate.case_count} (${fmtDelta(agg.exact_match_cases?.delta)} vs ${agg.exact_match_cases?.baseline})`,
+      `Mean |count err|: ${agg.mean_count_error?.current.toFixed(2)} (${fmtDelta(agg.mean_count_error?.delta)})`,
+      `Tokens:          ${agg.total_tokens?.current} (${fmtDelta(agg.total_tokens?.delta, false)} )`,
+      `Est. cost:       ${fmtUsd(agg.total_cost_usd?.current)} (${fmtDelta(agg.total_cost_usd?.delta)} USD)`,
     );
   }
 
@@ -166,11 +167,11 @@ export function formatBaselineComparison(report: GoldenBaselineComparison): stri
     for (const c of compared.sort((a, b) => (a.f1_delta ?? 0) - (b.f1_delta ?? 0))) {
       const base = c.baseline_f1 != null ? fmtPct(c.baseline_f1) : "—";
       const d =
-        c.f1_delta != null ?
-          c.f1_delta >= 0 ?
-            ` ${fmtDelta(c.f1_delta, true)}`
-          : ` ${fmtDelta(c.f1_delta, true)}`
-        : "";
+        c.f1_delta != null
+          ? c.f1_delta >= 0
+            ? ` ${fmtDelta(c.f1_delta, true)}`
+            : ` ${fmtDelta(c.f1_delta, true)}`
+          : "";
       lines.push(`  ${c.case_id}: ${fmtPct(c.current_f1)} (was ${base})${d}`);
     }
   }
@@ -179,7 +180,7 @@ export function formatBaselineComparison(report: GoldenBaselineComparison): stri
   if (regressions.length) {
     lines.push("", "Largest regressions:");
     for (const c of regressions.sort((a, b) => (a.f1_delta ?? 0) - (b.f1_delta ?? 0)).slice(0, 5)) {
-      lines.push(`  ${c.case_id}: ${fmtDelta(c.f1_delta!, true)}`);
+      lines.push(`  ${c.case_id}: ${fmtDelta(c.f1_delta ?? 0, true)}`);
     }
   }
 
@@ -187,9 +188,10 @@ export function formatBaselineComparison(report: GoldenBaselineComparison): stri
 }
 
 /** Optional strict check (former regression thresholds). */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validates aggregate and per-case golden regression thresholds
 export function assertWithinBaselineTolerance(
   report: GoldenBaselineComparison,
-  opts?: { maxF1Drop?: number; maxCostRatio?: number; maxTokenRatio?: number }
+  opts?: { maxF1Drop?: number; maxCostRatio?: number; maxTokenRatio?: number },
 ): string[] {
   if (!report.has_baseline || !report.baseline) return [];
 
@@ -200,22 +202,20 @@ export function assertWithinBaselineTolerance(
 
   const f1 = report.aggregate.micro_f1;
   if (f1 && f1.delta < -maxF1Drop) {
-    errors.push(
-      `micro-F1 dropped ${(-f1.delta * 100).toFixed(1)}pp (max allowed ${(maxF1Drop * 100).toFixed(1)}pp)`
-    );
+    errors.push(`micro-F1 dropped ${(-f1.delta * 100).toFixed(1)}pp (max allowed ${(maxF1Drop * 100).toFixed(1)}pp)`);
   }
 
   const cost = report.aggregate.total_cost_usd;
-  if (cost && report.baseline!.aggregate.total_cost_usd > 0) {
-    const ratio = cost.current / report.baseline!.aggregate.total_cost_usd;
+  if (cost && report.baseline?.aggregate.total_cost_usd > 0) {
+    const ratio = cost.current / report.baseline?.aggregate.total_cost_usd;
     if (ratio > maxCostRatio) {
       errors.push(`cost ratio ${ratio.toFixed(2)} exceeds ${maxCostRatio}`);
     }
   }
 
   const tokens = report.aggregate.total_tokens;
-  if (tokens && report.baseline!.aggregate.total_tokens > 0) {
-    const ratio = tokens.current / report.baseline!.aggregate.total_tokens;
+  if (tokens && report.baseline?.aggregate.total_tokens > 0) {
+    const ratio = tokens.current / report.baseline?.aggregate.total_tokens;
     if (ratio > maxTokenRatio) {
       errors.push(`token ratio ${ratio.toFixed(2)} exceeds ${maxTokenRatio}`);
     }

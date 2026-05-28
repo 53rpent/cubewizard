@@ -4,7 +4,7 @@ export function processingJobDocIdFromUploadId(uploadId: string): string {
   const bytes = new TextEncoder().encode(s);
   let bin = "";
   for (let i = 0; i < bytes.length; i++) {
-    bin += String.fromCharCode(bytes[i]!);
+    bin += String.fromCharCode(bytes[i] ?? 0);
   }
   const b64 = btoa(bin);
   return "u_" + b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");

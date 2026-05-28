@@ -1,12 +1,8 @@
-import { safeReleaseHedronSyncedDeckForUpload } from "./hedronSyncedDeckRepo";
-import { markJobFailed, type D1DatabaseLike } from "./processingJobRepo";
 import { evalErrorFields } from "../util/formatEvalError";
+import { safeReleaseHedronSyncedDeckForUpload } from "./hedronSyncedDeckRepo";
+import { type D1DatabaseLike, markJobFailed } from "./processingJobRepo";
 
-export async function safeMarkJobFailed(
-  db: D1DatabaseLike,
-  uploadId: string,
-  error: string
-): Promise<void> {
+export async function safeMarkJobFailed(db: D1DatabaseLike, uploadId: string, error: string): Promise<void> {
   try {
     await markJobFailed(db, uploadId, error);
   } catch (e) {

@@ -1,5 +1,5 @@
-import { safeMarkJobFailed } from "./safeMarkJobFailed";
 import type { D1DatabaseLike } from "./processingJobRepo";
+import { safeMarkJobFailed } from "./safeMarkJobFailed";
 
 export function uploadIdFromEvalTaskBody(body: unknown): string | undefined {
   const raw = body as Record<string, unknown> | null;
@@ -7,11 +7,7 @@ export function uploadIdFromEvalTaskBody(body: unknown): string | undefined {
   return typeof id === "string" && id.trim() ? id.trim() : undefined;
 }
 
-export function buildRetriesExhaustedError(
-  attempts: number | undefined,
-  maxRetries: number,
-  cause: string
-): string {
+export function buildRetriesExhaustedError(attempts: number | undefined, maxRetries: number, cause: string): string {
   const a = attempts ?? 1;
   return `retries_exhausted (${a}/${maxRetries}): ${cause}`.slice(0, 4000);
 }
@@ -20,7 +16,7 @@ export function buildDlqError(
   queueName: string,
   attempts: number | undefined,
   messageId: string,
-  lastError?: string
+  lastError?: string,
 ): string {
   const a = attempts ?? 1;
   const base = `dead_letter_queue (${queueName}): eval message ${messageId} failed after ${a} delivery attempt(s)`;
@@ -33,7 +29,7 @@ export function buildDlqError(
 export async function failEvalJobFromQueue(
   db: D1DatabaseLike,
   uploadId: string | undefined,
-  error: string
+  error: string,
 ): Promise<boolean> {
   if (!uploadId) {
     console.error("eval_fail_job_no_upload_id", { error: error.slice(0, 500) });

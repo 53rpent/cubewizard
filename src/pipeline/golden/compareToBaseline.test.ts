@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  assertWithinBaselineTolerance,
-  compareGoldenToBaseline,
-  formatBaselineComparison,
-} from "./compareToBaseline";
+import { assertWithinBaselineTolerance, compareGoldenToBaseline, formatBaselineComparison } from "./compareToBaseline";
 import type { GoldenSuiteRunResult } from "./types";
 
 function stubRun(microF1: number, cases: { id: string; f1: number }[]): GoldenSuiteRunResult {
@@ -100,7 +96,7 @@ describe("compareGoldenToBaseline", () => {
       { id: "bad", f1: 0.7 },
     ]);
     const report = compareGoldenToBaseline(current, baseline);
-    expect(report.aggregate.micro_f1!.delta).toBeCloseTo(-0.02, 5);
+    expect(report.aggregate.micro_f1?.delta).toBeCloseTo(-0.02, 5);
     const bad = report.cases.find((c) => c.case_id === "bad");
     expect(bad?.f1_delta).toBeCloseTo(-0.1, 5);
   });

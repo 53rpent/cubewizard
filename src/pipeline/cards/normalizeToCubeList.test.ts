@@ -5,10 +5,7 @@ describe("normalizeNamesToCubeList", () => {
   const cube = ["Jace, The Mind Sculptor", "Plains", "Lightning Bolt", "Damn"];
 
   it("maps fuzzy near-misses to cube spellings", () => {
-    const out = normalizeNamesToCubeList(
-      ["Jace, the Mind Sculptor", "Plains (basic land)"],
-      cube
-    );
+    const out = normalizeNamesToCubeList(["Jace, the Mind Sculptor", "Plains (basic land)"], cube);
     expect(out).toContain("Jace, The Mind Sculptor");
     expect(out).toContain("Plains");
   });

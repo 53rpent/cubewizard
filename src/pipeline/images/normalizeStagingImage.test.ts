@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   normalizeStagingImage,
   normalizeStagingImageFallback,
@@ -9,9 +9,7 @@ import {
 } from "./normalizeStagingImage";
 import { readImageDimensions } from "./readImageDimensions";
 
-function mockImagesBinding(
-  onTransform: (opts: Record<string, string | number>) => Uint8Array
-): StagingImagesBinding {
+function mockImagesBinding(onTransform: (opts: Record<string, string | number>) => Uint8Array): StagingImagesBinding {
   return {
     async info() {
       return { width: 5712, height: 4284, format: "jpeg" };
@@ -47,17 +45,14 @@ describe("parseStagingImageConfig", () => {
       parseStagingImageConfig({
         CW_STAGING_MAX_IMAGE_SIDE: "1024",
         CW_STAGING_JPEG_QUALITY: "85",
-      })
+      }),
     ).toEqual({ maxSide: 1024, jpegQuality: 85 });
   });
 });
 
 describe("readImageDimensions", () => {
   it("reads golden JPEG dimensions", () => {
-    const path = join(
-      process.cwd(),
-      "fixtures/eval-golden/cases/ArcaneLessons/image.jpg"
-    );
+    const path = join(process.cwd(), "fixtures/eval-golden/cases/ArcaneLessons/image.jpg");
     const bytes = new Uint8Array(readFileSync(path));
     const dims = readImageDimensions(bytes, "jpeg");
     expect(Math.max(dims.width, dims.height)).toBe(5712);
@@ -67,10 +62,7 @@ describe("readImageDimensions", () => {
 
 describe("normalizeStagingImage", () => {
   it("caps dimensions via images binding mock", async () => {
-    const path = join(
-      process.cwd(),
-      "fixtures/eval-golden/cases/ArcaneLessons/image.jpg"
-    );
+    const path = join(process.cwd(), "fixtures/eval-golden/cases/ArcaneLessons/image.jpg");
     const input = new Uint8Array(readFileSync(path));
     const fallback = await normalizeStagingImageFallback(input, {
       maxSide: 3072,
@@ -90,10 +82,7 @@ describe("normalizeStagingImage", () => {
   });
 
   it("fallback downscales ArcaneLessons below max side", async () => {
-    const path = join(
-      process.cwd(),
-      "fixtures/eval-golden/cases/ArcaneLessons/image.jpg"
-    );
+    const path = join(process.cwd(), "fixtures/eval-golden/cases/ArcaneLessons/image.jpg");
     const input = new Uint8Array(readFileSync(path));
     const out = await normalizeStagingImage(null, input, {
       maxSide: 3072,

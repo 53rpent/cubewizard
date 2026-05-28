@@ -13,8 +13,7 @@ export function parseEvalMemoryLog(raw: string | undefined): boolean {
 }
 
 function readProcessEnv(name: string): string | undefined {
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } })
-    .process;
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   const v = proc?.env?.[name];
   if (v === undefined || v === null) return undefined;
   const s = String(v).trim();
@@ -122,7 +121,7 @@ export type EvalMemoryContext = Record<string, string | number | boolean | null 
  */
 export function buildEvalMemoryPayload(
   phase: string,
-  ctx: EvalMemoryContext = {}
+  ctx: EvalMemoryContext = {},
 ): Record<string, string | number | boolean | null> {
   const node = readNodeMemoryUsageMb();
   return {
@@ -139,10 +138,7 @@ export function logEvalMemory(env: EvalMemoryProbeEnv, phase: string, ctx?: Eval
 }
 
 /** Heuristic peak RGBA for one deck eval (oriented frame + one rotation scratch). */
-export function estimateEvalRgbaPeakMb(
-  frame: Pick<RgbaFrame, "width" | "height">,
-  rotationScratch = true
-): number {
+export function estimateEvalRgbaPeakMb(frame: Pick<RgbaFrame, "width" | "height">, rotationScratch = true): number {
   const one = rgbaFrameBytes(frame);
   const peak = rotationScratch ? one * 2 : one;
   return roundMb(peak);

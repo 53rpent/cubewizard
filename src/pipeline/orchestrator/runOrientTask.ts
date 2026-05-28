@@ -1,19 +1,12 @@
-import { TaskRequestSchema } from "../contracts/taskRequest.zod";
-import type { ExtractTaskRequest } from "../contracts/extractTaskRequest.zod";
-import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
-import { encodeJpeg } from "../images/encode";
-import { orientDeckImageRgba } from "../orientation/orientDeckImage";
-import { computeImageId } from "../d1/imageId";
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
+import type { ExtractTaskRequest } from "../contracts/extractTaskRequest.zod";
+import { TaskRequestSchema } from "../contracts/taskRequest.zod";
+import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
+import { computeImageId } from "../d1/imageId";
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
-import {
-  assertVisionPublishConfigured,
-  createVisionImagePublisher,
-} from "../images/visionPublish";
-import { PermanentEvalError } from "./evalErrors";
-import { markJobRunning } from "./processingJobRepo";
-import { uploadOrientedJpeg } from "./uploadOriented";
-import type { RunEvalTaskEnv } from "./runEvalTask";
+import { encodeJpeg } from "../images/encode";
+import { assertVisionPublishConfigured, createVisionImagePublisher } from "../images/visionPublish";
+import { orientDeckImageRgba } from "../orientation/orientDeckImage";
 import { logEvalConsumer } from "../util/evalConsumerLog";
 import {
   bytesToMb,
@@ -21,6 +14,7 @@ import {
   mergeActiveEvalBufferEstimates,
   rgbaFrameBytes,
 } from "../util/evalMemoryProbe";
+import { PermanentEvalError } from "./evalErrors";
 import {
   ensureQueuedProcessingJob,
   readImageFromUrl,
@@ -28,6 +22,9 @@ import {
   resolveDeckMetadata,
   resolveEvalPipelineConfig,
 } from "./evalTaskShared";
+import { markJobRunning } from "./processingJobRepo";
+import type { RunEvalTaskEnv } from "./runEvalTask";
+import { uploadOrientedJpeg } from "./uploadOriented";
 
 async function enqueueExtractTask(env: RunEvalTaskEnv, body: ExtractTaskRequest): Promise<void> {
   const q = env.EVAL_EXTRACT_QUEUE;
@@ -46,11 +43,8 @@ async function enqueueExtractTask(env: RunEvalTaskEnv, body: ExtractTaskRequest)
 /**
  * Phase 1: load staging image → orient → upload oriented JPEG → enqueue extract queue message.
  */
-export async function runOrientTask(
-  rawBody: unknown,
-  env: RunEvalTaskEnv,
-  fetchImpl?: typeof fetch
-): Promise<void> {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: orient phase validates input, normalizes image, and enqueues extract work
+export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetchImpl?: typeof fetch): Promise<void> {
   const parsed = TaskRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
     throw new PermanentEvalError(`invalid_task_request: ${parsed.error.message}`);

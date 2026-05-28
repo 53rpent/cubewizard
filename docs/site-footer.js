@@ -1,4 +1,23 @@
 (function () {
+  function trimApiField(data, key) {
+    if (!data || data[key] === undefined || data[key] === null) return "";
+    return String(data[key]).trim();
+  }
+
+  function applyVersionPayload(data, line, el) {
+    var v = trimApiField(data, "version");
+    var env = trimApiField(data, "environment");
+    var parts = [];
+    if (v) parts.push("Version " + v);
+    if (env) parts.push(env);
+    if (parts.length === 0) {
+      line.hidden = true;
+      return;
+    }
+    el.textContent = parts.join(" · ");
+    line.hidden = false;
+  }
+
   function fillFooterVersion() {
     var line = document.getElementById("cw-footer-version-line");
     var el = document.getElementById("cw-footer-version");
@@ -9,23 +28,7 @@
         return r.json();
       })
       .then(function (data) {
-        var v =
-          data && data.version !== undefined && data.version !== null
-            ? String(data.version).trim()
-            : "";
-        var env =
-          data && data.environment !== undefined && data.environment !== null
-            ? String(data.environment).trim()
-            : "";
-        var parts = [];
-        if (v) parts.push("Version " + v);
-        if (env) parts.push(env);
-        if (parts.length === 0) {
-          line.hidden = true;
-          return;
-        }
-        el.textContent = parts.join(" · ");
-        line.hidden = false;
+        applyVersionPayload(data, line, el);
       })
       .catch(function () {
         line.hidden = true;

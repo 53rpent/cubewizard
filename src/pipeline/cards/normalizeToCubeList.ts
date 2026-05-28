@@ -5,10 +5,7 @@ function preprocessExtractedName(name: string): string {
   return name.replace(/\s*\(basic land\)\s*/gi, "").trim();
 }
 
-function bestCubeMatchAttempt(
-  name: string,
-  cubeList: string[]
-): { cubeName: string; similarity: number } | null {
+function bestCubeMatchAttempt(name: string, cubeList: string[]): { cubeName: string; similarity: number } | null {
   let best: string | null = null;
   let bestSim = 0;
   for (const cubeName of cubeList) {
@@ -22,10 +19,10 @@ function bestCubeMatchAttempt(
   return { cubeName: best, similarity: bestSim };
 }
 
-function bestCubeMatch(
+function _bestCubeMatch(
   name: string,
   cubeList: string[],
-  threshold: number
+  threshold: number,
 ): { cubeName: string; similarity: number } | null {
   const attempt = bestCubeMatchAttempt(name, cubeList);
   if (!attempt || attempt.similarity < threshold) return null;
@@ -36,7 +33,7 @@ function bestCubeMatch(
 function logDroppedCubeMatch(
   extracted: string,
   threshold: number,
-  attempt: { cubeName: string; similarity: number } | null
+  attempt: { cubeName: string; similarity: number } | null,
 ): void {
   if (!attempt) {
     console.log("cube_fuzzy_match_dropped", {
@@ -62,7 +59,7 @@ function logDroppedCubeMatch(
 export function normalizeNamesToCubeList(
   names: string[],
   cubeList: string[],
-  threshold = GOLDEN_FUZZY_MATCH_THRESHOLD
+  threshold = GOLDEN_FUZZY_MATCH_THRESHOLD,
 ): string[] {
   if (!cubeList.length) return names;
 
@@ -74,10 +71,7 @@ export function normalizeNamesToCubeList(
     if (!trimmed) continue;
 
     const attempt = bestCubeMatchAttempt(trimmed, cubeList);
-    const matched =
-      attempt && attempt.similarity >= threshold
-        ? attempt
-        : null;
+    const matched = attempt && attempt.similarity >= threshold ? attempt : null;
     if (!matched) {
       logDroppedCubeMatch(trimmed, threshold, attempt);
       continue;

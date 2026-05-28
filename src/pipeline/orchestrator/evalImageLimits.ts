@@ -20,7 +20,9 @@ export const EVAL_MAX_IMAGE_SIDE_DEFAULT = EVAL_IMAGE_SIDE_UNLIMITED;
 export const EVAL_ORIENT_MAX_SIDE_DEFAULT = EVAL_IMAGE_SIDE_UNLIMITED;
 
 export function parseEvalMaxImageSide(raw: string | undefined): number {
-  const s = String(raw ?? "").trim().toLowerCase();
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
   if (!s || s === "0" || s === "full" || s === "none" || s === "unlimited") {
     return EVAL_IMAGE_SIDE_UNLIMITED;
   }

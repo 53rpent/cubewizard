@@ -24,8 +24,7 @@ import {
 } from "./index";
 
 const qaInput = process.env.PIPELINE_QA_INPUT?.trim();
-const outputDir =
-  process.env.PIPELINE_QA_OUTPUT?.trim() || join(process.cwd(), "output", "pipeline-qa");
+const outputDir = process.env.PIPELINE_QA_OUTPUT?.trim() || join(process.cwd(), "output", "pipeline-qa");
 
 describe.skipIf(!qaInput)("manual visual QA (PIPELINE_QA_INPUT)", () => {
   it("writes compatible + resized encodings for each file in the input directory", async () => {

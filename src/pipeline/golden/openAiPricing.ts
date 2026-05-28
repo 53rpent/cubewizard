@@ -40,7 +40,7 @@ export function parseCsvLine(line: string): string[] {
   let cur = "";
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
+    const ch = line[i] ?? "";
     if (ch === '"') {
       inQuotes = !inQuotes;
       continue;
@@ -57,6 +57,7 @@ export function parseCsvLine(line: string): string[] {
 }
 
 /** Load Standard-tier pricing table from the bundled CSV. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CSV row parsing with optional columns and cached-input fallback
 export function loadOpenAiPricingCsv(csvText: string, csvPath?: string): Map<string, OpenAiPricingRates> {
   const map = new Map<string, OpenAiPricingRates>();
   const lines = csvText.split(/\r?\n/);
@@ -72,7 +73,8 @@ export function loadOpenAiPricingCsv(csvText: string, csvPath?: string): Map<str
     }
     const row: Record<string, string> = {};
     for (let i = 0; i < header.length; i++) {
-      row[header[i]!] = cols[i] ?? "";
+      const col = header[i];
+      if (col) row[col] = cols[i] ?? "";
     }
     const model_id = row.model_id?.trim();
     if (!model_id) continue;
@@ -82,10 +84,7 @@ export function loadOpenAiPricingCsv(csvText: string, csvPath?: string): Map<str
     if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
 
     const cachedRaw = row.usd_per_1m_cached_input?.trim() ?? "";
-    const cached =
-      cachedRaw === "" ? input : (
-        Number.isFinite(parseFloat(cachedRaw)) ? parseFloat(cachedRaw) : input
-      );
+    const cached = cachedRaw === "" ? input : Number.isFinite(parseFloat(cachedRaw)) ? parseFloat(cachedRaw) : input;
 
     const key = normalizeModelKey(model_id);
     map.set(key, {
@@ -112,15 +111,14 @@ export function loadOpenAiPricingCsvFromRepo(repoRoot: string): Map<string, Open
 }
 
 /** Longest-prefix match (handles dated snapshots like gpt-5-mini-2025-08-07). */
-export function matchPricingRates(
-  model: string,
-  table: Map<string, OpenAiPricingRates>
-): OpenAiPricingRates | null {
+export function matchPricingRates(model: string, table: Map<string, OpenAiPricingRates>): OpenAiPricingRates | null {
   const key = normalizeModelKey(model);
-  if (table.has(key)) return table.get(key)!;
+  const direct = table.get(key);
+  if (direct) return direct;
 
   const withoutDate = key.replace(/-\d{4}-\d{2}-\d{2}$/, "");
-  if (table.has(withoutDate)) return table.get(withoutDate)!;
+  const undated = table.get(withoutDate);
+  if (undated) return undated;
 
   let best: OpenAiPricingRates | null = null;
   let bestLen = 0;
@@ -142,9 +140,9 @@ function ratesFromEnv(model: string): OpenAiPricingRates | null {
   if (!Number.isFinite(usd_per_1m_input) || !Number.isFinite(usd_per_1m_output)) return null;
   const cachedRaw = process.env.GOLDEN_EVAL_USD_PER_1M_CACHED_INPUT;
   const usd_per_1m_cached_input =
-    cachedRaw != null && cachedRaw !== "" && Number.isFinite(parseFloat(cachedRaw)) ?
-      parseFloat(cachedRaw)
-    : usd_per_1m_input;
+    cachedRaw != null && cachedRaw !== "" && Number.isFinite(parseFloat(cachedRaw))
+      ? parseFloat(cachedRaw)
+      : usd_per_1m_input;
   return {
     model,
     verified_model_id: model,
@@ -166,7 +164,7 @@ export function resolveOpenAiModelPricing(model: string, repoRoot: string): Open
   if (!matched) {
     throw new OpenAiPricingError(
       `No pricing row for model "${model}" in ${GOLDEN_OPENAI_PRICING_CSV}. ` +
-        "Add a row to the CSV or set GOLDEN_EVAL_USD_PER_1M_INPUT / GOLDEN_EVAL_USD_PER_1M_OUTPUT."
+        "Add a row to the CSV or set GOLDEN_EVAL_USD_PER_1M_INPUT / GOLDEN_EVAL_USD_PER_1M_OUTPUT.",
     );
   }
 
@@ -178,26 +176,19 @@ export function resolveOpenAiModelPricing(model: string, repoRoot: string): Open
 }
 
 /** @deprecated Use {@link resolveOpenAiModelPricing}. Kept for call-site compatibility. */
-export async function fetchOpenAiModelPricing(
-  model: string,
-  _apiKey: string
-): Promise<OpenAiPricingRates> {
+export async function fetchOpenAiModelPricing(model: string, _apiKey: string): Promise<OpenAiPricingRates> {
   const repoRoot = process.cwd();
   return resolveOpenAiModelPricing(model, repoRoot);
 }
 
 export function computeUsageCostUsd(
   usage: { input_tokens: number; output_tokens: number; cached_input_tokens?: number },
-  rates: OpenAiPricingRates
+  rates: OpenAiPricingRates,
 ): OpenAiUsageCostUsd {
-  const cached = Math.min(
-    usage.cached_input_tokens ?? 0,
-    usage.input_tokens
-  );
+  const cached = Math.min(usage.cached_input_tokens ?? 0, usage.input_tokens);
   const uncached = usage.input_tokens - cached;
   const input_usd =
-    (uncached / 1_000_000) * rates.usd_per_1m_input +
-    (cached / 1_000_000) * rates.usd_per_1m_cached_input;
+    (uncached / 1_000_000) * rates.usd_per_1m_input + (cached / 1_000_000) * rates.usd_per_1m_cached_input;
   const output_usd = (usage.output_tokens / 1_000_000) * rates.usd_per_1m_output;
   return {
     input_usd,

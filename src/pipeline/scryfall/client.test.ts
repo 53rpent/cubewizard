@@ -44,7 +44,7 @@ describe("ScryfallClient", () => {
               },
             ],
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
       return new Response("not found", { status: 404 });
@@ -57,10 +57,10 @@ describe("ScryfallClient", () => {
     expect(r.total_found).toBe(1);
     expect(r.not_found).toEqual(["ZZZUnknownZZZ"]);
     expect(r.cards).toHaveLength(2);
-    expect(r.cards[0]!.name).toBe("Lightning Bolt");
-    expect(r.cards[0]!.scryfall_uri).toContain("scryfall.com");
-    expect(r.cards[1]!.name).toBe("ZZZUnknownZZZ");
-    expect(r.cards[1]!.scryfall_uri).toBe("");
+    expect(r.cards[0]?.name).toBe("Lightning Bolt");
+    expect(r.cards[0]?.scryfall_uri).toContain("scryfall.com");
+    expect(r.cards[1]?.name).toBe("ZZZUnknownZZZ");
+    expect(r.cards[1]?.scryfall_uri).toBe("");
   });
 
   it("fuzzy-fills cards missing from collection batch when collection returns 200", async () => {
@@ -81,9 +81,7 @@ describe("ScryfallClient", () => {
             scryfall_uri: "https://scryfall.com/card/island",
             image_uris: { small: "https://island.jpg" },
           }),
-          { status: 200,
-            headers: { "Content-Type": "application/json" },
-          }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
       return new Response("?", { status: 404 });
@@ -94,12 +92,12 @@ describe("ScryfallClient", () => {
     });
     const r = await client.enrichCardList(["Island"]);
     expect(r.total_found).toBe(1);
-    expect(r.cards[0]!.scryfall_uri).toContain("scryfall.com");
-    expect(r.cards[0]!.image_uris.small).toBe("https://island.jpg");
+    expect(r.cards[0]?.scryfall_uri).toContain("scryfall.com");
+    expect(r.cards[0]?.image_uris.small).toBe("https://island.jpg");
   });
 
   it("falls back to /cards/named when collection returns non-OK", async () => {
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("/cards/collection")) {
         return new Response("err", { status: 500 });
@@ -112,7 +110,7 @@ describe("ScryfallClient", () => {
             type_line: "Basic Land — Island",
             scryfall_uri: "https://scryfall.com/card/island",
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
       return new Response("?", { status: 404 });
@@ -124,7 +122,7 @@ describe("ScryfallClient", () => {
     });
     const { rows } = await client.resolveCardNamesInOrder(["Island"]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.name).toBe("Island");
+    expect(rows[0]?.name).toBe("Island");
   });
 
   it("matches collection results to requested names via name pool", async () => {
@@ -141,7 +139,7 @@ describe("ScryfallClient", () => {
               },
             ],
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
       return new Response("not found", { status: 404 });
@@ -152,6 +150,6 @@ describe("ScryfallClient", () => {
     });
     const { rows } = await client.resolveCardNamesInOrder(["Snapcaster Mage"]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.scryfall_uri).toContain("scryfall.com");
+    expect(rows[0]?.scryfall_uri).toContain("scryfall.com");
   });
 });
