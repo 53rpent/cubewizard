@@ -174,7 +174,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
       reasoning_effort: opts.reasoningEffort ?? null,
       prompt_cache_key: opts.promptCacheKey ?? null,
       developer_text_len: opts.developerText?.length ?? 0,
-      image_url: "imageUrl" in opts ? (opts.imageUrl as string | undefined ?? null) : null,
+      image_url: "imageUrl" in opts ? ((opts.imageUrl as string | undefined) ?? null) : null,
       image_base64_len: "imageBase64" in opts ? opts.imageBase64.length : null,
       user_text_len: opts.userText.length,
     });

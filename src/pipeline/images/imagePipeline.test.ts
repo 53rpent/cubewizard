@@ -10,10 +10,10 @@ import {
   encodeJpeg,
   prepareBytesForOpenAiVision,
   rasterToOpenAiCompatible,
+  type RgbaFrame,
   resizeToMaxSide,
   rotateClockwise,
   sniffImageFormat,
-  type RgbaFrame,
 } from "./index";
 
 /** Canonical 1×1 red PNG (valid IDAT). */

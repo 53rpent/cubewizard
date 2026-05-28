@@ -25,11 +25,11 @@ export function createGoldenSqliteD1(repoRoot: string): D1DatabaseLike {
         bind(...args: unknown[]) {
           return {
             async run() {
-              statement.run(...args as Parameters<typeof statement.run>);
+              statement.run(...(args as Parameters<typeof statement.run>));
               return { meta: { changes: sqliteRowsModified(db) } };
             },
             async first<T = unknown>(): Promise<T | null> {
-              const row = statement.get(...args as Parameters<typeof statement.get>) as T | undefined;
+              const row = statement.get(...(args as Parameters<typeof statement.get>)) as T | undefined;
               return row ?? null;
             },
           };
