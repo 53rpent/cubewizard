@@ -151,7 +151,7 @@ async function processEvalQueueMessage(
 
   resetEvalInvocationGlobals();
   try {
-  await runWithEvalConsumerLog(env, uploadId, async () => {
+  await runWithEvalConsumerLog(env, uploadId ?? null, async () => {
 
     logEvalConsumer("queue_job_start", {
 

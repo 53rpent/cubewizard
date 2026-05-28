@@ -32,6 +32,7 @@ export interface RunEvalTaskEnv {
   CW_EVAL_MAX_CONSUMERS?: string;
   CW_EVAL_MAX_RETRIES?: string;
   CW_EVAL_MAX_IMAGE_SIDE?: string;
+  CW_EVAL_ORIENT_MAX_SIDE?: string;
   CW_EVAL_MEMORY_LOG?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;

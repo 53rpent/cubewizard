@@ -51,7 +51,7 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
     CW_EVAL_USE_MULTI_PASS: process.env.CW_EVAL_USE_MULTI_PASS,
     CW_EVAL_JPEG_QUALITY: process.env.CW_EVAL_JPEG_QUALITY,
     CW_EVAL_MAX_IMAGE_SIDE: process.env.CW_EVAL_MAX_IMAGE_SIDE,
-    CW_EVAL_ORIENT_MAX_SIDE: process.env.CW_EVAL_ORIENT_MAX_SIDE,
+    CW_EVAL_ORIENT_MAX_SIDE: process.env.CW_EVAL_ORIENT_MAX_SIDE as string | undefined,
     CW_EVAL_LOG_LEVEL: process.env.CW_EVAL_LOG_LEVEL ?? "off",
     CW_EVAL_MEMORY_LOG: process.env.CW_EVAL_MEMORY_LOG,
     cubewizard_db: createGoldenSqliteD1(opts.repoRoot),

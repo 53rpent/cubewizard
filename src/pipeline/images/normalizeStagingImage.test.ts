@@ -26,7 +26,7 @@ function mockImagesBinding(
           return Promise.resolve({
             response() {
               const bytes = onTransform(lastOpts);
-              return new Response(bytes, {
+              return new Response(bytes as BodyInit, {
                 status: 200,
                 headers: { "Content-Type": "image/jpeg" },
               });
