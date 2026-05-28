@@ -117,17 +117,20 @@ export function compareGoldenToBaseline(
   };
 }
 
-function fmtPct(n: number): string {
+function fmtPct(n: number | null | undefined): string {
+  if (n == null) return "—";
   return `${(n * 100).toFixed(1)}%`;
 }
 
-function fmtDelta(n: number, asPct = false): string {
+function fmtDelta(n: number | null | undefined, asPct = false): string {
+  if (n == null) return "—";
   const sign = n > 0 ? "+" : "";
   if (asPct) return `${sign}${(n * 100).toFixed(1)}pp`;
   return `${sign}${n.toFixed(4)}`;
 }
 
-function fmtUsd(n: number): string {
+function fmtUsd(n: number | null | undefined): string {
+  if (n == null) return "—";
   return `$${n.toFixed(4)}`;
 }
 
@@ -155,7 +158,7 @@ export function formatBaselineComparison(report: GoldenBaselineComparison): stri
       `Micro recall:    ${fmtPct(agg.micro_recall?.current)} (${fmtDelta(agg.micro_recall?.delta, true)})`,
       `Micro precision: ${fmtPct(agg.micro_precision?.current)} (${fmtDelta(agg.micro_precision?.delta, true)})`,
       `Exact-set cases: ${agg.exact_match_cases?.current}/${report.current.aggregate.case_count} (${fmtDelta(agg.exact_match_cases?.delta)} vs ${agg.exact_match_cases?.baseline})`,
-      `Mean |count err|: ${agg.mean_count_error?.current.toFixed(2)} (${fmtDelta(agg.mean_count_error?.delta)})`,
+      `Mean |count err|: ${(agg.mean_count_error?.current ?? 0).toFixed(2)} (${fmtDelta(agg.mean_count_error?.delta)})`,
       `Tokens:          ${agg.total_tokens?.current} (${fmtDelta(agg.total_tokens?.delta, false)} )`,
       `Est. cost:       ${fmtUsd(agg.total_cost_usd?.current)} (${fmtDelta(agg.total_cost_usd?.delta)} USD)`,
     );
