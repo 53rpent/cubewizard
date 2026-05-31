@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { OpenAiApiError } from "../openai/responsesApi";
+import { OpenAiApiError } from "../openai/chatCompletionsApi";
 import {
   computeEvalQueueRetryDelaySeconds,
   isEvalDlqQueue,
@@ -33,7 +33,7 @@ describe("evalQueueRetries", () => {
 
   it("uses longer base delay for OpenAI 429", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
-    const err429 = new OpenAiApiError("OpenAI responses HTTP 429", 429, "");
+    const err429 = new OpenAiApiError("OpenAI chat completions HTTP 429", 429, "");
     expect(computeEvalQueueRetryDelaySeconds(1, err429)).toBe(60);
     expect(computeEvalQueueRetryDelaySeconds(1, new Error("d1 timeout"))).toBe(30);
     vi.restoreAllMocks();

@@ -5,10 +5,21 @@ export const OPENAI_GATEWAY_BASE_URL_DEFAULT =
 /** Direct OpenAI — opt-out via `OPENAI_BASE_URL` in `.dev.vars`. */
 export const OPENAI_DIRECT_BASE_URL = "https://api.openai.com/v1";
 
+/** Default `cf-aig-request-timeout` (ms) when using Cloudflare AI Gateway. */
+export const OPENAI_REQUEST_TIMEOUT_MS_DEFAULT = 300_000;
+
 export interface OpenAiBaseUrlEnv {
   OPENAI_BASE_URL?: string;
   /** When Authenticated Gateway is enabled in the dashboard. */
   OPENAI_GATEWAY_TOKEN?: string;
+  /** Per-request upstream timeout for AI Gateway (`cf-aig-request-timeout`). */
+  OPENAI_REQUEST_TIMEOUT_MS?: string;
+}
+
+export function parseOpenAiRequestTimeoutMs(env?: Pick<OpenAiBaseUrlEnv, "OPENAI_REQUEST_TIMEOUT_MS">): number {
+  const raw = parseInt(String(env?.OPENAI_REQUEST_TIMEOUT_MS ?? ""), 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return OPENAI_REQUEST_TIMEOUT_MS_DEFAULT;
 }
 
 export function isAiGatewayBaseUrl(baseUrl: string): boolean {
@@ -25,14 +36,14 @@ export function resolveOpenAiBaseUrl(env?: OpenAiBaseUrlEnv): string {
   return base.replace(/\/+$/, "");
 }
 
-export function resolveOpenAiResponsesUrl(env?: OpenAiBaseUrlEnv): string {
-  return `${resolveOpenAiBaseUrl(env)}/responses`;
+export function resolveOpenAiChatCompletionsUrl(env?: OpenAiBaseUrlEnv): string {
+  return `${resolveOpenAiBaseUrl(env)}/chat/completions`;
 }
 
 export function buildOpenAiRequestHeaders(
   apiKey: string,
   baseUrl: string,
-  gatewayToken?: string,
+  opts?: { gatewayToken?: string; requestTimeoutMs?: number },
 ): Record<string, string> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
@@ -40,12 +51,13 @@ export function buildOpenAiRequestHeaders(
   };
   if (!isAiGatewayBaseUrl(baseUrl)) return headers;
 
+  const requestTimeoutMs = opts?.requestTimeoutMs ?? OPENAI_REQUEST_TIMEOUT_MS_DEFAULT;
   headers["cf-aig-max-attempts"] = "5";
   headers["cf-aig-retry-delay"] = "2000";
   headers["cf-aig-backoff"] = "exponential";
-  headers["cf-aig-request-timeout"] = "30000";
+  headers["cf-aig-request-timeout"] = String(requestTimeoutMs);
 
-  const token = String(gatewayToken ?? "").trim();
+  const token = String(opts?.gatewayToken ?? "").trim();
   if (token) {
     headers["cf-aig-authorization"] = `Bearer ${token}`;
   }

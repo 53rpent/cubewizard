@@ -1,5 +1,5 @@
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
-import type { VisionImageInput } from "../openai/responsesApi";
+import type { VisionImageInput } from "../openai/chatCompletionsApi";
 import { PermanentEvalError } from "../orchestrator/evalErrors";
 import type { VisionImagePublisher } from "./visionPublish";
 

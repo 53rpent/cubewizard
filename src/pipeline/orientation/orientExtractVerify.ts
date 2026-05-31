@@ -6,7 +6,7 @@ import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
 import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
 import { buildExtractionUserPrompt, EXTRACTION_DEVELOPER_PROMPT } from "../openai/prompts";
-import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
+import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { type CardExtractionResult, CardExtractionResultSchema } from "../openai/schemas";
 import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
 
@@ -36,6 +36,7 @@ export interface OrientLightExtractOptions {
   vision?: VisionImagePublisher;
   baseUrl?: string;
   gatewayToken?: string;
+  requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
 }
@@ -92,6 +93,7 @@ export async function lightExtractScoreFromRgba(
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
       baseUrl: opts.baseUrl,
       gatewayToken: opts.gatewayToken,
+      requestTimeoutMs: opts.requestTimeoutMs,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },

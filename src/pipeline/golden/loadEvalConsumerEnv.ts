@@ -47,9 +47,13 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
   const env: RunEvalTaskEnv = {
     CWW_ENV: "local",
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    EVAL_VISION_API_KEY: process.env.EVAL_VISION_API_KEY,
     OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    EVAL_VISION_BASE_URL: process.env.EVAL_VISION_BASE_URL,
+    EVAL_GATEWAY_PROVIDER: process.env.EVAL_GATEWAY_PROVIDER,
     OPENAI_GATEWAY_TOKEN: process.env.OPENAI_GATEWAY_TOKEN,
     OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL,
+    EVAL_VISION_MODEL: process.env.EVAL_VISION_MODEL,
     OPENAI_MAX_OUTPUT_TOKENS: process.env.OPENAI_MAX_OUTPUT_TOKENS,
     OPENAI_REASONING_EFFORT: process.env.OPENAI_REASONING_EFFORT,
     CW_EVAL_MAX_CUBECOBRA_CARDS: process.env.CW_EVAL_MAX_CUBECOBRA_CARDS,

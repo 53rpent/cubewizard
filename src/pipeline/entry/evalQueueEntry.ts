@@ -1,5 +1,5 @@
 import { resetEvalUsageReporterGlobal } from "../evalUsage/evalUsageReport";
-import { ModelOutputInvalidError } from "../openai/responsesApi";
+import { ModelOutputInvalidError } from "../openai/chatCompletionsApi";
 
 import { parseEvalMaxConsumers } from "../orchestrator/evalConsumerScale";
 import {

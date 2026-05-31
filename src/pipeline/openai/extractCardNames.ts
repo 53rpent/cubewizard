@@ -9,10 +9,10 @@ import {
   buildExtractionUserPrompt,
   EXTRACTION_DEVELOPER_PROMPT,
 } from "../openai/prompts";
-import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
+import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { type CardExtractionResult, CardExtractionResultSchema } from "../openai/schemas";
 import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
-import type { VisionImageInput } from "./responsesApi";
+import type { VisionImageInput } from "./chatCompletionsApi";
 
 export interface ExtractCardNamesOptions {
   maxImageSide?: number;
@@ -28,6 +28,7 @@ export interface ExtractCardNamesOptions {
   cubeId?: string;
   baseUrl?: string;
   gatewayToken?: string;
+  requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
   visionEnv: { CWW_ENV?: string };
@@ -74,6 +75,7 @@ async function extractionPass(
     | "reasoningEffort"
     | "baseUrl"
     | "gatewayToken"
+    | "requestTimeoutMs"
     | "fetchImpl"
     | "openAiLogLevel"
     | "cubeId"
@@ -94,6 +96,7 @@ async function extractionPass(
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
       baseUrl: opts.baseUrl,
       gatewayToken: opts.gatewayToken,
+      requestTimeoutMs: opts.requestTimeoutMs,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },

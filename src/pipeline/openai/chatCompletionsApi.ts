@@ -46,32 +46,34 @@ export class OpenAiApiError extends Error {
   }
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: walks nested OpenAI Responses output blocks for structured text
-function extractStructuredText(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const root = data as Record<string, unknown>;
-
-  const parsed = root.output_parsed ?? root.output_text;
-  if (typeof parsed === "string" && parsed.trim()) return parsed;
-
-  const out = root.output;
-  if (!Array.isArray(out)) return null;
-  for (const block of out) {
-    if (!block || typeof block !== "object") continue;
-    const b = block as Record<string, unknown>;
-    const content = b.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (!part || typeof part !== "object") continue;
-      const p = part as Record<string, unknown>;
-      const text = p.text;
-      if (typeof text === "string" && text.trim()) return text;
+function messageContentAsJsonText(message: Record<string, unknown>): string | null {
+  const parsed = message.parsed;
+  if (parsed !== undefined && parsed !== null) {
+    if (typeof parsed === "string" && parsed.trim()) return parsed;
+    try {
+      return JSON.stringify(parsed);
+    } catch {
+      return null;
     }
   }
+  const content = message.content;
+  if (typeof content === "string" && content.trim()) return content;
   return null;
 }
 
-/** Hosted: HTTPS URL OpenAI fetches (R2 presigned or public CDN). Local: inline base64. */
+/** Extract JSON text from a Chat Completions (OpenAI-compatible) response body. */
+function extractStructuredText(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const choices = (data as Record<string, unknown>).choices;
+  if (!Array.isArray(choices) || choices.length === 0) return null;
+  const first = choices[0];
+  if (!first || typeof first !== "object") return null;
+  const message = (first as Record<string, unknown>).message;
+  if (!message || typeof message !== "object") return null;
+  return messageContentAsJsonText(message as Record<string, unknown>);
+}
+
+/** Hosted: HTTPS URL the provider fetches (R2 presigned or public CDN). Local: inline base64. */
 export type VisionImageInput = { imageUrl: string } | { imageBase64: string };
 
 export type VisionJsonCallOptions = {
@@ -88,10 +90,12 @@ export type VisionJsonCallOptions = {
   jsonSchema: Record<string, unknown>;
   /** OpenAI `strict` JSON schema mode (requires exhaustive `required`); default false for optional fields. */
   strictJsonSchema?: boolean;
-  /** OpenAI or AI Gateway base URL (no `/responses` suffix). Defaults to AI Gateway. */
+  /** Provider base URL (no `/chat/completions` suffix). Defaults to AI Gateway. */
   baseUrl?: string;
   /** `cf-aig-authorization` when Authenticated Gateway is enabled. */
   gatewayToken?: string;
+  /** AI Gateway upstream timeout (`cf-aig-request-timeout`, ms). Ignored for direct OpenAI base URLs. */
+  requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   /**
    * `off`: no extra logs. `low`: one line per call with model structured output only (`openai_model_output` + schema name + JSON text).
@@ -115,30 +119,24 @@ function resolveInputImageUrl(opts: VisionJsonCallOptions): string {
   throw new ModelOutputInvalidError("vision call requires imageUrl or imageBase64");
 }
 
-function buildVisionInput(opts: VisionJsonCallOptions): Record<string, unknown>[] {
+function buildVisionMessages(opts: VisionJsonCallOptions): Record<string, unknown>[] {
   const messages: Record<string, unknown>[] = [];
   const developer = opts.developerText?.trim();
   if (developer) {
-    messages.push({
-      role: "developer",
-      content: [{ type: "input_text", text: developer }],
-    });
+    messages.push({ role: "system", content: developer });
   }
   messages.push({
     role: "user",
     content: [
-      { type: "input_text", text: opts.userText },
-      {
-        type: "input_image",
-        image_url: resolveInputImageUrl(opts),
-      },
+      { type: "text", text: opts.userText },
+      { type: "image_url", image_url: { url: resolveInputImageUrl(opts) } },
     ],
   });
   return messages;
 }
 
 /**
- * OpenAI **Responses** API with `text.format.type = json_schema`, then Zod-parse output.
+ * OpenAI-compatible **Chat Completions** with `response_format` JSON schema, then Zod-parse output.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: vision request, logging, HTTP handling, and schema validation in one call site
 export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions, zodSchema: ZodType<T>): Promise<T> {
@@ -146,11 +144,11 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
 
   const body: Record<string, unknown> = {
     model: opts.model,
-    max_output_tokens: opts.maxOutputTokens,
-    input: buildVisionInput(opts),
-    text: {
-      format: {
-        type: "json_schema",
+    max_completion_tokens: opts.maxOutputTokens,
+    messages: buildVisionMessages(opts),
+    response_format: {
+      type: "json_schema",
+      json_schema: {
         name: opts.schemaName,
         strict: opts.strictJsonSchema ?? false,
         schema: opts.jsonSchema,
@@ -159,7 +157,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
   };
 
   if (opts.reasoningEffort) {
-    body.reasoning = { effort: opts.reasoningEffort };
+    body.reasoning_effort = opts.reasoningEffort;
   }
   if (opts.promptCacheKey?.trim()) {
     body.prompt_cache_key = opts.promptCacheKey.trim();
@@ -173,7 +171,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
     console.log("openai_vision_request", {
       schema: opts.schemaName,
       model: opts.model,
-      max_output_tokens: opts.maxOutputTokens,
+      max_completion_tokens: opts.maxOutputTokens,
       reasoning_effort: opts.reasoningEffort ?? null,
       prompt_cache_key: opts.promptCacheKey ?? null,
       developer_text_len: opts.developerText?.length ?? 0,
@@ -188,7 +186,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
     logEvalConsumer("openai_request", {
       schema: opts.schemaName,
       model: opts.model,
-      max_output_tokens: opts.maxOutputTokens,
+      max_completion_tokens: opts.maxOutputTokens,
       reasoning_effort: opts.reasoningEffort ?? null,
       prompt_cache_key: opts.promptCacheKey ?? null,
       upload_id: uploadId,
@@ -199,10 +197,13 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
   }
 
   const baseUrl = resolveOpenAiBaseUrl(opts.baseUrl !== undefined ? { OPENAI_BASE_URL: opts.baseUrl } : undefined);
-  const responsesUrl = `${baseUrl}/responses`;
-  const headers = buildOpenAiRequestHeaders(opts.apiKey, baseUrl, opts.gatewayToken);
+  const chatUrl = `${baseUrl}/chat/completions`;
+  const headers = buildOpenAiRequestHeaders(opts.apiKey, baseUrl, {
+    gatewayToken: opts.gatewayToken,
+    requestTimeoutMs: opts.requestTimeoutMs,
+  });
 
-  const res = await fetchImpl(responsesUrl, {
+  const res = await fetchImpl(chatUrl, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -217,7 +218,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
     );
   }
   if (!res.ok) {
-    throw new OpenAiApiError(`OpenAI responses HTTP ${res.status}`, res.status, rawText.slice(0, 800));
+    throw new OpenAiApiError(`OpenAI chat completions HTTP ${res.status}`, res.status, rawText.slice(0, 800));
   }
 
   let json: unknown;

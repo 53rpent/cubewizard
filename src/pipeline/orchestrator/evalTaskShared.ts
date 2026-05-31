@@ -1,6 +1,6 @@
+import { resolveEvalVisionLlm } from "../config/resolveEvalVisionLlm";
 import type { TaskRequest } from "../contracts/taskRequest.zod";
-import { resolveOpenAiBaseUrl } from "../config/resolveOpenAiBaseUrl";
-import { parseEvalOpenAiLogLevel } from "../openai/responsesApi";
+import { parseEvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { PermanentEvalError } from "./evalErrors";
 import { parseEvalJpegQuality, parseEvalMaxImageSide } from "./evalImageLimits";
 import type { D1DatabaseLike } from "./processingJobRepo";
@@ -32,8 +32,11 @@ export interface EvalPipelineConfig {
   jpegQ: number;
   openAiLogLevel: ReturnType<typeof parseEvalOpenAiLogLevel>;
   maxImageSide: number;
-  openAiBaseUrl: string;
+  visionModel: string;
+  visionApiKey: string;
+  visionBaseUrl: string;
   openAiGatewayToken?: string;
+  openAiRequestTimeoutMs: number;
 }
 
 export function resolveEvalPipelineConfig(env: RunEvalTaskEnv): EvalPipelineConfig {
@@ -48,6 +51,7 @@ export function resolveEvalPipelineConfig(env: RunEvalTaskEnv): EvalPipelineConf
     | "high";
   const maxCubeCards = Math.min(2000, parseInt(String(env.CW_EVAL_MAX_CUBECOBRA_CARDS || "1000"), 10) || 1000);
   const useMultiPass = !/^0|false|no$/i.test(String(env.CW_EVAL_USE_MULTI_PASS || "true"));
+  const vision = resolveEvalVisionLlm(env);
   return {
     maxOut,
     reasoning,
@@ -57,8 +61,11 @@ export function resolveEvalPipelineConfig(env: RunEvalTaskEnv): EvalPipelineConf
     jpegQ: parseEvalJpegQuality(env.CW_EVAL_JPEG_QUALITY),
     openAiLogLevel: parseEvalOpenAiLogLevel(env),
     maxImageSide: parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE),
-    openAiBaseUrl: resolveOpenAiBaseUrl(env),
-    openAiGatewayToken: String(env.OPENAI_GATEWAY_TOKEN ?? "").trim() || undefined,
+    visionModel: vision.model,
+    visionApiKey: vision.apiKey,
+    visionBaseUrl: vision.baseUrl,
+    openAiGatewayToken: vision.gatewayToken,
+    openAiRequestTimeoutMs: vision.requestTimeoutMs,
   };
 }
 

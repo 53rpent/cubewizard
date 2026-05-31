@@ -7,7 +7,7 @@
       "run_id": "UTC timestamp id for a single golden:eval run (omitted when saved as baseline).",
       "recorded_at": "ISO-8601 time the run was written.",
       "label": "Run label from GOLDEN_EVAL_LABEL or default (e.g. baseline, latest).",
-      "model": "OPENAI_VISION_MODEL used for orient + extract.",
+      "model": "EVAL_VISION_MODEL (or OPENAI_VISION_MODEL) used for orient + extract.",
       "runner": "Always eval_consumer — full eval queue handler, not a direct API shortcut.",
       "config": "Snapshot of harness env (multi-pass, reasoning, image resize, etc.)."
     },
@@ -34,7 +34,7 @@
       "matches": "Aligned pairs: predicted, expected, similarity (0–1)."
     },
     "per_case_run": {
-      "openai_calls": "Total Responses API calls (orient + extract passes).",
+      "openai_calls": "Total Chat Completions API calls (orient + extract passes).",
       "orientation_calls": "Subset of calls tagged as orientation.",
       "extraction_calls": "Subset tagged as extraction.",
       "usage": "Token totals from eval_report for this case.",

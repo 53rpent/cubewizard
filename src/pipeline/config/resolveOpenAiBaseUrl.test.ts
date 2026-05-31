@@ -4,8 +4,10 @@ import {
   isAiGatewayBaseUrl,
   OPENAI_DIRECT_BASE_URL,
   OPENAI_GATEWAY_BASE_URL_DEFAULT,
+  OPENAI_REQUEST_TIMEOUT_MS_DEFAULT,
+  parseOpenAiRequestTimeoutMs,
   resolveOpenAiBaseUrl,
-  resolveOpenAiResponsesUrl,
+  resolveOpenAiChatCompletionsUrl,
 } from "./resolveOpenAiBaseUrl";
 
 describe("resolveOpenAiBaseUrl", () => {
@@ -18,9 +20,9 @@ describe("resolveOpenAiBaseUrl", () => {
     expect(resolveOpenAiBaseUrl({ OPENAI_BASE_URL: `${OPENAI_DIRECT_BASE_URL}/` })).toBe(OPENAI_DIRECT_BASE_URL);
   });
 
-  it("builds responses URL", () => {
-    expect(resolveOpenAiResponsesUrl({ OPENAI_BASE_URL: OPENAI_DIRECT_BASE_URL })).toBe(
-      `${OPENAI_DIRECT_BASE_URL}/responses`,
+  it("builds chat completions URL", () => {
+    expect(resolveOpenAiChatCompletionsUrl({ OPENAI_BASE_URL: OPENAI_DIRECT_BASE_URL })).toBe(
+      `${OPENAI_DIRECT_BASE_URL}/chat/completions`,
     );
   });
 
@@ -28,6 +30,12 @@ describe("resolveOpenAiBaseUrl", () => {
     expect(isAiGatewayBaseUrl(OPENAI_GATEWAY_BASE_URL_DEFAULT)).toBe(true);
     expect(isAiGatewayBaseUrl(OPENAI_DIRECT_BASE_URL)).toBe(false);
     expect(isAiGatewayBaseUrl("not-a-url")).toBe(false);
+  });
+
+  it("parses OPENAI_REQUEST_TIMEOUT_MS with default 300000", () => {
+    expect(parseOpenAiRequestTimeoutMs({})).toBe(OPENAI_REQUEST_TIMEOUT_MS_DEFAULT);
+    expect(parseOpenAiRequestTimeoutMs({ OPENAI_REQUEST_TIMEOUT_MS: "120000" })).toBe(120_000);
+    expect(parseOpenAiRequestTimeoutMs({ OPENAI_REQUEST_TIMEOUT_MS: "0" })).toBe(OPENAI_REQUEST_TIMEOUT_MS_DEFAULT);
   });
 
   it("adds cf-aig headers for gateway base only", () => {
@@ -39,11 +47,13 @@ describe("resolveOpenAiBaseUrl", () => {
     expect(gw["cf-aig-max-attempts"]).toBe("5");
     expect(gw["cf-aig-retry-delay"]).toBe("2000");
     expect(gw["cf-aig-backoff"]).toBe("exponential");
-    expect(gw["cf-aig-request-timeout"]).toBe("30000");
+    expect(gw["cf-aig-request-timeout"]).toBe(String(OPENAI_REQUEST_TIMEOUT_MS_DEFAULT));
   });
 
   it("adds cf-aig-authorization when gateway token provided", () => {
-    const gw = buildOpenAiRequestHeaders("sk-test", OPENAI_GATEWAY_BASE_URL_DEFAULT, "gw-token");
+    const gw = buildOpenAiRequestHeaders("sk-test", OPENAI_GATEWAY_BASE_URL_DEFAULT, {
+      gatewayToken: "gw-token",
+    });
     expect(gw["cf-aig-authorization"]).toBe("Bearer gw-token");
   });
 });

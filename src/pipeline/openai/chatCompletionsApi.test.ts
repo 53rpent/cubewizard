@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { OPENAI_GATEWAY_BASE_URL_DEFAULT } from "../config/resolveOpenAiBaseUrl";
+import { OPENAI_GATEWAY_BASE_URL_DEFAULT, OPENAI_REQUEST_TIMEOUT_MS_DEFAULT } from "../config/resolveOpenAiBaseUrl";
+import { callOpenAiVisionJsonSchema, parseEvalOpenAiLogLevel } from "./chatCompletionsApi";
 import { orientationJsonSchema } from "./jsonSchemas";
-import { callOpenAiVisionJsonSchema, parseEvalOpenAiLogLevel } from "./responsesApi";
 import { OrientationResultSchema } from "./schemas";
+
+function chatCompletionPayload(content: string): Record<string, unknown> {
+  return {
+    choices: [{ message: { role: "assistant", content } }],
+  };
+}
 
 describe("parseEvalOpenAiLogLevel", () => {
   it("maps CW_EVAL_LOG_LEVEL", () => {
@@ -20,14 +26,8 @@ describe("parseEvalOpenAiLogLevel", () => {
 });
 
 describe("callOpenAiVisionJsonSchema", () => {
-  it("parses structured output text from Responses API shape", async () => {
-    const payload = {
-      output: [
-        {
-          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
-        },
-      ],
-    };
+  it("parses structured output from Chat Completions choices", async () => {
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
     const fetchImpl = vi.fn(async () => {
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -53,19 +53,13 @@ describe("callOpenAiVisionJsonSchema", () => {
   });
 
   it("sends HTTPS image_url in request body", async () => {
-    const payload = {
-      output: [
-        {
-          content: [{ type: "output_text", text: '{"rotation_needed":90,"confidence":"high"}' }],
-        },
-      ],
-    };
+    const payload = chatCompletionPayload('{"rotation_needed":90,"confidence":"high"}');
     const fetchImpl = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as {
-        input: { role: string; content: { image_url?: string }[] }[];
+        messages: { role: string; content: { image_url?: { url?: string } }[] }[];
       };
-      const userMsg = body.input.find((m) => m.role === "user");
-      const img = userMsg?.content[1]?.image_url;
+      const userMsg = body.messages.find((m) => m.role === "user");
+      const img = userMsg?.content[1]?.image_url?.url;
       expect(img).toBe("https://cdn.example.com/tmp/vision/u1/orient.jpg");
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -90,19 +84,13 @@ describe("callOpenAiVisionJsonSchema", () => {
   });
 
   it("sends data URL when imageBase64 is set", async () => {
-    const payload = {
-      output: [
-        {
-          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
-        },
-      ],
-    };
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
     const fetchImpl = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as {
-        input: { role: string; content: { image_url?: string }[] }[];
+        messages: { role: string; content: { image_url?: { url?: string } }[] }[];
       };
-      const userMsg = body.input.find((m) => m.role === "user");
-      const img = userMsg?.content[1]?.image_url;
+      const userMsg = body.messages.find((m) => m.role === "user");
+      const img = userMsg?.content[1]?.image_url?.url;
       expect(img).toMatch(/^data:image\/jpeg;base64,/);
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -126,13 +114,7 @@ describe("callOpenAiVisionJsonSchema", () => {
   });
 
   it("with openAiLogLevel low logs only model output text", async () => {
-    const payload = {
-      output: [
-        {
-          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
-        },
-      ],
-    };
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
     const fetchImpl = vi.fn(async () => {
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -161,24 +143,22 @@ describe("callOpenAiVisionJsonSchema", () => {
     log.mockRestore();
   });
 
-  it("sends developer message, user image, and prompt_cache_key", async () => {
-    const payload = {
-      output: [
-        {
-          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
-        },
-      ],
-    };
+  it("sends system message, user image, response_format, and prompt_cache_key", async () => {
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
     const fetchImpl = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as {
         prompt_cache_key?: string;
-        input: { role: string; content: { type: string; text?: string }[] }[];
+        response_format?: { type: string; json_schema?: { name: string } };
+        messages: { role: string; content: string | { type: string; text?: string }[] }[];
       };
       expect(body.prompt_cache_key).toBe("cube:test-cube");
-      const dev = body.input.find((m) => m.role === "developer");
-      expect(dev?.content[0]?.text).toContain("Magic");
-      const user = body.input.find((m) => m.role === "user");
-      expect(user?.content[0]?.text).toBe("orient this deck");
+      expect(body.response_format?.type).toBe("json_schema");
+      expect(body.response_format?.json_schema?.name).toBe("orientation_result");
+      const sys = body.messages.find((m) => m.role === "system");
+      expect(sys?.content).toContain("Magic");
+      const user = body.messages.find((m) => m.role === "user");
+      const parts = user?.content as { type: string; text?: string }[];
+      expect(parts[0]?.text).toBe("orient this deck");
       return new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -202,18 +182,40 @@ describe("callOpenAiVisionJsonSchema", () => {
     );
   });
 
+  it("sends custom cf-aig-request-timeout when requestTimeoutMs is set", async () => {
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["cf-aig-request-timeout"]).toBe("120000");
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gpt-test",
+        maxOutputTokens: 100,
+        userText: "hi",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient-0.jpg",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        fetchImpl: fetchImpl as typeof fetch,
+        requestTimeoutMs: 120_000,
+      },
+      OrientationResultSchema,
+    );
+  });
+
   it("defaults to AI Gateway URL and sends cf-aig headers", async () => {
-    const payload = {
-      output: [
-        {
-          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
-        },
-      ],
-    };
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
     const fetchImpl = vi.fn(async (url, init) => {
-      expect(String(url)).toBe(`${OPENAI_GATEWAY_BASE_URL_DEFAULT}/responses`);
+      expect(String(url)).toBe(`${OPENAI_GATEWAY_BASE_URL_DEFAULT}/chat/completions`);
       const headers = init?.headers as Record<string, string>;
       expect(headers["cf-aig-max-attempts"]).toBe("5");
+      expect(headers["cf-aig-request-timeout"]).toBe(String(OPENAI_REQUEST_TIMEOUT_MS_DEFAULT));
       expect(headers.Authorization).toBe("Bearer sk-test");
       return new Response(JSON.stringify(payload), {
         status: 200,

@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { EvalRunReport } from "../evalUsage/evalUsageReport";
 import { parseEvalJpegQuality, parseEvalMaxImageSide } from "../orchestrator/evalImageLimits";
 import { loadGoldenCases } from "./loadCases";
+import { resolveEvalVisionModel } from "../config/resolveEvalVisionLlm";
 import { loadDevVarsIntoEnv, resolveOpenAiKeyFromEnv } from "./loadDevVars";
 import { buildGoldenEvalConsumerEnv, loadWranglerEvalConsumerVars } from "./loadEvalConsumerEnv";
 import { aggregateCaseMetrics, computeCaseMetrics } from "./metrics";
@@ -11,7 +12,7 @@ import type { GoldenCaseRunResult, GoldenSuiteConfig, GoldenSuiteRunResult } fro
 
 export function defaultGoldenSuiteConfig(env: NodeJS.ProcessEnv = process.env): GoldenSuiteConfig {
   return {
-    model: String(env.OPENAI_VISION_MODEL || "gpt-5-mini-2025-08-07").trim(),
+    model: resolveEvalVisionModel(env),
     max_output_tokens: Math.min(
       32000,
       Math.max(1000, parseInt(String(env.OPENAI_MAX_OUTPUT_TOKENS || "20000"), 10) || 20000),
@@ -104,7 +105,7 @@ export async function runGoldenSuite(opts: RunGoldenSuiteOptions): Promise<Golde
   const config = opts.config ?? defaultGoldenSuiteConfig();
   const apiKey = resolveOpenAiKeyFromEnv();
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set (required for eval consumer runs)");
+    throw new Error("EVAL_VISION_API_KEY or OPENAI_API_KEY is not set (required for eval consumer runs)");
   }
 
   console.log(`Loading OpenAI Standard pricing for ${config.model} from CSV…`);

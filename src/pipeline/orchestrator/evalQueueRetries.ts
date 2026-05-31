@@ -1,4 +1,4 @@
-import { OpenAiApiError } from "../openai/responsesApi";
+import { OpenAiApiError } from "../openai/chatCompletionsApi";
 
 /** Align with `max_retries` in `wrangler-eval-consumer.jsonc` queue consumers. */
 export const EVAL_QUEUE_MAX_RETRIES_DEFAULT = 5;

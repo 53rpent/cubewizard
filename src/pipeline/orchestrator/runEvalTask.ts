@@ -21,11 +21,16 @@ export interface RunEvalTaskEnv {
   CWW_ENV?: string;
   OPENAI_API_KEY?: string;
   OPENAI_VISION_MODEL?: string;
+  EVAL_VISION_MODEL?: string;
+  EVAL_VISION_API_KEY?: string;
+  EVAL_VISION_BASE_URL?: string;
+  EVAL_GATEWAY_PROVIDER?: string;
   OPENAI_MAX_OUTPUT_TOKENS?: string;
   OPENAI_REASONING_EFFORT?: string;
   OPENAI_ORIENT_REASONING_EFFORT?: string;
   OPENAI_BASE_URL?: string;
   OPENAI_GATEWAY_TOKEN?: string;
+  OPENAI_REQUEST_TIMEOUT_MS?: string;
   CW_EVAL_MAX_CUBECOBRA_CARDS?: string;
   CW_EVAL_USE_MULTI_PASS?: string;
   CW_EVAL_JPEG_QUALITY?: string;
