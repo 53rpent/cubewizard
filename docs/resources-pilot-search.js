@@ -7,11 +7,11 @@
   }
 
   function escapeHtmlAttr(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    return CWHtml.escapeHtmlAttr(s);
   }
 
   function escapeHtmlText(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return CWHtml.escapeHtmlText(s);
   }
 
   function fmtDate(value) {

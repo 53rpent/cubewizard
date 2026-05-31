@@ -9,6 +9,51 @@ import {
 } from "./normalizeStagingImage";
 import { readImageDimensions } from "./readImageDimensions";
 
+/** Minimal PNG IHDR bomb for staging fallback dimension gate. */
+function makeBombPng(width: number, height: number): Uint8Array {
+  const signature = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdrData = new Uint8Array(13);
+  const view = new DataView(ihdrData.buffer);
+  view.setUint32(0, width, false);
+  view.setUint32(4, height, false);
+  ihdrData[8] = 8;
+  ihdrData[9] = 2;
+  const ihdrType = new TextEncoder().encode("IHDR");
+  const ihdrLen = new Uint8Array(4);
+  new DataView(ihdrLen.buffer).setUint32(0, 13, false);
+  const ihdrCrc = new Uint8Array(4);
+  const iendLen = new Uint8Array(4);
+  const iendType = new TextEncoder().encode("IEND");
+  const iendCrc = new Uint8Array(4);
+  const out = new Uint8Array(
+    signature.length +
+      ihdrLen.length +
+      ihdrType.length +
+      ihdrData.length +
+      ihdrCrc.length +
+      iendLen.length +
+      iendType.length +
+      iendCrc.length,
+  );
+  let off = 0;
+  out.set(signature, off);
+  off += signature.length;
+  out.set(ihdrLen, off);
+  off += 4;
+  out.set(ihdrType, off);
+  off += 4;
+  out.set(ihdrData, off);
+  off += ihdrData.length;
+  out.set(ihdrCrc, off);
+  off += 4;
+  out.set(iendLen, off);
+  off += 4;
+  out.set(iendType, off);
+  off += 4;
+  out.set(iendCrc, off);
+  return out;
+}
+
 function mockImagesBinding(onTransform: (opts: Record<string, string | number>) => Uint8Array): StagingImagesBinding {
   return {
     async info() {
@@ -92,5 +137,12 @@ describe("normalizeStagingImage", () => {
     expect(out.width).toBeLessThanOrEqual(3072);
     expect(out.height).toBeLessThanOrEqual(3072);
     expect(Math.max(out.width, out.height)).toBeLessThanOrEqual(3072);
+  });
+
+  it("fallback rejects PNG dimension bomb before decode", async () => {
+    const bomb = makeBombPng(10000, 10000);
+    await expect(normalizeStagingImageFallback(bomb, { maxSide: 3072, jpegQuality: 90 })).rejects.toThrow(
+      /rgba_budget_exceeded/,
+    );
   });
 });

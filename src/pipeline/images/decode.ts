@@ -1,8 +1,10 @@
 import webpDecode from "@jsquash/webp/decode";
 import jpegModule from "jpeg-js";
 import UPNG from "upng-js";
+import { assertDecodeBudget } from "./decodeLimits";
 import { decodeHeicToRgba } from "./heic";
 import { ensureJsquashWebpDecoderInit } from "./jsquashWebpInit";
+import { readImageDimensions } from "./readImageDimensions";
 import { sniffImageFormat } from "./sniff";
 import type { ImageFormatHint, RgbaFrame } from "./types";
 
@@ -42,6 +44,8 @@ function ensureRgbaFrame(w: number, h: number, data: Uint8Array): RgbaFrame {
 }
 
 function decodePngToRgba(bytes: Uint8Array): RgbaFrame {
+  const headerDims = readImageDimensions(bytes, "png");
+  assertDecodeBudget(headerDims.width, headerDims.height);
   const copy = Uint8Array.from(bytes);
   const png = UPNG.decode(copy.buffer);
   if (png.error) {
@@ -59,6 +63,8 @@ function decodePngToRgba(bytes: Uint8Array): RgbaFrame {
 }
 
 function decodeJpegToRgba(bytes: Uint8Array): RgbaFrame {
+  const dims = readImageDimensions(bytes, "jpeg");
+  assertDecodeBudget(dims.width, dims.height);
   const raw = jpeg.decode(bytes, {
     useTArray: true,
     formatAsRGBA: true,
@@ -70,6 +76,7 @@ async function decodeWebpToRgba(bytes: Uint8Array): Promise<RgbaFrame> {
   await ensureJsquashWebpDecoderInit();
   const copy = Uint8Array.from(bytes);
   const imageData = await webpDecode(copy.buffer);
+  assertDecodeBudget(imageData.width, imageData.height);
   return {
     width: imageData.width,
     height: imageData.height,

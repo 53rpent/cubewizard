@@ -64,6 +64,12 @@
 	"images": {
 		"binding": "IMAGES"
 	},
+	"kv_namespaces": [
+		{
+			"binding": "RATE_LIMIT_KV",
+			"preview_id": "d2f6a7d203d241c1aa6dada518a6046d"
+		}
+	],
 	"env": {
 		"stg": {
 			"name": "cubewizard-stg",
@@ -118,6 +124,12 @@
 					"database_name": "cubewizard-db-stg",
 					"database_id": "3ae6ad5b-d61e-443d-a501-d4cd215dffd5",
 					"remote": true
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "RATE_LIMIT_KV",
+					"id": "1e7f90422dba4181929cfb525ff18156"
 				}
 			]
 		},
@@ -179,7 +191,13 @@
 			// Hedron cron: production only; stg Worker skips `scheduled` via CWW_ENV and has no triggers here.
 			"triggers": {
 				"crons": ["0 7 * * *"]
-			}
+			},
+			"kv_namespaces": [
+				{
+					"binding": "RATE_LIMIT_KV",
+					"id": "c4e43e19c4104675ac1a4ad6fe123b29"
+				}
+			]
 		}
 	}
 }

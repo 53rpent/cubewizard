@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS cubes (
     created TIMESTAMP NOT NULL,
     last_updated TIMESTAMP NOT NULL,
     total_decks INTEGER DEFAULT 0,
-    auto_sync_hedron_network INTEGER NOT NULL DEFAULT 1
+    auto_sync_hedron_network INTEGER NOT NULL DEFAULT 1,
+    last_hedron_sync TIMESTAMP
 );
 
 -- Decks table - stores deck metadata
