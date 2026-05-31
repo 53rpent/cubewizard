@@ -34,6 +34,8 @@ export interface OrientLightExtractOptions {
   cubeId?: string;
   visionEnv: { CWW_ENV?: string };
   vision?: VisionImagePublisher;
+  baseUrl?: string;
+  gatewayToken?: string;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
 }
@@ -88,6 +90,8 @@ export async function lightExtractScoreFromRgba(
       ...imageInput,
       schemaName: "card_extraction",
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
+      baseUrl: opts.baseUrl,
+      gatewayToken: opts.gatewayToken,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },

@@ -47,6 +47,8 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
   const env: RunEvalTaskEnv = {
     CWW_ENV: "local",
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    OPENAI_GATEWAY_TOKEN: process.env.OPENAI_GATEWAY_TOKEN,
     OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL,
     OPENAI_MAX_OUTPUT_TOKENS: process.env.OPENAI_MAX_OUTPUT_TOKENS,
     OPENAI_REASONING_EFFORT: process.env.OPENAI_REASONING_EFFORT,

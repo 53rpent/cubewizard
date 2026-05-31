@@ -1,4 +1,5 @@
 import type { TaskRequest } from "../contracts/taskRequest.zod";
+import { resolveOpenAiBaseUrl } from "../config/resolveOpenAiBaseUrl";
 import { parseEvalOpenAiLogLevel } from "../openai/responsesApi";
 import { PermanentEvalError } from "./evalErrors";
 import { parseEvalJpegQuality, parseEvalMaxImageSide } from "./evalImageLimits";
@@ -31,6 +32,8 @@ export interface EvalPipelineConfig {
   jpegQ: number;
   openAiLogLevel: ReturnType<typeof parseEvalOpenAiLogLevel>;
   maxImageSide: number;
+  openAiBaseUrl: string;
+  openAiGatewayToken?: string;
 }
 
 export function resolveEvalPipelineConfig(env: RunEvalTaskEnv): EvalPipelineConfig {
@@ -54,6 +57,8 @@ export function resolveEvalPipelineConfig(env: RunEvalTaskEnv): EvalPipelineConf
     jpegQ: parseEvalJpegQuality(env.CW_EVAL_JPEG_QUALITY),
     openAiLogLevel: parseEvalOpenAiLogLevel(env),
     maxImageSide: parseEvalMaxImageSide(env.CW_EVAL_MAX_IMAGE_SIDE),
+    openAiBaseUrl: resolveOpenAiBaseUrl(env),
+    openAiGatewayToken: String(env.OPENAI_GATEWAY_TOKEN ?? "").trim() || undefined,
   };
 }
 

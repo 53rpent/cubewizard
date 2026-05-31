@@ -102,7 +102,9 @@ Vitest WASM: `vitest.config.ts` plugin precompiles `vendor/jsquash-webp/*.wasm` 
 
 Config: `OPENAI_VISION_MODEL`, `OPENAI_MAX_OUTPUT_TOKENS`, `OPENAI_REASONING_EFFORT`, `CW_EVAL_USE_MULTI_PASS`, `CW_EVAL_LOG_LEVEL` (`off|low|medium|high`).
 
-API key: `config/resolveOpenAiApiKey.ts` — `env.OPENAI_API_KEY` secret.
+**AI Gateway (default):** `OPENAI_BASE_URL` in `wrangler-eval-consumer.jsonc` points at Cloudflare AI Gateway (`cubewizard`). Local, staging, and production share the same URL for parity. `config/resolveOpenAiBaseUrl.ts` builds `/responses` and adds `cf-aig-*` retry/timeout headers when the base host is `gateway.ai.cloudflare.com`. Opt out locally: `OPENAI_BASE_URL=https://api.openai.com/v1` in `.dev.vars`. Optional `OPENAI_GATEWAY_TOKEN` when Authenticated Gateway is enabled.
+
+API key: `config/resolveOpenAiApiKey.ts` — `env.OPENAI_API_KEY` secret (Bearer forwarded by the gateway).
 
 Token accounting: `evalUsage/evalUsageReport.ts` — reporter attached during extract; logged as `eval_usage_report`.
 

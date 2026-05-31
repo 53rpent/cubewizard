@@ -1,9 +1,8 @@
 import type { ZodType } from "zod";
+import { buildOpenAiRequestHeaders, resolveOpenAiBaseUrl } from "../config/resolveOpenAiBaseUrl";
 import { extractOpenAiUsageFromResponse, getActiveEvalUsageReporter } from "../evalUsage/evalUsageReport";
 import { getActiveEvalConsumerUploadId, isEvalConsumerLogActive, logEvalConsumer } from "../util/evalConsumerLog";
 import type { CardExtractionResult, OrientationConfirmResult, OrientationResult } from "./schemas";
-
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 /** Eval consumer OpenAI console logging (see `CW_EVAL_LOG_LEVEL` / legacy `CW_EVAL_VERBOSE_LOG`). */
 export type EvalOpenAiLogLevel = "off" | "low" | "medium" | "high";
@@ -89,6 +88,10 @@ export type VisionJsonCallOptions = {
   jsonSchema: Record<string, unknown>;
   /** OpenAI `strict` JSON schema mode (requires exhaustive `required`); default false for optional fields. */
   strictJsonSchema?: boolean;
+  /** OpenAI or AI Gateway base URL (no `/responses` suffix). Defaults to AI Gateway. */
+  baseUrl?: string;
+  /** `cf-aig-authorization` when Authenticated Gateway is enabled. */
+  gatewayToken?: string;
   fetchImpl?: typeof fetch;
   /**
    * `off`: no extra logs. `low`: one line per call with model structured output only (`openai_model_output` + schema name + JSON text).
@@ -195,12 +198,13 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
     });
   }
 
-  const res = await fetchImpl(OPENAI_RESPONSES_URL, {
+  const baseUrl = resolveOpenAiBaseUrl(opts.baseUrl !== undefined ? { OPENAI_BASE_URL: opts.baseUrl } : undefined);
+  const responsesUrl = `${baseUrl}/responses`;
+  const headers = buildOpenAiRequestHeaders(opts.apiKey, baseUrl, opts.gatewayToken);
+
+  const res = await fetchImpl(responsesUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
   });
 

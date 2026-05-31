@@ -87,6 +87,8 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         vision,
         fetchImpl,
         openAiLogLevel: cfg.openAiLogLevel,
+        baseUrl: cfg.openAiBaseUrl,
+        gatewayToken: cfg.openAiGatewayToken,
       });
 
       if (cubeList.length) {

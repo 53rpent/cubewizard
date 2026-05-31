@@ -26,6 +26,8 @@ export interface ExtractCardNamesOptions {
   jpegQuality: number;
   expectedDeckSize?: number;
   cubeId?: string;
+  baseUrl?: string;
+  gatewayToken?: string;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
   visionEnv: { CWW_ENV?: string };
@@ -66,7 +68,15 @@ async function extractionPass(
   userText: string,
   opts: Pick<
     ExtractCardNamesOptions,
-    "apiKey" | "model" | "maxOutputTokens" | "reasoningEffort" | "fetchImpl" | "openAiLogLevel" | "cubeId"
+    | "apiKey"
+    | "model"
+    | "maxOutputTokens"
+    | "reasoningEffort"
+    | "baseUrl"
+    | "gatewayToken"
+    | "fetchImpl"
+    | "openAiLogLevel"
+    | "cubeId"
   >,
   reasoningEffort?: "low" | "medium" | "high",
 ): Promise<CardExtractionResult> {
@@ -82,6 +92,8 @@ async function extractionPass(
       ...imageInput,
       schemaName: "card_extraction",
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
+      baseUrl: opts.baseUrl,
+      gatewayToken: opts.gatewayToken,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },

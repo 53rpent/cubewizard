@@ -105,6 +105,8 @@ git clone <repo-url>
 cd CubeWizard
 npm ci
 cp .dev.vars.example .dev.vars    # set OPENAI_API_KEY (required for eval)
+# Create AI Gateway `cubewizard` in Cloudflare Dashboard (retry, rate limit, caching) — see
+# https://developers.cloudflare.com/ai-gateway/get-started/ — before running eval (local uses gateway by default).
 npm run d1:bootstrap:local        # once per fresh .wrangler/local-shared
 npm run dev:all                   # site + eval + hedron in one Wrangler session
 ```
@@ -123,7 +125,9 @@ Use **`npm run dev:all`** (or `npm run dev:terminals` on Windows to open it in a
 
 | Variable | Required locally | Notes |
 |----------|------------------|--------|
-| `OPENAI_API_KEY` | Yes (for eval) | Eval consumer secret |
+| `OPENAI_API_KEY` | Yes (for eval) | Eval consumer secret; passed through AI Gateway to OpenAI |
+| `OPENAI_BASE_URL` | No | Default: AI Gateway (`wrangler-eval-consumer.jsonc`). Set to `https://api.openai.com/v1` to bypass gateway locally |
+| `OPENAI_GATEWAY_TOKEN` | No | Only if Authenticated Gateway is enabled on `cubewizard` |
 | `CW_EVAL_LOG_LEVEL` | No | `off` \| `low` \| `medium` \| `high` — see [OpenAI log levels](#openai-log-levels-cw_eval_log_level) |
 | `CW_EVAL_MAX_IMAGE_SIDE` | No | Default in wrangler eval config: `3072` px max side; unset/`0`/`full` = source resolution |
 | `CW_EVAL_MAX_CONSUMERS` | No | Must match queue `max_concurrency` in `wrangler-eval-consumer.jsonc` (Scryfall throttle) |

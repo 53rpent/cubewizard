@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { OPENAI_GATEWAY_BASE_URL_DEFAULT } from "../config/resolveOpenAiBaseUrl";
 import { orientationJsonSchema } from "./jsonSchemas";
 import { callOpenAiVisionJsonSchema, parseEvalOpenAiLogLevel } from "./responsesApi";
 import { OrientationResultSchema } from "./schemas";
@@ -193,6 +194,40 @@ describe("callOpenAiVisionJsonSchema", () => {
         userText: "orient this deck",
         imageUrl: "https://cdn.example.com/tmp/vision/u1/orient.jpg",
         promptCacheKey: "cube:test-cube",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+      OrientationResultSchema,
+    );
+  });
+
+  it("defaults to AI Gateway URL and sends cf-aig headers", async () => {
+    const payload = {
+      output: [
+        {
+          content: [{ type: "output_text", text: '{"rotation_needed":0,"confidence":"high"}' }],
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async (url, init) => {
+      expect(String(url)).toBe(`${OPENAI_GATEWAY_BASE_URL_DEFAULT}/responses`);
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["cf-aig-max-attempts"]).toBe("5");
+      expect(headers.Authorization).toBe("Bearer sk-test");
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gpt-test",
+        maxOutputTokens: 100,
+        userText: "hi",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient-0.jpg",
         schemaName: "orientation_result",
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,

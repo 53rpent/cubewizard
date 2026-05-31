@@ -7,6 +7,13 @@
 # FILL — required locally (Wrangler loads this as the OPENAI_API_KEY secret).
 OPENAI_API_KEY=
 
+# Eval OpenAI traffic uses AI Gateway by default (same URL as stg/prod in wrangler-eval-consumer.jsonc).
+# Requires gateway `cubewizard` in Cloudflare Dashboard — https://developers.cloudflare.com/ai-gateway/get-started/
+# Optional — bypass gateway (direct OpenAI):
+# OPENAI_BASE_URL=https://api.openai.com/v1
+# Optional — when Authenticated Gateway is enabled:
+# OPENAI_GATEWAY_TOKEN=
+
 # Optional — OpenAI eval consumer log level: off | low | medium | high
 CW_EVAL_LOG_LEVEL=
 

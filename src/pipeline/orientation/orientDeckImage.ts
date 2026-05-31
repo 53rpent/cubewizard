@@ -36,6 +36,8 @@ export interface OrientDeckImageOptions {
   maxImageSide?: number;
   visionEnv: { CWW_ENV?: string };
   vision?: VisionImagePublisher;
+  baseUrl?: string;
+  gatewayToken?: string;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
   /** Required: used to score each 90° rotation before a yes/no confirm call. */
@@ -78,6 +80,8 @@ async function confirmOrientation(
       ...imageInput,
       schemaName: "orientation_confirm",
       jsonSchema: orientationConfirmJsonSchema as unknown as Record<string, unknown>,
+      baseUrl: opts.baseUrl,
+      gatewayToken: opts.gatewayToken,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },
