@@ -1,3 +1,4 @@
+import { assertDecodeBudget } from "./decodeLimits";
 import type { RgbaFrame } from "./types";
 
 type HeifModule = {
@@ -29,6 +30,7 @@ export async function decodeHeicToRgba(bytes: Uint8Array): Promise<RgbaFrame> {
   if (!image) throw new Error("heic_decode_no_image");
   const width = image.get_width();
   const height = image.get_height();
+  assertDecodeBudget(width, height);
   const rgba = new Uint8ClampedArray(width * height * 4);
   await new Promise<void>((resolve, reject) => {
     image.display({ data: rgba, width, height }, (displayData) => {

@@ -7,6 +7,19 @@
 
 import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import {
+  dashboardCacheTtlSeconds,
+  getCachedDashboard,
+  invalidateDashboardCache,
+  putCachedDashboard,
+} from "./security/dashboardCache.js";
+import {
+  checkRateLimit,
+  clientIpFromRequest,
+  dashboardRateLimitConfig,
+  hedronSyncRateLimitConfig,
+} from "./security/rateLimit.js";
+import { verifyTurnstile, verifyTurnstileFromRequest } from "./security/turnstile.js";
 import { ANALYTICS_EXCLUDED_CARD_NAMES as ANALYTICS_EXCLUDED_CARD_NAMES_LIST } from "./shared/analyticsExcludedCardNames.js";
 
 export default {
@@ -24,7 +37,7 @@ export default {
 
     const dashboardMatch = url.pathname.match(/^\/api\/dashboard\/([^/]+)$/);
     if (dashboardMatch && request.method === "GET") {
-      return handleGetDashboard(dashboardMatch[1], env);
+      return handleGetDashboard(dashboardMatch[1], env, request);
     }
 
     const chartsMatch = url.pathname.match(/^\/api\/charts\/([^/]+)\/([^/]+)$/);
@@ -73,7 +86,7 @@ export default {
 
     const hedronSyncMatch = url.pathname.match(/^\/api\/hedron-sync\/([^/]+)$/);
     if (hedronSyncMatch && request.method === "POST") {
-      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx);
+      return handleTriggerHedronSync(hedronSyncMatch[1], request, env, ctx);
     }
 
     // --- Existing endpoints ---
@@ -214,6 +227,10 @@ var HEDRON_SYNC_CURSOR_UPSERT_EVERY = 5;
 var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
 /** Nested waitUntil continuations when WORKER_SELF is unavailable (same isolate; limited to avoid spinning). */
 var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
+/** Minimum interval between manual Hedron sync triggers per cube (cron unaffected). */
+var HEDRON_MANUAL_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
+/** Consider Hedron sync in-flight when cursor is mid-pagination and recently updated. */
+var HEDRON_SYNC_IN_FLIGHT_MS = 15 * 60 * 1000;
 /** Synthetic FQDN for WORKER_SELF.fetch only (.invalid is reserved in RFC 2606). Service bindings ignore the host, but the URL must be fully qualified — a host without a dot caused 500s for some runtimes. */
 var HEDRON_SERVICE_SYNC_HOST = "cubewizard-hedron.invalid";
 
@@ -766,6 +783,18 @@ async function upsertHedronSyncState(env, cubeId, nextKey, done, updatedAtIso, l
   }
 }
 
+async function isHedronSyncInFlight(env, cubeId) {
+  var state = await env.cubewizard_db
+    .prepare("SELECT next_key, done, updated_at FROM hedron_sync_state WHERE cube_id = ?")
+    .bind(cubeId)
+    .first();
+  if (!state || state.done) return false;
+  if (!state.next_key) return false;
+  var updated = new Date(state.updated_at).getTime();
+  if (!Number.isFinite(updated)) return false;
+  return Date.now() - updated < HEDRON_SYNC_IN_FLIGHT_MS;
+}
+
 async function fetchHedronSearchPage(cubeId, nextKey) {
   var u = new URL(HEDRON_SEARCH_URL);
   u.searchParams.set("cubeId", cubeId);
@@ -973,7 +1002,37 @@ async function handleGetCubes(env) {
   return jsonResponse({ cubes: results });
 }
 
-async function handleGetDashboard(cubeId, env) {
+async function handleGetDashboard(cubeId, env, request) {
+  var origin = new URL(request.url).origin;
+  var ip = clientIpFromRequest(request);
+  var rlCfg = dashboardRateLimitConfig(env);
+  var rl = await checkRateLimit(env.RATE_LIMIT_KV, "dashboard:" + ip + ":" + cubeId, rlCfg.limit, rlCfg.windowSeconds);
+  if (!rl.allowed) {
+    return jsonResponse({ error: "Rate limit exceeded. Try again later." }, 429, {
+      "Retry-After": String(rl.retryAfter || rlCfg.windowSeconds),
+    });
+  }
+
+  var cached = await getCachedDashboard(origin, cubeId);
+  if (cached) {
+    var hitHeaders = new Headers(cached.headers);
+    hitHeaders.set("X-CW-Dashboard-Cache", "hit");
+    return new Response(cached.body, { status: cached.status, headers: hitHeaders });
+  }
+
+  var response = await buildDashboardResponse(cubeId, env);
+  if (response.status === 200) {
+    var ttl = dashboardCacheTtlSeconds(env);
+    await putCachedDashboard(origin, cubeId, response.clone(), ttl);
+    var freshHeaders = new Headers(response.headers);
+    freshHeaders.set("Cache-Control", "public, max-age=" + String(ttl));
+    freshHeaders.set("X-CW-Dashboard-Cache", "miss");
+    return new Response(response.body, { status: response.status, headers: freshHeaders });
+  }
+  return response;
+}
+
+async function buildDashboardResponse(cubeId, env) {
   const cubeRow = await env.cubewizard_db.prepare("SELECT * FROM cubes WHERE cube_id = ?").bind(cubeId).first();
 
   if (!cubeRow) {
@@ -1347,15 +1406,58 @@ async function handleGetDeck(deckId, env, request) {
   });
 }
 
-async function handleTriggerHedronSync(cubeId, env, ctx) {
+async function handleTriggerHedronSync(cubeId, request, env, ctx) {
   try {
     var id = String(cubeId || "").trim();
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
+
+    var body = {};
+    try {
+      body = await request.json();
+    } catch (_e) {
+      /* empty body */
+    }
+
+    if (!(await verifyTurnstileFromRequest(request, env, body))) {
+      return jsonResponse({ error: "Bot verification failed. Please try again." }, 403);
+    }
+
+    var ip = clientIpFromRequest(request);
+    var rlCfg = hedronSyncRateLimitConfig(env);
+    var rl = await checkRateLimit(env.RATE_LIMIT_KV, "hedron:" + ip + ":" + id, rlCfg.limit, rlCfg.windowSeconds);
+    if (!rl.allowed) {
+      return jsonResponse({ error: "Rate limit exceeded. Try again later." }, 429, {
+        "Retry-After": String(rl.retryAfter || rlCfg.windowSeconds),
+      });
+    }
+
+    var cube = await env.cubewizard_db
+      .prepare("SELECT cube_id, last_hedron_sync FROM cubes WHERE cube_id = ?")
+      .bind(id)
+      .first();
+    if (!cube) return jsonResponse({ error: "Unknown cube" }, 404);
+
+    if (cube.last_hedron_sync) {
+      var elapsed = Date.now() - new Date(cube.last_hedron_sync).getTime();
+      if (Number.isFinite(elapsed) && elapsed < HEDRON_MANUAL_SYNC_COOLDOWN_MS) {
+        return jsonResponse({ error: "Sync recently completed. Try again later." }, 429);
+      }
+    }
+
+    if (await isHedronSyncInFlight(env, id)) {
+      return jsonResponse({ error: "Sync already in progress for this cube." }, 409);
+    }
 
     // Keep manual sync request-bound so the UI spinner reflects the producer phase:
     // Hedron JSON fetch, parse, D1 dedupe, and Cloudflare Queue publishing. Running
     // this in waitUntil risks Cloudflare cancelling it 30s after the response returns.
     var result = await syncHedronCube(env, id, ctx);
+
+    await env.cubewizard_db
+      .prepare("UPDATE cubes SET last_hedron_sync = ? WHERE cube_id = ?")
+      .bind(new Date().toISOString(), id)
+      .run();
+
     return jsonResponse(result || { ok: true, cube_id: id, decks_queued: 0 }, 200);
   } catch (e) {
     console.error("hedron manual sync handler", e);
@@ -1566,7 +1668,10 @@ async function handlePutDeckCards(deckIdStr, request, env) {
     return jsonResponse({ error: "Invalid deck id" }, 400);
   }
 
-  var deck = await env.cubewizard_db.prepare("SELECT deck_id FROM decks WHERE deck_id = ?").bind(deckId).first();
+  var deck = await env.cubewizard_db
+    .prepare("SELECT deck_id, cube_id FROM decks WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
   if (!deck) {
     return jsonResponse({ error: "Deck not found" }, 404);
   }
@@ -1666,6 +1771,12 @@ async function handlePutDeckCards(deckIdStr, request, env) {
     .prepare("UPDATE decks SET total_cards = ? WHERE deck_id = ?")
     .bind(trimmed.length, deckId)
     .run();
+
+  try {
+    await invalidateDashboardCache(new URL(request.url).origin, deck.cube_id);
+  } catch (cacheErr) {
+    console.error("dashboard cache invalidation failed:", cacheErr);
+  }
 
   return jsonResponse({
     success: true,
@@ -2247,44 +2358,6 @@ function buildColorBarChart(colorStats) {
 //  Existing handlers (unchanged)
 // ============================================================
 
-/** True when `CWW_ENV` is `local` (Wrangler top-level default): skip Turnstile for local `wrangler dev`. */
-function isCwwLocalEnv(env) {
-  var v = env.CWW_ENV;
-  if (v == null || v === "") return false;
-  return String(v).trim().toLowerCase() === "local";
-}
-
-/**
- * Verify a Cloudflare Turnstile token server-side.
- * Returns true if valid, false otherwise. When `CWW_ENV` is `local`, always returns true (no secret or widget required).
- */
-async function verifyTurnstile(token, ip, env) {
-  if (isCwwLocalEnv(env)) return true;
-  if (!token) return false;
-  var secret = env.TURNSTILE_SECRET;
-  if (!secret) {
-    console.error("TURNSTILE_SECRET is not configured");
-    return false;
-  }
-
-  try {
-    var resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        secret: secret,
-        response: token,
-        remoteip: ip || "",
-      }),
-    });
-    var result = await resp.json();
-    return result.success === true;
-  } catch (err) {
-    console.error("Turnstile verification error:", err);
-    return false;
-  }
-}
-
 async function handleUpload(request, env) {
   try {
     var formData = await request.formData();
@@ -2297,7 +2370,10 @@ async function handleUpload(request, env) {
     }
 
     var cubeId = formData.get("cube_id")?.trim();
-    var pilotName = formData.get("pilot_name")?.trim();
+    var pilotName = String(formData.get("pilot_name") || "")
+      .trim()
+      .replace(/[<>]/g, "");
+    if (pilotName.length > 100) pilotName = pilotName.slice(0, 100);
     var winsRaw = formData.get("wins");
     var lossesRaw = formData.get("losses");
     var drawsRaw = formData.get("draws") || "0";
@@ -2611,13 +2687,19 @@ function sanitizeJsonResponseBody(body) {
   return out;
 }
 
-function jsonResponse(body, status) {
+function jsonResponse(body, status, extraHeaders) {
   if (status === undefined) status = 200;
+  var headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  };
+  if (extraHeaders) {
+    for (var hk in extraHeaders) {
+      if (Object.hasOwn(extraHeaders, hk)) headers[hk] = extraHeaders[hk];
+    }
+  }
   return new Response(JSON.stringify(sanitizeJsonResponseBody(body)), {
     status: status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
+    headers: headers,
   });
 }

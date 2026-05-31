@@ -4,6 +4,7 @@ import {
   parseEvalMaxImageSide,
 } from "../orchestrator/evalImageLimits";
 import { decodeToRgba } from "./decode";
+import { assertDecodeBudget } from "./decodeLimits";
 import { encodeJpeg } from "./encode";
 import { readImageDimensions } from "./readImageDimensions";
 import { sniffImageFormat } from "./sniff";
@@ -81,6 +82,7 @@ export async function normalizeStagingImageFallback(
     throw new Error("staging_normalize_unknown_format");
   }
   const original = readImageDimensions(input, fmt);
+  assertDecodeBudget(original.width, original.height);
   const frame = resizeToMaxSide(await decodeToRgba(input, fmt), opts.maxSide, opts.maxSide);
   const bytes = encodeJpeg(frame, opts.jpegQuality);
   return {

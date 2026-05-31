@@ -412,6 +412,7 @@
 
     <script src="/site-footer.js"></script>
     <script src="/cw-paths.js"></script>
+    <script src="/cw-html.js"></script>
     <script src="/site-nav.js"></script>
     <script src="/card-tooltip.js"></script>
     <script>
@@ -569,7 +570,7 @@
                 var photoTd = thumbSrc
                     ? '<td style="width:56px;"><img src="' + String(thumbSrc).replace(/"/g, '&quot;') + '" alt="" loading="lazy" decoding="async" style="width:48px;height:48px;object-fit:contain;border-radius:6px;background:#eee;" /></td>'
                     : '<td style="width:56px;">\u2014</td>';
-                html += '<tr>' + photoTd + '<td>' + (d.pilot_name || '') + '</td>' +
+                html += '<tr>' + photoTd + '<td>' + CWHtml.escapeHtmlText(d.pilot_name || '') + '</td>' +
                     '<td class="trophy-mono">' + (d.match_wins != null ? d.match_wins : '') + '</td>' +
                     '<td class="trophy-mono">' + (d.match_losses != null ? d.match_losses : '') + '</td>' +
                     '<td class="trophy-mono">' + (d.match_draws != null ? d.match_draws : 0) + '</td>' +

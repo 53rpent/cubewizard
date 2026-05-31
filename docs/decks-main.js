@@ -7,11 +7,11 @@
   }
 
   function escapeHtmlAttr(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    return CWHtml.escapeHtmlAttr(s);
   }
 
   function escapeHtmlText(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return CWHtml.escapeHtmlText(s);
   }
 
   var currentCubeId = "";
@@ -121,6 +121,11 @@
     msg.style.color = kind === "error" ? "#c0392b" : kind === "ok" ? "#1e7e34" : "";
   }
 
+  function getTurnstileToken() {
+    var el = document.querySelector('[name="cf-turnstile-response"]');
+    return el?.value ? el.value : "";
+  }
+
   function triggerHedronSync() {
     if (!currentCubeId) return;
     if (hedronSyncInFlight) return;
@@ -139,7 +144,11 @@
     hedronSyncInFlight = true;
     setHedronSyncMessage("Reading Hedron data and queueing deck images...", "");
     setHedronSyncUiState();
-    fetch("/api/hedron-sync/" + encodeURIComponent(currentCubeId), { method: "POST" })
+    fetch("/api/hedron-sync/" + encodeURIComponent(currentCubeId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ "cf-turnstile-response": getTurnstileToken() }),
+    })
       .then(function (r) {
         return r
           .json()
@@ -153,6 +162,13 @@
       .then(function (res) {
         hedronSyncInFlight = false;
         setHedronSyncUiState();
+        if (window.turnstile) {
+          try {
+            turnstile.reset();
+          } catch (_e) {
+            /* ignore */
+          }
+        }
         if (!res.ok) {
           var err = res?.data?.error ? String(res.data.error) : "Failed to start Hedron sync (HTTP " + res.status + ")";
           setHedronSyncMessage(err, "error");
@@ -400,7 +416,7 @@
       tr.innerHTML =
         photoCell +
         "<td>" +
-        (d.pilot_name || "") +
+        CWHtml.escapeHtmlText(d.pilot_name || "") +
         "</td>" +
         '<td class="mono">' +
         (d.match_wins ?? "") +
@@ -672,7 +688,7 @@
       })
       .then(function (data) {
         if (data.error) {
-          $("deck-dynamic-root").innerHTML = '<div class="error">' + data.error + "</div>";
+          $("deck-dynamic-root").innerHTML = '<div class="error">' + escapeHtmlText(data.error || "Error") + "</div>";
           return;
         }
         var deck = data.deck || {};
