@@ -78,7 +78,7 @@ export async function ensureQueuedProcessingJob(
     .bind(task.upload_id)
     .first();
   if (row) return;
-  await upsertQueuedProcessingJob(db, task);
+  await upsertQueuedProcessingJob(db, task as TaskRequest);
 }
 
 export async function readStagingPackage(

@@ -1,3 +1,4 @@
+// @ts-expect-error JS module consumed by TS pipeline
 import { ANALYTICS_EXCLUDED_CARD_NAMES } from "../../shared/analyticsExcludedCardNames.js";
 
 export { ANALYTICS_EXCLUDED_CARD_NAMES };

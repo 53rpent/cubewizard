@@ -15,7 +15,7 @@ const jpeg = {
       useTArray: opts?.useTArray ?? false,
       formatAsRGBA: opts?.formatAsRGBA ?? true,
       maxMemoryUsageInMB: JPEG_DECODE_MEMORY_MB,
-    });
+    } as Parameters<typeof jpegModule.decode>[1] & { maxMemoryUsageInMB: number });
   },
 };
 

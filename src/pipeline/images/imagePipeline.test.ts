@@ -9,6 +9,7 @@ import {
   decodeToRgba,
   encodeJpeg,
   prepareBytesForOpenAiVision,
+  type RgbaFrame,
   rasterToOpenAiCompatible,
   resizeToMaxSide,
   rotateClockwise,
@@ -118,7 +119,7 @@ describe("rotateClockwise", () => {
     const data = new Uint8ClampedArray(w * h * 4);
     for (let i = 0; i < data.length; i++) data[i] = (i * 17 + 3) % 256;
     const frame = { width: w, height: h, data };
-    let out = frame;
+    let out: RgbaFrame = { width: w, height: h, data } as RgbaFrame;
     for (let i = 0; i < 4; i++) out = rotateClockwise(out, 90);
     expect(out.width).toBe(frame.width);
     expect(out.height).toBe(frame.height);

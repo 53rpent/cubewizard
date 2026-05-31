@@ -104,7 +104,7 @@ async function processEvalQueueMessage(
   resetEvalInvocationGlobals();
   try {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: queue handler branches on phase, retries, and ack policy
-    await runWithEvalConsumerLog(env, uploadId, async () => {
+    await runWithEvalConsumerLog(env, uploadId ?? null, async () => {
       logEvalConsumer("queue_job_start", {
         message_id: message.id,
 

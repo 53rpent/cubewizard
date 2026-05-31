@@ -99,11 +99,15 @@ export type VisionJsonCallOptions = {
 } & VisionImageInput;
 
 function resolveInputImageUrl(opts: VisionJsonCallOptions): string {
-  const url = opts.imageUrl?.trim();
-  if (url) return url;
-  const b64 = opts.imageBase64?.trim();
-  if (b64) {
-    return b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+  if ("imageUrl" in opts) {
+    const url = opts.imageUrl.trim();
+    if (url) return url;
+  }
+  if ("imageBase64" in opts) {
+    const b64 = opts.imageBase64.trim();
+    if (b64) {
+      return b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+    }
   }
   throw new ModelOutputInvalidError("vision call requires imageUrl or imageBase64");
 }
@@ -170,8 +174,8 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
       reasoning_effort: opts.reasoningEffort ?? null,
       prompt_cache_key: opts.promptCacheKey ?? null,
       developer_text_len: opts.developerText?.length ?? 0,
-      image_url: opts.imageUrl ?? null,
-      image_base64_len: opts.imageBase64?.length ?? null,
+      image_url: "imageUrl" in opts ? ((opts.imageUrl as string | undefined) ?? null) : null,
+      image_base64_len: "imageBase64" in opts ? opts.imageBase64.length : null,
       user_text_len: opts.userText.length,
     });
   }
@@ -185,8 +189,8 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
       reasoning_effort: opts.reasoningEffort ?? null,
       prompt_cache_key: opts.promptCacheKey ?? null,
       upload_id: uploadId,
-      image_url: opts.imageUrl?.trim() ? "(url)" : null,
-      image_base64_len: opts.imageBase64?.length ?? null,
+      image_url: "imageUrl" in opts ? (opts.imageUrl.trim() ? "(url)" : null) : null,
+      image_base64_len: "imageBase64" in opts ? (opts.imageBase64.length ?? null) : null,
       user_text_len: opts.userText.length,
     });
   }

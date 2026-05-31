@@ -1,6 +1,7 @@
 {
   "license": "GPL-3.0-or-later",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.pipeline.json",
     "lint": "biome check",
     "lint:fix": "biome check --fix",
     "format": "biome format --write",

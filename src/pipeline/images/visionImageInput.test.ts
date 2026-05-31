@@ -11,7 +11,9 @@ describe("visionInputFromJpegBytes", () => {
       purpose: "extract",
     });
     expect("imageBase64" in input).toBe(true);
-    expect(input.imageBase64).toBeTruthy();
+    if ("imageBase64" in input) {
+      expect(input.imageBase64).toBeTruthy();
+    }
     expect("imageUrl" in input).toBe(false);
   });
 

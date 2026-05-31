@@ -4,6 +4,7 @@ const MIB = 1024 * 1024;
 
 export interface EvalMemoryProbeEnv {
   CW_EVAL_MEMORY_LOG?: string;
+  CWW_ENV?: string;
 }
 
 /** True when `CW_EVAL_MEMORY_LOG=1|true|yes` (case-insensitive). */
@@ -29,7 +30,7 @@ export function isEvalMemoryLoggingEnabled(env?: EvalMemoryProbeEnv | null): boo
 }
 
 /** Ensure `CW_EVAL_MEMORY_LOG` is on `env` when set via `process.env` only. */
-export function enrichEvalMemoryLogEnv<T extends EvalMemoryProbeEnv>(env: T): T {
+export function enrichEvalMemoryLogEnv<T extends EvalMemoryProbeEnv>(env: T): T & { CW_EVAL_MEMORY_LOG?: string } {
   if (parseEvalMemoryLog(env.CW_EVAL_MEMORY_LOG)) return env;
   const fromProcess = readProcessEnv("CW_EVAL_MEMORY_LOG");
   if (!fromProcess) return env;
@@ -69,7 +70,7 @@ export function isStubNodeMemoryUsage(m: Record<string, number>): boolean {
 /** Best-effort; needs `nodejs_compat` + `enable_nodejs_process_v2` for non-zero heap on Workers. */
 export function readNodeMemoryUsageMb(): NodeMemoryUsageMb | null {
   const proc = (
-    globalThis as {
+    globalThis as unknown as {
       process?: { memoryUsage?: () => Record<string, number> };
     }
   ).process;
