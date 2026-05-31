@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { orientationJsonSchema } from "./jsonSchemas";
 import { callOpenAiVisionJsonSchema, parseEvalOpenAiLogLevel } from "./responsesApi";
 import { OrientationResultSchema } from "./schemas";
-import { orientationJsonSchema } from "./jsonSchemas";
 
 describe("parseEvalOpenAiLogLevel", () => {
   it("maps CW_EVAL_LOG_LEVEL", () => {
@@ -14,9 +14,7 @@ describe("parseEvalOpenAiLogLevel", () => {
     expect(parseEvalOpenAiLogLevel({ CW_EVAL_VERBOSE_LOG: "true" })).toBe("high");
   });
   it("prefers CW_EVAL_LOG_LEVEL over legacy when valid", () => {
-    expect(
-      parseEvalOpenAiLogLevel({ CW_EVAL_LOG_LEVEL: "low", CW_EVAL_VERBOSE_LOG: "1" })
-    ).toBe("low");
+    expect(parseEvalOpenAiLogLevel({ CW_EVAL_LOG_LEVEL: "low", CW_EVAL_VERBOSE_LOG: "1" })).toBe("low");
   });
 });
 
@@ -47,7 +45,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,
       },
-      OrientationResultSchema
+      OrientationResultSchema,
     );
     expect(r.rotation_needed).toBe(0);
     expect(r.confidence).toBe("high");
@@ -85,7 +83,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,
       },
-      OrientationResultSchema
+      OrientationResultSchema,
     );
     expect(r.rotation_needed).toBe(90);
   });
@@ -122,7 +120,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,
       },
-      OrientationResultSchema
+      OrientationResultSchema,
     );
   });
 
@@ -154,7 +152,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         fetchImpl: fetchImpl as typeof fetch,
         openAiLogLevel: "low",
       },
-      OrientationResultSchema
+      OrientationResultSchema,
     );
 
     expect(log.mock.calls.some((c) => c[0] === "openai_model_output")).toBe(true);
@@ -199,7 +197,7 @@ describe("callOpenAiVisionJsonSchema", () => {
         jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
         fetchImpl: fetchImpl as typeof fetch,
       },
-      OrientationResultSchema
+      OrientationResultSchema,
     );
   });
 });

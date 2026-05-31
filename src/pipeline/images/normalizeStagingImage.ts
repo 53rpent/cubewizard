@@ -1,13 +1,14 @@
-import { decodeToRgba } from "./decode";
-import { encodeJpeg } from "./encode";
 import {
+  EVAL_IMAGE_SIDE_UNLIMITED,
   parseEvalJpegQuality,
   parseEvalMaxImageSide,
-  EVAL_IMAGE_SIDE_UNLIMITED,
 } from "../orchestrator/evalImageLimits";
+import { decodeToRgba } from "./decode";
+import { assertDecodeBudget } from "./decodeLimits";
+import { encodeJpeg } from "./encode";
 import { readImageDimensions } from "./readImageDimensions";
-import { resizeToMaxSide } from "./transform";
 import { sniffImageFormat } from "./sniff";
+import { resizeToMaxSide } from "./transform";
 
 /** Minimal Cloudflare Images binding surface (see Workers Images API). */
 export interface StagingImagesBinding {
@@ -48,15 +49,12 @@ export interface StagingImageEnv {
 const DEFAULT_STAGING_MAX_SIDE = 3072;
 
 export function parseStagingImageConfig(env: StagingImageEnv = {}): NormalizeStagingOptions {
-  const maxSideRaw =
-    env.CW_STAGING_MAX_IMAGE_SIDE ?? env.CW_EVAL_MAX_IMAGE_SIDE ?? String(DEFAULT_STAGING_MAX_SIDE);
+  const maxSideRaw = env.CW_STAGING_MAX_IMAGE_SIDE ?? env.CW_EVAL_MAX_IMAGE_SIDE ?? String(DEFAULT_STAGING_MAX_SIDE);
   let maxSide = parseEvalMaxImageSide(maxSideRaw);
   if (maxSide <= 0 || maxSide === EVAL_IMAGE_SIDE_UNLIMITED) {
     maxSide = DEFAULT_STAGING_MAX_SIDE;
   }
-  const jpegQuality = parseEvalJpegQuality(
-    env.CW_STAGING_JPEG_QUALITY ?? env.CW_EVAL_JPEG_QUALITY
-  );
+  const jpegQuality = parseEvalJpegQuality(env.CW_STAGING_JPEG_QUALITY ?? env.CW_EVAL_JPEG_QUALITY);
   return { maxSide, jpegQuality };
 }
 
@@ -77,13 +75,14 @@ async function readResponseBytes(response: Response): Promise<Uint8Array> {
 /** Dev/test fallback when `IMAGES` binding is unavailable (full RGBA decode — not for 12MP in Workers). */
 export async function normalizeStagingImageFallback(
   input: Uint8Array,
-  opts: NormalizeStagingOptions
+  opts: NormalizeStagingOptions,
 ): Promise<NormalizeStagingResult> {
   const fmt = sniffImageFormat(input);
   if (fmt === "unknown") {
     throw new Error("staging_normalize_unknown_format");
   }
   const original = readImageDimensions(input, fmt);
+  assertDecodeBudget(original.width, original.height);
   const frame = resizeToMaxSide(await decodeToRgba(input, fmt), opts.maxSide, opts.maxSide);
   const bytes = encodeJpeg(frame, opts.jpegQuality);
   return {
@@ -99,7 +98,7 @@ export async function normalizeStagingImageFallback(
 async function normalizeViaImagesBinding(
   images: StagingImagesBinding,
   input: Uint8Array,
-  opts: NormalizeStagingOptions
+  opts: NormalizeStagingOptions,
 ): Promise<NormalizeStagingResult> {
   let originalWidth: number | undefined;
   let originalHeight: number | undefined;
@@ -109,16 +108,14 @@ async function normalizeViaImagesBinding(
       originalWidth = info.width;
       originalHeight = info.height;
     }
-  } catch {
-  }
+  } catch {}
 
   if (originalWidth == null || originalHeight == null) {
     try {
       const dims = readImageDimensions(input);
       originalWidth = dims.width;
       originalHeight = dims.height;
-    } catch {
-    }
+    } catch {}
   }
 
   const output = await images
@@ -129,9 +126,7 @@ async function normalizeViaImagesBinding(
 
   if (!transformed.ok) {
     const detail = await transformed.text().catch(() => "");
-    throw new Error(
-      `staging_images_transform_failed: HTTP ${transformed.status} ${detail.slice(0, 200)}`
-    );
+    throw new Error(`staging_images_transform_failed: HTTP ${transformed.status} ${detail.slice(0, 200)}`);
   }
 
   const bytes = await readResponseBytes(transformed);
@@ -157,10 +152,9 @@ async function normalizeViaImagesBinding(
 export async function normalizeStagingImage(
   images: StagingImagesBinding | null | undefined,
   input: ReadableStream<Uint8Array> | Uint8Array,
-  opts: NormalizeStagingOptions
+  opts: NormalizeStagingOptions,
 ): Promise<NormalizeStagingResult> {
-  const bytes =
-    input instanceof Uint8Array ? input : new Uint8Array(await new Response(input).arrayBuffer());
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(await new Response(input).arrayBuffer());
 
   if (bytes.byteLength === 0) {
     throw new Error("staging_normalize_empty_input");

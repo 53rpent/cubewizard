@@ -1,5 +1,5 @@
-import evalConsumer from "../entry/evalQueueEntry";
 import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
+import evalConsumer from "../entry/evalQueueEntry";
 import type { EvalRunReport } from "../evalUsage/evalUsageReport";
 import type { RunEvalTaskEnv } from "../orchestrator/runEvalTask";
 import { buildGoldenEvalConsumerEnv } from "./loadEvalConsumerEnv";
@@ -39,7 +39,7 @@ type QueueMessage = {
 export function bindGoldenExtractQueueInline(
   env: RunEvalTaskEnv,
   caseId: string,
-  onExtractAcked: () => void
+  onExtractAcked: () => void,
 ): RunEvalTaskEnv {
   const bound: RunEvalTaskEnv = { ...env };
   bound.EVAL_EXTRACT_QUEUE = {
@@ -55,10 +55,7 @@ export function bindGoldenExtractQueueInline(
           throw new Error("golden_harness_unexpected_extract_retry");
         },
       };
-      await evalConsumer.queue(
-        { queue: GOLDEN_EVAL_EXTRACT_QUEUE, messages: [message] },
-        bound
-      );
+      await evalConsumer.queue({ queue: GOLDEN_EVAL_EXTRACT_QUEUE, messages: [message] }, bound);
     },
   };
   return bound;
@@ -68,7 +65,7 @@ export function bindGoldenExtractQueueInline(
  * Run one golden case: orient queue message → extract queue message (two consumer invocations).
  */
 export async function runGoldenCaseViaEvalConsumer(
-  opts: RunGoldenCaseViaConsumerOptions
+  opts: RunGoldenCaseViaConsumerOptions,
 ): Promise<GoldenConsumerRunResult> {
   let orientAcked = false;
   let extractAcked = false;
@@ -99,7 +96,7 @@ export async function runGoldenCaseViaEvalConsumer(
         },
       ],
     },
-    env
+    env,
   );
 
   if (!orientAcked) {

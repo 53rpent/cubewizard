@@ -7,12 +7,9 @@
  * Queue: max_batch_size 1, max_concurrency 1.
  */
 
-import { parseQueueJsonBody } from "./queueMessageBody.js";
+import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
-import {
-  normalizeStagingImage,
-  parseStagingImageConfig,
-} from "./pipeline/images/normalizeStagingImage.ts";
+import { parseQueueJsonBody } from "./queueMessageBody.js";
 
 var HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 var HEDRON_RETRY_BASE_DELAY_SECONDS = 30;
@@ -24,7 +21,7 @@ function PermanentError(message) {
 }
 
 function requiredString(obj, key) {
-  var v = obj && obj[key];
+  var v = obj?.[key];
   if (typeof v !== "string" || !v.trim()) {
     throw PermanentError("missing required field: " + key);
   }
@@ -32,11 +29,11 @@ function requiredString(obj, key) {
 }
 
 function optionalInt(obj, key) {
-  var v = obj && obj[key];
+  var v = obj?.[key];
   if (v == null || v === "") return 0;
-  if (typeof v === "number" && isFinite(v)) return Math.trunc(v);
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
   var parsed = parseInt(String(v), 10);
-  return isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function normalizePrefix(prefix, deckImageUuid) {
@@ -48,7 +45,10 @@ function normalizePrefix(prefix, deckImageUuid) {
 }
 
 function contentTypeToExt(contentType) {
-  var ct = String(contentType || "").split(";")[0].trim().toLowerCase();
+  var ct = String(contentType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
   var extMap = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -121,12 +121,7 @@ async function verifyR2Staging(env, metadataKey, imageKey, expectedImageBytes) {
   if (!metaHead) throw new Error("r2_metadata_missing_after_put");
   var imgHead = await env.BUCKET.head(imageKey);
   if (!imgHead) throw new Error("r2_image_missing_after_put");
-  var stored =
-    imgHead.size != null
-      ? imgHead.size
-      : imgHead.contentLength != null
-        ? imgHead.contentLength
-        : null;
+  var stored = imgHead.size != null ? imgHead.size : imgHead.contentLength != null ? imgHead.contentLength : null;
   if (stored != null && stored <= 0) {
     throw new Error("r2_image_empty_after_put");
   }
@@ -168,9 +163,7 @@ async function processHedronMessage(raw, env, messageId) {
   try {
     normalized = await normalizeStagingImage(env.IMAGES, image.bytes, stagingOpts);
   } catch (normErr) {
-    throw PermanentError(
-      "hedron staging normalize failed: " + (normErr && normErr.message ? normErr.message : String(normErr))
-    );
+    throw PermanentError("hedron staging normalize failed: " + (normErr?.message ? normErr.message : String(normErr)));
   }
 
   var imageKey = prefix + "/image.jpg";
@@ -263,7 +256,7 @@ export default {
       await processHedronMessage(message.body, env, message.id);
       message.ack();
     } catch (e) {
-      if (e && e.permanent) {
+      if (e?.permanent) {
         console.error("hedron_consumer_poison", {
           message_id: message.id,
           error: e.message || String(e),
@@ -272,15 +265,12 @@ export default {
         return;
       }
 
-      var delay = Math.min(
-        300,
-        HEDRON_RETRY_BASE_DELAY_SECONDS * Math.max(1, message.attempts || 1)
-      );
+      var delay = Math.min(300, HEDRON_RETRY_BASE_DELAY_SECONDS * Math.max(1, message.attempts || 1));
       console.error("hedron_consumer_retry", {
         message_id: message.id,
         attempts: message.attempts,
         delay_seconds: delay,
-        error: e && e.message ? e.message : String(e),
+        error: e?.message ? e.message : String(e),
       });
       message.retry({ delaySeconds: delay });
     }

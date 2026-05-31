@@ -7,7 +7,7 @@ export function frameHasTransparency(frame: RgbaFrame): boolean {
   const { data, width, height } = frame;
   const n = width * height;
   for (let i = 0; i < n; i++) {
-    if (data[i * 4 + 3]! < 255) return true;
+    if ((data[i * 4 + 3] ?? 255) < 255) return true;
   }
   return false;
 }
@@ -25,11 +25,6 @@ export function encodeJpeg(frame: RgbaFrame, quality: number): Uint8Array {
 
 /** PNG RGBA8, 8-bit (UPNG ctype 6). */
 export function encodePng(frame: RgbaFrame): Uint8Array {
-  const ab = UPNG.encode(
-    [frame.data],
-    frame.width,
-    frame.height,
-    0
-  ) as ArrayBuffer;
+  const ab = UPNG.encode([frame.data], frame.width, frame.height, 0) as ArrayBuffer;
   return new Uint8Array(ab);
 }

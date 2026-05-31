@@ -21,13 +21,14 @@ export function hasR2PresignCredentials(env: R2PresignEnv): boolean {
   return Boolean(
     parseCloudflareAccountId(env.CLOUDFLARE_ACCOUNT_ID) &&
       String(env.R2_ACCESS_KEY_ID ?? "").trim() &&
-      String(env.R2_SECRET_ACCESS_KEY ?? "").trim()
+      String(env.R2_SECRET_ACCESS_KEY ?? "").trim(),
   );
 }
 
 /** Avoid checksum query params on presigned GETs (breaks some third-party fetchers). */
 function createR2S3Client(env: R2PresignEnv): S3Client {
-  const accountId = parseCloudflareAccountId(env.CLOUDFLARE_ACCOUNT_ID)!;
+  const accountId = parseCloudflareAccountId(env.CLOUDFLARE_ACCOUNT_ID);
+  if (!accountId) throw new Error("missing_cloudflare_account_id");
   return new S3Client({
     region: "auto",
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
@@ -45,7 +46,7 @@ function createR2S3Client(env: R2PresignEnv): S3Client {
  */
 export async function verifyR2PresignedGetUrl(
   url: string,
-  fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)
+  fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
 ): Promise<void> {
   const res = await fetchImpl(url, {
     method: "GET",
@@ -60,7 +61,7 @@ export async function verifyR2PresignedGetUrl(
     throw new Error(
       "r2_presign_signature_mismatch: R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must be " +
         `from the same R2 API token (credential starts with ${accessKeyPrefix}…). ` +
-        "Re-create the token and run both wrangler secret put commands on the eval consumer."
+        "Re-create the token and run both wrangler secret put commands on the eval consumer.",
     );
   }
   throw new Error(`r2_presign_verify_failed: HTTP ${res.status} ${body.slice(0, 200)}`);
@@ -74,7 +75,7 @@ export async function createR2PresignedGetUrl(
   env: R2PresignEnv,
   objectKey: string,
   expiresInSeconds: number = R2_PRESIGN_EXPIRES_SECONDS_DEFAULT,
-  fetchImpl?: typeof fetch
+  fetchImpl?: typeof fetch,
 ): Promise<string> {
   const accountId = parseCloudflareAccountId(env.CLOUDFLARE_ACCOUNT_ID);
   const accessKeyId = String(env.R2_ACCESS_KEY_ID ?? "").trim();
@@ -88,11 +89,7 @@ export async function createR2PresignedGetUrl(
   const expiresIn = Math.max(60, Math.min(604800, expiresInSeconds));
   const client = createR2S3Client(env);
 
-  const url = await getSignedUrl(
-    client,
-    new GetObjectCommand({ Bucket: bucket, Key: key }),
-    { expiresIn }
-  );
+  const url = await getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
 
   await verifyR2PresignedGetUrl(url, fetchImpl);
   return url;

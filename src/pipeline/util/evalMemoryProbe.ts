@@ -4,6 +4,7 @@ const MIB = 1024 * 1024;
 
 export interface EvalMemoryProbeEnv {
   CW_EVAL_MEMORY_LOG?: string;
+  CWW_ENV?: string;
 }
 
 /** True when `CW_EVAL_MEMORY_LOG=1|true|yes` (case-insensitive). */
@@ -12,8 +13,7 @@ export function parseEvalMemoryLog(raw: string | undefined): boolean {
 }
 
 function readProcessEnv(name: string): string | undefined {
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } })
-    .process;
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   const v = proc?.env?.[name];
   if (v === undefined || v === null) return undefined;
   const s = String(v).trim();
@@ -30,7 +30,7 @@ export function isEvalMemoryLoggingEnabled(env?: EvalMemoryProbeEnv | null): boo
 }
 
 /** Ensure `CW_EVAL_MEMORY_LOG` is on `env` when set via `process.env` only. */
-export function enrichEvalMemoryLogEnv<T extends EvalMemoryProbeEnv>(env: T): T {
+export function enrichEvalMemoryLogEnv<T extends EvalMemoryProbeEnv>(env: T): T & { CW_EVAL_MEMORY_LOG?: string } {
   if (parseEvalMemoryLog(env.CW_EVAL_MEMORY_LOG)) return env;
   const fromProcess = readProcessEnv("CW_EVAL_MEMORY_LOG");
   if (!fromProcess) return env;
@@ -70,7 +70,7 @@ export function isStubNodeMemoryUsage(m: Record<string, number>): boolean {
 /** Best-effort; needs `nodejs_compat` + `enable_nodejs_process_v2` for non-zero heap on Workers. */
 export function readNodeMemoryUsageMb(): NodeMemoryUsageMb | null {
   const proc = (
-    globalThis as {
+    globalThis as unknown as {
       process?: { memoryUsage?: () => Record<string, number> };
     }
   ).process;
@@ -121,7 +121,7 @@ export type EvalMemoryContext = Record<string, string | number | boolean | null 
  */
 export function buildEvalMemoryPayload(
   phase: string,
-  ctx: EvalMemoryContext = {}
+  ctx: EvalMemoryContext = {},
 ): Record<string, string | number | boolean | null> {
   const node = readNodeMemoryUsageMb();
   return {
@@ -138,10 +138,7 @@ export function logEvalMemory(env: EvalMemoryProbeEnv, phase: string, ctx?: Eval
 }
 
 /** Heuristic peak RGBA for one deck eval (oriented frame + one rotation scratch). */
-export function estimateEvalRgbaPeakMb(
-  frame: Pick<RgbaFrame, "width" | "height">,
-  rotationScratch = true
-): number {
+export function estimateEvalRgbaPeakMb(frame: Pick<RgbaFrame, "width" | "height">, rotationScratch = true): number {
   const one = rgbaFrameBytes(frame);
   const peak = rotationScratch ? one * 2 : one;
   return roundMb(peak);

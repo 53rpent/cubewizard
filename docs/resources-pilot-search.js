@@ -7,17 +7,17 @@
   }
 
   function escapeHtmlAttr(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    return CWHtml.escapeHtmlAttr(s);
   }
 
   function escapeHtmlText(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return CWHtml.escapeHtmlText(s);
   }
 
   function fmtDate(value) {
     if (!value) return "";
     var d = new Date(value);
-    if (isNaN(d.getTime())) return String(value);
+    if (Number.isNaN(d.getTime())) return String(value);
     return d.toLocaleString();
   }
 
@@ -121,19 +121,19 @@
     if (key === "created") {
       var ta = new Date(a.created).getTime();
       var tb = new Date(b.created).getTime();
-      ta = isFinite(ta) ? ta : 0;
-      tb = isFinite(tb) ? tb : 0;
+      ta = Number.isFinite(ta) ? ta : 0;
+      tb = Number.isFinite(tb) ? tb : 0;
       if (ta !== tb) return asc ? ta - tb : tb - ta;
       return pilotRowTieBreak(a, b);
     }
     var va = Number(a[key]);
     var vb = Number(b[key]);
     if (key === "win_rate") {
-      if (!isFinite(va)) va = -1;
-      if (!isFinite(vb)) vb = -1;
+      if (!Number.isFinite(va)) va = -1;
+      if (!Number.isFinite(vb)) vb = -1;
     } else {
-      if (!isFinite(va)) va = 0;
-      if (!isFinite(vb)) vb = 0;
+      if (!Number.isFinite(va)) va = 0;
+      if (!Number.isFinite(vb)) vb = 0;
     }
     if (va !== vb) return asc ? va - vb : vb - va;
     return pilotRowTieBreak(a, b);
@@ -156,7 +156,7 @@
       var btn = ev.target.closest("button[data-sort-key]");
       if (!btn || !wrap.contains(btn)) return;
       var thead = $("pilot-thead");
-      if (!thead || !thead.contains(btn)) return;
+      if (!thead?.contains(btn)) return;
       ev.preventDefault();
       var key = btn.getAttribute("data-sort-key");
       if (!key || !pilotListSnapshot.length) return;
@@ -195,7 +195,7 @@
       var arrow = active ? (asc ? " \u25b2" : " \u25bc") : "";
       var thCls = col.cls ? ' class="' + col.cls + '"' : "";
       hr +=
-        "<th scope=\"col\"" +
+        '<th scope="col"' +
         thCls +
         '><button type="button" class="table-sort-btn" data-sort-key="' +
         col.key +
@@ -222,7 +222,7 @@
         ? '<td class="deck-table-photo-cell"><img class="deck-table-photo" src="' +
           escapeHtmlAttr(thumbSrc) +
           '" alt="" loading="lazy" decoding="async" /></td>'
-        : "<td class=\"deck-table-photo-cell\">\u2014</td>";
+        : '<td class="deck-table-photo-cell">\u2014</td>';
 
       tr.innerHTML =
         photoCell +
@@ -262,7 +262,7 @@
 
   function runSearchFromForm() {
     var input = $("pilot-q");
-    var q = (input && input.value ? String(input.value) : "").trim();
+    var q = (input?.value ? String(input.value) : "").trim();
     if (q.length < 2) {
       showError("Enter at least 2 characters.");
       return;
@@ -283,7 +283,7 @@
         setLoading(false);
         var data = res.data || {};
         if (!res.ok) {
-          showError((data && data.error) ? data.error : "Search failed (HTTP " + res.status + ").");
+          showError(data?.error ? data.error : "Search failed (HTTP " + res.status + ").");
           return;
         }
         if (data.error) {
@@ -335,7 +335,7 @@
         $("pilot-q").value = q0;
         runSearchFromForm();
       }
-    } catch (e1) {
+    } catch (_e1) {
       /* ignore */
     }
   }

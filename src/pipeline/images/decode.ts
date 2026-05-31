@@ -1,24 +1,23 @@
+import webpDecode from "@jsquash/webp/decode";
 import jpegModule from "jpeg-js";
 import UPNG from "upng-js";
-import webpDecode from "@jsquash/webp/decode";
+import { assertDecodeBudget } from "./decodeLimits";
+import { decodeHeicToRgba } from "./heic";
 import { ensureJsquashWebpDecoderInit } from "./jsquashWebpInit";
+import { readImageDimensions } from "./readImageDimensions";
 import { sniffImageFormat } from "./sniff";
 import type { ImageFormatHint, RgbaFrame } from "./types";
-import { decodeHeicToRgba } from "./heic";
 
 /** Headroom for full-res camera JPEGs before staging/eval downscale (jpeg-js default is 512 MiB). */
 const JPEG_DECODE_MEMORY_MB = 16_384;
 
 const jpeg = {
-  decode(
-    data: Uint8Array,
-    opts?: { useTArray?: boolean; formatAsRGBA?: boolean }
-  ) {
+  decode(data: Uint8Array, opts?: { useTArray?: boolean; formatAsRGBA?: boolean }) {
     return jpegModule.decode(data, {
       useTArray: opts?.useTArray ?? false,
       formatAsRGBA: opts?.formatAsRGBA ?? true,
       maxMemoryUsageInMB: JPEG_DECODE_MEMORY_MB,
-    });
+    } as Parameters<typeof jpegModule.decode>[1] & { maxMemoryUsageInMB: number });
   },
 };
 
@@ -34,9 +33,9 @@ function ensureRgbaFrame(w: number, h: number, data: Uint8Array): RgbaFrame {
   if (data.length === n * 3) {
     const out = new Uint8ClampedArray(n * 4);
     for (let i = 0; i < n; i++) {
-      out[i * 4] = data[i * 3]!;
-      out[i * 4 + 1] = data[i * 3 + 1]!;
-      out[i * 4 + 2] = data[i * 3 + 2]!;
+      out[i * 4] = data[i * 3] ?? 0;
+      out[i * 4 + 1] = data[i * 3 + 1] ?? 0;
+      out[i * 4 + 2] = data[i * 3 + 2] ?? 0;
       out[i * 4 + 3] = 255;
     }
     return { width: w, height: h, data: out };
@@ -45,6 +44,8 @@ function ensureRgbaFrame(w: number, h: number, data: Uint8Array): RgbaFrame {
 }
 
 function decodePngToRgba(bytes: Uint8Array): RgbaFrame {
+  const headerDims = readImageDimensions(bytes, "png");
+  assertDecodeBudget(headerDims.width, headerDims.height);
   const copy = Uint8Array.from(bytes);
   const png = UPNG.decode(copy.buffer);
   if (png.error) {
@@ -62,6 +63,8 @@ function decodePngToRgba(bytes: Uint8Array): RgbaFrame {
 }
 
 function decodeJpegToRgba(bytes: Uint8Array): RgbaFrame {
+  const dims = readImageDimensions(bytes, "jpeg");
+  assertDecodeBudget(dims.width, dims.height);
   const raw = jpeg.decode(bytes, {
     useTArray: true,
     formatAsRGBA: true,
@@ -73,26 +76,19 @@ async function decodeWebpToRgba(bytes: Uint8Array): Promise<RgbaFrame> {
   await ensureJsquashWebpDecoderInit();
   const copy = Uint8Array.from(bytes);
   const imageData = await webpDecode(copy.buffer);
+  assertDecodeBudget(imageData.width, imageData.height);
   return {
     width: imageData.width,
     height: imageData.height,
-    data: new Uint8ClampedArray(
-      imageData.data.buffer,
-      imageData.data.byteOffset,
-      imageData.data.length
-    ),
+    data: new Uint8ClampedArray(imageData.data.buffer, imageData.data.byteOffset, imageData.data.length),
   };
 }
 
 /**
  * Decode arbitrary deck image bytes to RGBA8 (JPEG, PNG, WebP, HEIC/HEIF).
  */
-export async function decodeToRgba(
-  bytes: Uint8Array,
-  hint?: ImageFormatHint
-): Promise<RgbaFrame> {
-  const format =
-    hint && hint !== "unknown" ? hint : sniffImageFormat(bytes);
+export async function decodeToRgba(bytes: Uint8Array, hint?: ImageFormatHint): Promise<RgbaFrame> {
+  const format = hint && hint !== "unknown" ? hint : sniffImageFormat(bytes);
   if (format === "png") return decodePngToRgba(bytes);
   if (format === "jpeg") return decodeJpegToRgba(bytes);
   if (format === "webp") return decodeWebpToRgba(bytes);

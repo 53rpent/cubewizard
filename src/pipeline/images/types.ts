@@ -5,9 +5,4 @@ export interface RgbaFrame {
   data: Uint8ClampedArray;
 }
 
-export type ImageFormatHint =
-  | "jpeg"
-  | "png"
-  | "webp"
-  | "heic"
-  | "unknown";
+export type ImageFormatHint = "jpeg" | "png" | "webp" | "heic" | "unknown";

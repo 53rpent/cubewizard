@@ -67,7 +67,7 @@ export async function upsertQueuedProcessingJob(db, task) {
       task.image_source != null ? String(task.image_source) : null,
       task.match_wins != null ? task.match_wins : null,
       task.match_losses != null ? task.match_losses : null,
-      task.match_draws != null ? task.match_draws : null
+      task.match_draws != null ? task.match_draws : null,
     )
     .run();
 }

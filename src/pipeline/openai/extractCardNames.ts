@@ -1,18 +1,18 @@
 import { encodeJpeg } from "../images/encode";
 import { resizeToMaxSide } from "../images/transform";
+import type { RgbaFrame } from "../images/types";
 import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
-import type { VisionImageInput } from "./responsesApi";
-import type { RgbaFrame } from "../images/types";
-import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
+import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
 import {
-  EXTRACTION_DEVELOPER_PROMPT,
   buildCubeListDeveloperSuffix,
   buildExtractionUserPrompt,
+  EXTRACTION_DEVELOPER_PROMPT,
 } from "../openai/prompts";
-import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
-import { CardExtractionResultSchema, type CardExtractionResult } from "../openai/schemas";
 import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
+import { type CardExtractionResult, CardExtractionResultSchema } from "../openai/schemas";
+import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
+import type { VisionImageInput } from "./responsesApi";
 
 export interface ExtractCardNamesOptions {
   maxImageSide?: number;
@@ -35,7 +35,7 @@ export interface ExtractCardNamesOptions {
 function buildExtractionDeveloperPrefix(
   cubeCardList: string[] | null,
   maxCardsInPrompt: number,
-  includeCubeList: boolean
+  includeCubeList: boolean,
 ): string {
   if (!includeCubeList || !cubeCardList?.length) {
     return EXTRACTION_DEVELOPER_PROMPT;
@@ -52,11 +52,7 @@ function countBelowThreshold(count: number, expected: number, ratio: number): bo
   return count < expected * ratio;
 }
 
-function needsSecondPass(
-  pass1: CardExtractionResult,
-  expected: number,
-  hasCubeList: boolean
-): boolean {
+function needsSecondPass(pass1: CardExtractionResult, expected: number, hasCubeList: boolean): boolean {
   const count = pass1.card_names.length;
   if (countBelowThreshold(count, expected, 0.85)) return true;
   if (pass1.confidence_level === "low" || pass1.confidence_level === "medium") return true;
@@ -70,15 +66,9 @@ async function extractionPass(
   userText: string,
   opts: Pick<
     ExtractCardNamesOptions,
-    | "apiKey"
-    | "model"
-    | "maxOutputTokens"
-    | "reasoningEffort"
-    | "fetchImpl"
-    | "openAiLogLevel"
-    | "cubeId"
+    "apiKey" | "model" | "maxOutputTokens" | "reasoningEffort" | "fetchImpl" | "openAiLogLevel" | "cubeId"
   >,
-  reasoningEffort?: "low" | "medium" | "high"
+  reasoningEffort?: "low" | "medium" | "high",
 ): Promise<CardExtractionResult> {
   return callOpenAiVisionJsonSchema(
     {
@@ -95,7 +85,7 @@ async function extractionPass(
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },
-    CardExtractionResultSchema
+    CardExtractionResultSchema,
   );
 }
 
@@ -109,10 +99,8 @@ function mergeNames(into: Set<string>, names: string[]): void {
 /**
  * Card name extraction (single- or multi-pass OpenAI calls).
  */
-export async function extractCardNamesFromRgba(
-  frame: RgbaFrame,
-  opts: ExtractCardNamesOptions
-): Promise<string[]> {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: single- and multi-pass vision extraction with cube list context
+export async function extractCardNamesFromRgba(frame: RgbaFrame, opts: ExtractCardNamesOptions): Promise<string[]> {
   const side = opts.maxImageSide ?? EVAL_IMAGE_SIDE_UNLIMITED;
   const sized = resizeToMaxSide(frame, side, side);
   const jpegBytes = encodeJpeg(sized, opts.jpegQuality);
@@ -127,20 +115,11 @@ export async function extractCardNamesFromRgba(
   const mediumLog = level === "medium";
   const expected = opts.expectedDeckSize ?? 40;
   const hasCubeList = Boolean(opts.cubeCardList?.length);
-  const developerWithCube = buildExtractionDeveloperPrefix(
-    opts.cubeCardList,
-    opts.maxCardsInPrompt,
-    true
-  );
+  const developerWithCube = buildExtractionDeveloperPrefix(opts.cubeCardList, opts.maxCardsInPrompt, true);
   const developerRulesOnly = buildExtractionDeveloperPrefix(opts.cubeCardList, opts.maxCardsInPrompt, false);
 
   if (mediumLog) console.log("Pass 1: systematic extraction...");
-  let pass1 = await extractionPass(
-    imageInput,
-    developerWithCube,
-    buildExtractionUserPrompt({ pass: "initial" }),
-    opts
-  );
+  let pass1 = await extractionPass(imageInput, developerWithCube, buildExtractionUserPrompt({ pass: "initial" }), opts);
 
   if (pass1.confidence_level === "low") {
     if (mediumLog) console.log("Pass 1 low confidence — retrying once at high reasoning...");
@@ -149,7 +128,7 @@ export async function extractCardNamesFromRgba(
       developerWithCube,
       buildExtractionUserPrompt({ pass: "initial" }),
       opts,
-      "high"
+      "high",
     );
   }
 
@@ -171,15 +150,11 @@ export async function extractCardNamesFromRgba(
     imageInput,
     developerRulesOnly,
     buildExtractionUserPrompt({ pass: "second", previouslyFound: [...all] }),
-    opts
+    opts,
   );
   mergeNames(all, pass2.card_names);
 
-  if (
-    hasCubeList &&
-    opts.cubeCardList &&
-    countBelowThreshold(all.size, expected, 0.9)
-  ) {
+  if (hasCubeList && opts.cubeCardList && countBelowThreshold(all.size, expected, 0.9)) {
     const unfound = opts.cubeCardList.filter((c) => !all.has(c));
     if (unfound.length > 0) {
       const slice = unfound.slice(0, 120);
@@ -192,7 +167,7 @@ export async function extractCardNamesFromRgba(
           previouslyFound: [...all],
           validationCandidates: slice,
         }),
-        opts
+        opts,
       );
       mergeNames(all, pass3.card_names);
     }

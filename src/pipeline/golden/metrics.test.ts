@@ -3,10 +3,7 @@ import { aggregateCaseMetrics, computeCaseMetrics } from "./metrics";
 
 describe("computeCaseMetrics", () => {
   it("scores perfect extraction", () => {
-    const m = computeCaseMetrics(
-      ["Lightning Bolt", "Counterspell"],
-      ["Lightning Bolt", "Counterspell"]
-    );
+    const m = computeCaseMetrics(["Lightning Bolt", "Counterspell"], ["Lightning Bolt", "Counterspell"]);
     expect(m.f1).toBe(1);
     expect(m.exact_set_match).toBe(true);
     expect(m.false_positives).toBe(0);
@@ -14,20 +11,14 @@ describe("computeCaseMetrics", () => {
   });
 
   it("treats near-miss spellings as TP when fuzzy threshold met", () => {
-    const m = computeCaseMetrics(
-      ["Jace, the Mind Sculptor"],
-      ["Jace, The Mind Sculptor"]
-    );
+    const m = computeCaseMetrics(["Jace, the Mind Sculptor"], ["Jace, The Mind Sculptor"]);
     expect(m.true_positives).toBe(1);
     expect(m.false_positives).toBe(0);
     expect(m.false_negatives).toBe(0);
   });
 
   it("flags false positives and negatives", () => {
-    const m = computeCaseMetrics(
-      ["Lightning Bolt", "Shock", "Island"],
-      ["Lightning Bolt", "Counterspell"]
-    );
+    const m = computeCaseMetrics(["Lightning Bolt", "Shock", "Island"], ["Lightning Bolt", "Counterspell"]);
     expect(m.false_positives).toBeGreaterThanOrEqual(1);
     expect(m.false_negatives).toBeGreaterThanOrEqual(1);
     expect(m.precision).toBeLessThan(1);
@@ -47,7 +38,7 @@ describe("aggregateCaseMetrics", () => {
       { input: 10, output: 20, total: 30 },
       5,
       300,
-      2
+      2,
     );
     expect(agg.case_count).toBe(2);
     expect(agg.micro_precision).toBe(0.5);

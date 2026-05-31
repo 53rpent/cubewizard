@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildThumbWebpBytesFromImageBytes, type WebpEncodeFn } from "./thumbWebp";
 
 /** 1×1 RGBA PNG (red pixel), base64. */
-const TINY_PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 describe("buildThumbWebpBytesFromImageBytes", () => {
   it("decodes, resizes to thumb bounds, then calls the WebP encoder", async () => {
@@ -20,6 +19,6 @@ describe("buildThumbWebpBytesFromImageBytes", () => {
 
     const out = await buildThumbWebpBytesFromImageBytes(bytes, "png", encodeImpl);
     expect(encodeImpl).toHaveBeenCalledTimes(1);
-    expect(String.fromCharCode(out[0]!, out[1]!, out[2]!, out[3]!)).toBe("RIFF");
+    expect(String.fromCharCode(out[0] ?? 0, out[1] ?? 0, out[2] ?? 0, out[3] ?? 0)).toBe("RIFF");
   });
 });

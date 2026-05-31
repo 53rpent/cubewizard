@@ -29,11 +29,7 @@
   }
 
   function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   function replaceCanonicalUrl(cubeId, dataView) {
@@ -41,7 +37,7 @@
     try {
       var can = CWPaths.mergeCurrentPathPrefixWith(CWPaths.dataPath(cubeId, dataView));
       history.replaceState({}, "", can);
-    } catch (e) {}
+    } catch (_e) {}
   }
 
   /** Client-side canonicalization when the worker has not yet redirected legacy URLs. */
@@ -51,12 +47,8 @@
       if (!/\/analysis\/(performance|color|synergies)/i.test(p)) return;
       var loc = window.CWPaths ? CWPaths.parsePathname(p) : {};
       if (!loc.cubeId || !loc.dataView) return;
-      history.replaceState(
-        {},
-        "",
-        CWPaths.mergeCurrentPathPrefixWith(CWPaths.dataPath(loc.cubeId, loc.dataView))
-      );
-    } catch (e2) {}
+      history.replaceState({}, "", CWPaths.mergeCurrentPathPrefixWith(CWPaths.dataPath(loc.cubeId, loc.dataView)));
+    } catch (_e2) {}
   }
 
   function updateHeaderSubtitle(dataView) {
@@ -101,7 +93,7 @@
   }
 
   function getSearchSuggestions(query) {
-    if (!dashboardData || !dashboardData.card_performances) return [];
+    if (!dashboardData?.card_performances) return [];
     var ql = query.trim().toLowerCase();
     if (!ql) return [];
     var perf = dashboardData.card_performances;
@@ -173,7 +165,7 @@
       hideSearchSuggestions();
       return;
     }
-    if (!dashboardData || !dashboardData.card_performances) {
+    if (!dashboardData?.card_performances) {
       hideSearchSuggestions();
       return;
     }
@@ -189,7 +181,7 @@
 
   function findClosestCardMatch(query) {
     var q = query.trim().toLowerCase();
-    if (!q || !dashboardData || !dashboardData.card_performances) return null;
+    if (!q || !dashboardData?.card_performances) return null;
     var arr = dashboardData.card_performances;
     var i;
     var nl;
@@ -217,7 +209,7 @@
       resultsContainer.innerHTML = "";
       return;
     }
-    if (!dashboardData || !dashboardData.card_performances) {
+    if (!dashboardData?.card_performances) {
       resultsContainer.innerHTML = '<div class="search-error">Load card data first.</div>';
       return;
     }
@@ -298,7 +290,7 @@
   function uniqueSynergyCardNamesOrdered() {
     var seen = {};
     var order = [];
-    if (!synergySnapshot || !synergySnapshot.length) return order;
+    if (!synergySnapshot?.length) return order;
     var i;
     for (i = 0; i < synergySnapshot.length; i++) {
       var c1 = synergySnapshot[i].card1;
@@ -338,7 +330,7 @@
   }
 
   function getSynergyFilteredRows() {
-    if (!synergySnapshot || !synergySnapshot.length) return [];
+    if (!synergySnapshot?.length) return [];
     if (!synergyFilterName) return synergySnapshot.slice();
     var fl = synergyFilterName.toLowerCase();
     return synergySnapshot.filter(function (s) {
@@ -429,7 +421,7 @@
       hideSynergyFilterSuggestions();
       return;
     }
-    if (!synergySnapshot || !synergySnapshot.length) {
+    if (!synergySnapshot?.length) {
       hideSynergyFilterSuggestions();
       return;
     }
@@ -451,8 +443,7 @@
       msg.innerHTML = "";
       return;
     }
-    var fc =
-      filteredCount != null ? filteredCount : getSynergyFilteredRows().length;
+    var fc = filteredCount != null ? filteredCount : getSynergyFilteredRows().length;
     msg.innerHTML =
       '<p class="synergy-filter-status subtle">Showing ' +
       fc +
@@ -472,10 +463,10 @@
     if (!searchTerm) {
       synergyFilterName = null;
       if (msg) msg.innerHTML = "";
-      if (synergySnapshot && synergySnapshot.length) renderSynergyTable();
+      if (synergySnapshot?.length) renderSynergyTable();
       return;
     }
-    if (!synergySnapshot || !synergySnapshot.length) {
+    if (!synergySnapshot?.length) {
       if (msg) msg.innerHTML = '<div class="search-error">No synergy data loaded.</div>';
       return;
     }
@@ -602,7 +593,7 @@
   }
 
   function renderPerformanceTable() {
-    if (!perfSnapshot || !perfSnapshot.length) {
+    if (!perfSnapshot?.length) {
       $("detailed-data").innerHTML = "<p>No card performance data for this cube.</p>";
       return;
     }
@@ -620,8 +611,7 @@
     var h = "";
     var ci;
     h += "<h3>All cards</h3>";
-    h +=
-      '<table class="table performance-all-cards-table" id="performance-all-cards-table"><thead><tr>';
+    h += '<table class="table performance-all-cards-table" id="performance-all-cards-table"><thead><tr>';
     for (ci = 0; ci < colDefs.length; ci++) {
       var col = colDefs[ci];
       var active = col.key === sortKey;
@@ -668,7 +658,7 @@
   }
 
   function displayPerformanceAnalysis(performances) {
-    perfSnapshot = performances && performances.length ? performances.slice() : [];
+    perfSnapshot = performances?.length ? performances.slice() : [];
     perfSort = { key: "performance_delta", asc: false };
     renderPerformanceTable();
   }
@@ -740,8 +730,8 @@
     }
     var va = Number(a[key]);
     var vb = Number(b[key]);
-    if (!isFinite(va)) va = 0;
-    if (!isFinite(vb)) vb = 0;
+    if (!Number.isFinite(va)) va = 0;
+    if (!Number.isFinite(vb)) vb = 0;
     if (va !== vb) return asc ? va - vb : vb - va;
     var t = synergyPairSortKey(a).localeCompare(synergyPairSortKey(b));
     return asc ? t : -t;
@@ -758,7 +748,7 @@
   }
 
   function renderSynergyTable() {
-    if (!synergySnapshot || !synergySnapshot.length) {
+    if (!synergySnapshot?.length) {
       $("detailed-data").innerHTML = "<h3>Synergy data</h3><p>No synergy data for this cube.</p>";
       var msg0 = $("synergy-filter-message");
       if (msg0) msg0.innerHTML = "";
@@ -785,8 +775,7 @@
       { key: "together_record", label: "Together Record" },
     ];
     var h = "<h3>Synergy data</h3>";
-    h +=
-      '<table class="table synergy-pairs-table" id="synergy-pairs-table"><thead><tr>';
+    h += '<table class="table synergy-pairs-table" id="synergy-pairs-table"><thead><tr>';
     var ci;
     for (ci = 0; ci < colDefs.length; ci++) {
       var col = colDefs[ci];
@@ -834,7 +823,7 @@
   }
 
   function displaySynergyAnalysis(synergies) {
-    synergySnapshot = synergies && synergies.length ? synergies.slice() : [];
+    synergySnapshot = synergies?.length ? synergies.slice() : [];
     synergySort = { key: "together_count", asc: false };
     synergyFilterName = null;
     var sfi = $("synergy-filter-input");
@@ -848,13 +837,7 @@
   function colorIdentityRowClass(label) {
     var s = String(label || "");
     if (s === "All Decks") return "color-identity-total";
-    if (
-      s === "Mono-color" ||
-      s === "Two-color" ||
-      s === "Three-color" ||
-      s === "Four-color" ||
-      s === "Five-color"
-    ) {
+    if (s === "Mono-color" || s === "Two-color" || s === "Three-color" || s === "Four-color" || s === "Five-color") {
       return "color-identity-subtotal";
     }
     return "color-identity-detail";
@@ -867,8 +850,8 @@
     }
     var va = Number(a[key]);
     var vb = Number(b[key]);
-    if (!isFinite(va)) va = 0;
-    if (!isFinite(vb)) vb = 0;
+    if (!Number.isFinite(va)) va = 0;
+    if (!Number.isFinite(vb)) vb = 0;
     if (va !== vb) {
       return asc ? va - vb : vb - va;
     }
@@ -887,7 +870,7 @@
   }
 
   function renderColorIdentityTable() {
-    var rows = colorIdentitySnapshot && colorIdentitySnapshot.length ? colorIdentitySnapshot : [];
+    var rows = colorIdentitySnapshot?.length ? colorIdentitySnapshot : [];
     var html = "<h3>Color data</h3>";
     if (!rows.length) {
       html += "<p>No color identity breakdown is available for this cube.</p>";
@@ -941,17 +924,16 @@
   }
 
   function displayColorAnalysis(identityRows) {
-    colorIdentitySnapshot =
-      identityRows && identityRows.length
-        ? identityRows.map(function (r) {
-            return {
-              color: r.color,
-              wins: r.wins,
-              total_games: r.total_games,
-              win_rate: r.win_rate,
-            };
-          })
-        : [];
+    colorIdentitySnapshot = identityRows?.length
+      ? identityRows.map(function (r) {
+          return {
+            color: r.color,
+            wins: r.wins,
+            total_games: r.total_games,
+            win_rate: r.win_rate,
+          };
+        })
+      : [];
     colorIdentitySort = { key: null, asc: true };
     renderColorIdentityTable();
   }
@@ -1006,7 +988,7 @@
   function relayoutChartPlot() {
     if (!global.Plotly) return;
     var chartDiv = $("detailed-chart");
-    if (!chartDiv || !chartDiv.querySelector(".js-plotly-plot")) return;
+    if (!chartDiv?.querySelector(".js-plotly-plot")) return;
     var sz = getChartLayoutSize();
     Plotly.relayout("detailed-chart", { width: sz.width, height: sz.height });
   }
@@ -1083,9 +1065,7 @@
     var info = DATA_PAGE_INFO[stateDataView];
     if (!cubeId || !info) {
       updateHeaderSubtitle(stateDataView);
-      showError(
-        "Missing cube or page type. Select a cube in the header or open this page from the dashboard."
-      );
+      showError("Missing cube or page type. Select a cube in the header or open this page from the dashboard.");
       return;
     }
     resetViewForReload();
@@ -1131,7 +1111,7 @@
       if (window.CWPaths && CWPaths.preferredCubeId) {
         cubeId = CWPaths.preferredCubeId();
       }
-    } catch (e) {
+    } catch (_e) {
       cubeId = "";
     }
 
@@ -1146,13 +1126,13 @@
         if (!CWPaths.dataViewPathMatches(cubeId, stateDataView)) {
           replaceCanonicalUrl(cubeId, stateDataView);
         }
-      } catch (ePretty) {}
+      } catch (_ePretty) {}
     }
 
     if (cubeId) {
       try {
         localStorage.setItem("selectedCubeId", cubeId);
-      } catch (e2) {}
+      } catch (_e2) {}
     }
 
     function boot() {
@@ -1169,7 +1149,7 @@
           if (cubeId) {
             try {
               localStorage.setItem("selectedCubeId", cubeId);
-            } catch (eSync) {}
+            } catch (_eSync) {}
           }
           var select = $("cube-select");
           var cubes = data.cubes || [];
@@ -1188,16 +1168,16 @@
             cubeId = v;
             try {
               localStorage.setItem("selectedCubeId", cubeId);
-            } catch (e3) {}
+            } catch (_e3) {}
             try {
               if (window.CWPaths) {
                 history.replaceState(
                   {},
                   "",
-                  CWPaths.mergeCurrentPathPrefixWith(CWPaths.dataPath(cubeId, stateDataView))
+                  CWPaths.mergeCurrentPathPrefixWith(CWPaths.dataPath(cubeId, stateDataView)),
                 );
               }
-            } catch (e4) {}
+            } catch (_e4) {}
             if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
             loadPage(cubeId);
           });

@@ -18,13 +18,15 @@ export function orientedThumbObjectKey(cubeId: string, imageId: string): string 
 export function contentTypeForExt(ext: string): string {
   const e = ext.toLowerCase().replace(/^\./, "");
   return (
-    {
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      png: "image/png",
-      webp: "image/webp",
-      heic: "image/heic",
-      heif: "image/heif",
-    } as Record<string, string>
-  )[e] ?? "application/octet-stream";
+    (
+      {
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+        heic: "image/heic",
+        heif: "image/heif",
+      } as Record<string, string>
+    )[e] ?? "application/octet-stream"
+  );
 }

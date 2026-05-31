@@ -7,11 +7,11 @@
   }
 
   function escapeHtmlAttr(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    return CWHtml.escapeHtmlAttr(s);
   }
 
   function escapeHtmlText(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return CWHtml.escapeHtmlText(s);
   }
 
   var currentCubeId = "";
@@ -43,19 +43,19 @@
     if (key === "created") {
       var ta = new Date(a.created).getTime();
       var tb = new Date(b.created).getTime();
-      ta = isFinite(ta) ? ta : 0;
-      tb = isFinite(tb) ? tb : 0;
+      ta = Number.isFinite(ta) ? ta : 0;
+      tb = Number.isFinite(tb) ? tb : 0;
       if (ta !== tb) return asc ? ta - tb : tb - ta;
       return String(a.deck_id).localeCompare(String(b.deck_id));
     }
     var va = Number(a[key]);
     var vb = Number(b[key]);
     if (key === "win_rate") {
-      if (!isFinite(va)) va = -1;
-      if (!isFinite(vb)) vb = -1;
+      if (!Number.isFinite(va)) va = -1;
+      if (!Number.isFinite(vb)) vb = -1;
     } else {
-      if (!isFinite(va)) va = 0;
-      if (!isFinite(vb)) vb = 0;
+      if (!Number.isFinite(va)) va = 0;
+      if (!Number.isFinite(vb)) vb = 0;
     }
     if (va !== vb) return asc ? va - vb : vb - va;
     return String(a.deck_id).localeCompare(String(b.deck_id));
@@ -78,7 +78,7 @@
       var btn = ev.target.closest("button[data-sort-key]");
       if (!btn || !wrap.contains(btn)) return;
       var thead = $("decks-thead");
-      if (!thead || !thead.contains(btn)) return;
+      if (!thead?.contains(btn)) return;
       ev.preventDefault();
       var key = btn.getAttribute("data-sort-key");
       if (!key || !deckListSnapshot.length) return;
@@ -121,22 +121,34 @@
     msg.style.color = kind === "error" ? "#c0392b" : kind === "ok" ? "#1e7e34" : "";
   }
 
+  function getTurnstileToken() {
+    var el = document.querySelector('[name="cf-turnstile-response"]');
+    return el?.value ? el.value : "";
+  }
+
   function triggerHedronSync() {
     if (!currentCubeId) return;
     if (hedronSyncInFlight) return;
     if (activeProcessingJobCount > 0) {
       var noun = activeProcessingJobCount === 1 ? "deck is" : "decks are";
       setHedronSyncMessage(
-        "Hedron sync is unavailable while " + activeProcessingJobCount + " " + noun +
+        "Hedron sync is unavailable while " +
+          activeProcessingJobCount +
+          " " +
+          noun +
           " still being processed. Wait for processing to finish, then try again.",
-        "error"
+        "error",
       );
       return;
     }
     hedronSyncInFlight = true;
     setHedronSyncMessage("Reading Hedron data and queueing deck images...", "");
     setHedronSyncUiState();
-    fetch("/api/hedron-sync/" + encodeURIComponent(currentCubeId), { method: "POST" })
+    fetch("/api/hedron-sync/" + encodeURIComponent(currentCubeId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ "cf-turnstile-response": getTurnstileToken() }),
+    })
       .then(function (r) {
         return r
           .json()
@@ -150,28 +162,25 @@
       .then(function (res) {
         hedronSyncInFlight = false;
         setHedronSyncUiState();
+        if (window.turnstile) {
+          try {
+            turnstile.reset();
+          } catch (_e) {
+            /* ignore */
+          }
+        }
         if (!res.ok) {
-          var err =
-            res && res.data && res.data.error
-              ? String(res.data.error)
-              : "Failed to start Hedron sync (HTTP " + res.status + ")";
+          var err = res?.data?.error ? String(res.data.error) : "Failed to start Hedron sync (HTTP " + res.status + ")";
           setHedronSyncMessage(err, "error");
           return;
         }
-        var queued =
-          res && res.data && typeof res.data.decks_queued === "number"
-            ? res.data.decks_queued
-            : 0;
+        var queued = res?.data && typeof res.data.decks_queued === "number" ? res.data.decks_queued : 0;
         var noun = queued === 1 ? "deck" : "decks";
-        var suffix =
-          res && res.data && res.data.continuation_scheduled
-            ? " More Hedron pages will continue queueing in the background."
-            : "";
+        var suffix = res?.data?.continuation_scheduled
+          ? " More Hedron pages will continue queueing in the background."
+          : "";
         if (queued > 0) {
-          setHedronSyncMessage(
-            queued + " Hedron " + noun + " queued for database import." + suffix,
-            "ok"
-          );
+          setHedronSyncMessage(queued + " Hedron " + noun + " queued for database import." + suffix, "ok");
         } else {
           setHedronSyncMessage("No new Hedron decks found to add.", "ok");
         }
@@ -199,7 +208,7 @@
   function fmtDate(value) {
     if (!value) return "";
     var d = new Date(value);
-    if (isNaN(d.getTime())) return String(value);
+    if (Number.isNaN(d.getTime())) return String(value);
     return d.toLocaleString();
   }
 
@@ -237,7 +246,7 @@
     var count = 0;
     jobs = Array.isArray(jobs) ? jobs : [];
     for (var i = 0; i < jobs.length; i++) {
-      var st = String((jobs[i] && jobs[i].status) || "queued").toLowerCase();
+      var st = String(jobs[i]?.status || "queued").toLowerCase();
       if (st !== "done" && st !== "error" && st !== "failed") count++;
     }
     activeProcessingJobCount = count;
@@ -347,7 +356,7 @@
       var tail = qs ? "?" + qs : "";
       var hash = window.location.hash || "";
       window.history.replaceState({}, "", path + tail + hash);
-    } catch (e) {
+    } catch (_e) {
       /* ignore */
     }
   }
@@ -376,7 +385,7 @@
       var arrow = active ? (asc ? " \u25b2" : " \u25bc") : "";
       var thCls = col.cls ? ' class="' + col.cls + '"' : "";
       hr +=
-        "<th scope=\"col\"" +
+        '<th scope="col"' +
         thCls +
         '><button type="button" class="table-sort-btn" data-sort-key="' +
         col.key +
@@ -402,12 +411,12 @@
         ? '<td class="deck-table-photo-cell"><img class="deck-table-photo" src="' +
           escapeHtmlAttr(thumbSrc) +
           '" alt="" loading="lazy" decoding="async" /></td>'
-        : "<td class=\"deck-table-photo-cell\">\u2014</td>";
+        : '<td class="deck-table-photo-cell">\u2014</td>';
 
       tr.innerHTML =
         photoCell +
         "<td>" +
-        (d.pilot_name || "") +
+        CWHtml.escapeHtmlText(d.pilot_name || "") +
         "</td>" +
         '<td class="mono">' +
         (d.match_wins ?? "") +
@@ -529,13 +538,12 @@
         btn.disabled = false;
         var data = res.data;
         if (!res.ok) {
-          $("deck-edit-message").textContent =
-            data && data.error ? data.error : "Save failed (HTTP " + res.status + ")";
+          $("deck-edit-message").textContent = data?.error ? data.error : "Save failed (HTTP " + res.status + ")";
           $("deck-edit-message").className = "deck-edit-message error";
           return;
         }
         if (!data.success) {
-          $("deck-edit-message").textContent = (data && data.error) ? data.error : "Save failed.";
+          $("deck-edit-message").textContent = data?.error ? data.error : "Save failed.";
           $("deck-edit-message").className = "deck-edit-message error";
           return;
         }
@@ -543,9 +551,7 @@
         var msg = "Saved.";
         if (nf.length) {
           msg +=
-            " " +
-            nf.length +
-            " name(s) could not be matched on Scryfall \u2014 those lines were stored as plain text.";
+            " " + nf.length + " name(s) could not be matched on Scryfall \u2014 those lines were stored as plain text.";
         }
         $("deck-edit-message").textContent = msg;
         $("deck-edit-message").className = "deck-edit-message ok";
@@ -583,7 +589,7 @@
 
   function bucketCmc(cmc) {
     var n = Number(cmc);
-    if (!isFinite(n) || n < 0) n = 0;
+    if (!Number.isFinite(n) || n < 0) n = 0;
     var b = Math.floor(n);
     if (b >= 6) return 6;
     return b;
@@ -632,21 +638,16 @@
     }
 
     var html = '<div class="curve-grid">';
-    for (var b = 0; b <= 6; b++) {
-      html +=
-        '<div class="curve-col">' +
-        "<h4>MV " +
-        bucketLabel(b) +
-        "</h4>" +
-        '<ul class="curve-list">';
-      if (buckets[b].length === 0) {
+    for (var bucketIdx = 0; bucketIdx <= 6; bucketIdx++) {
+      html += '<div class="curve-col">' + "<h4>MV " + bucketLabel(bucketIdx) + "</h4>" + '<ul class="curve-list">';
+      if (buckets[bucketIdx].length === 0) {
         html += '<li style="color:#999;">\u2014</li>';
       } else {
-        for (var li = 0; li < buckets[b].length; li++) {
-          var e = buckets[b][li];
-          var prefix = e.count > 1 ? e.count + "x " : "";
-          var nameHtml = window.CW ? CW.cardNameHtml(e.name, e.image_url) : e.name;
-          html += "<li title=\"\">" + prefix + nameHtml + "</li>";
+        for (var li = 0; li < buckets[bucketIdx].length; li++) {
+          var curveEntry = buckets[bucketIdx][li];
+          var prefix = curveEntry.count > 1 ? curveEntry.count + "x " : "";
+          var nameHtml = window.CW ? CW.cardNameHtml(curveEntry.name, curveEntry.image_url) : curveEntry.name;
+          html += '<li title="">' + prefix + nameHtml + "</li>";
         }
       }
       html += "</ul></div>";
@@ -687,7 +688,7 @@
       })
       .then(function (data) {
         if (data.error) {
-          $("deck-dynamic-root").innerHTML = '<div class="error">' + data.error + "</div>";
+          $("deck-dynamic-root").innerHTML = '<div class="error">' + escapeHtmlText(data.error || "Error") + "</div>";
           return;
         }
         var deck = data.deck || {};
@@ -696,7 +697,7 @@
 
         deckEditContext.deckId = deckId;
         var ordered = data.card_names_ordered;
-        if ((!ordered || !ordered.length) && cards.length) {
+        if (!ordered?.length && cards.length) {
           ordered = cards.map(function (c) {
             return c.name;
           });
@@ -729,10 +730,10 @@
         fitCurveText();
         $("modal-edit-cards-btn").style.display = "inline-block";
 
-        if (deckStats && deckStats.processing_notes) {
+        if (deckStats?.processing_notes) {
           try {
             var notes = JSON.parse(deckStats.processing_notes);
-            var nf = notes && notes.not_found ? notes.not_found : [];
+            var nf = notes?.not_found ? notes.not_found : [];
             if (nf && nf.length > 0) {
               nf.sort(function (a, b) {
                 return String(a).localeCompare(String(b));
@@ -750,7 +751,7 @@
               nh += "</ul></div>";
               $("deck-dynamic-root").insertAdjacentHTML("beforeend", nh);
             }
-          } catch (e) {
+          } catch (_e) {
             /* ignore */
           }
         }
@@ -793,25 +794,21 @@
   function boot() {
     try {
       currentCubeId = getCubeFromUrl() || localStorage.getItem("selectedCubeId") || "";
-    } catch (e) {
+    } catch (_e) {
       currentCubeId = getCubeFromUrl() || "";
     }
     setHedronSyncUiState();
     if (currentCubeId) {
       try {
         localStorage.setItem("selectedCubeId", currentCubeId);
-      } catch (e2) {}
+      } catch (_e2) {}
       try {
         if (window.CWPaths && CWPaths.decksPathMatches) {
           if (!CWPaths.decksPathMatches(currentCubeId)) {
-            window.history.replaceState(
-              {},
-              "",
-              CWPaths.mergeCurrentPathPrefixWith(CWPaths.decks(currentCubeId))
-            );
+            window.history.replaceState({}, "", CWPaths.mergeCurrentPathPrefixWith(CWPaths.decks(currentCubeId)));
           }
         }
-      } catch (e3) {}
+      } catch (_e3) {}
     }
 
     fetch("/api/cubes")
@@ -824,7 +821,7 @@
           currentCubeId = loc.cubeId;
           try {
             localStorage.setItem("selectedCubeId", currentCubeId);
-          } catch (eSync) {}
+          } catch (_eSync) {}
         }
         var cubes = data.cubes || [];
         var sel = $("cube-select");
@@ -846,16 +843,12 @@
           setHedronSyncUiState();
           try {
             localStorage.setItem("selectedCubeId", v);
-          } catch (e4) {}
+          } catch (_e4) {}
           try {
             if (window.CWPaths) {
-              window.history.replaceState(
-                {},
-                "",
-                CWPaths.mergeCurrentPathPrefixWith(CWPaths.decks(v))
-              );
+              window.history.replaceState({}, "", CWPaths.mergeCurrentPathPrefixWith(CWPaths.decks(v)));
             }
-          } catch (e5) {}
+          } catch (_e5) {}
           if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
           closeModal();
           $("error").style.display = "none";
@@ -918,7 +911,7 @@
     try {
       var btn = $("hedron-sync-btn");
       if (btn) btn.addEventListener("click", triggerHedronSync);
-    } catch (eBtn) {}
+    } catch (_eBtn) {}
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", boot);
     } else {

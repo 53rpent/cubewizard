@@ -5,12 +5,22 @@
  * and static assets for the dashboard SPA.
  */
 
+import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
-import { ANALYTICS_EXCLUDED_CARD_NAMES as ANALYTICS_EXCLUDED_CARD_NAMES_LIST } from "./shared/analyticsExcludedCardNames.js";
 import {
-  normalizeStagingImage,
-  parseStagingImageConfig,
-} from "./pipeline/images/normalizeStagingImage.ts";
+  dashboardCacheTtlSeconds,
+  getCachedDashboard,
+  invalidateDashboardCache,
+  putCachedDashboard,
+} from "./security/dashboardCache.js";
+import {
+  checkRateLimit,
+  clientIpFromRequest,
+  dashboardRateLimitConfig,
+  hedronSyncRateLimitConfig,
+} from "./security/rateLimit.js";
+import { verifyTurnstile, verifyTurnstileFromRequest } from "./security/turnstile.js";
+import { ANALYTICS_EXCLUDED_CARD_NAMES as ANALYTICS_EXCLUDED_CARD_NAMES_LIST } from "./shared/analyticsExcludedCardNames.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -27,7 +37,7 @@ export default {
 
     const dashboardMatch = url.pathname.match(/^\/api\/dashboard\/([^/]+)$/);
     if (dashboardMatch && request.method === "GET") {
-      return handleGetDashboard(dashboardMatch[1], env);
+      return handleGetDashboard(dashboardMatch[1], env, request);
     }
 
     const chartsMatch = url.pathname.match(/^\/api\/charts\/([^/]+)\/([^/]+)$/);
@@ -76,7 +86,7 @@ export default {
 
     const hedronSyncMatch = url.pathname.match(/^\/api\/hedron-sync\/([^/]+)$/);
     if (hedronSyncMatch && request.method === "POST") {
-      return handleTriggerHedronSync(hedronSyncMatch[1], env, ctx);
+      return handleTriggerHedronSync(hedronSyncMatch[1], request, env, ctx);
     }
 
     // --- Existing endpoints ---
@@ -116,22 +126,20 @@ export default {
   },
 
   /** Daily Hedron sync: Cloudflare Cron Triggers (`triggers.crons`). Skipped on stg (`CWW_ENV`). */
-  async scheduled(event, env, ctx) {
+  async scheduled(_event, env, ctx) {
     var cwEnv = typeof env.CWW_ENV === "string" ? env.CWW_ENV.trim().toLowerCase() : "";
     if (cwEnv === "staging") {
       return;
     }
     try {
-      var res = await env.cubewizard_db.prepare(
-        "SELECT cube_id FROM cubes WHERE auto_sync_hedron_network = 1"
-      ).all();
+      var res = await env.cubewizard_db.prepare("SELECT cube_id FROM cubes WHERE auto_sync_hedron_network = 1").all();
       var rows = res.results || [];
       for (let i = 0; i < rows.length; i++) {
-        let cid = rows[i].cube_id;
+        const cid = rows[i].cube_id;
         ctx.waitUntil(
           syncHedronCube(env, cid, ctx).catch(function (e) {
             console.error("hedron scheduled sync", cid, e);
-          })
+          }),
         );
       }
     } catch (e) {
@@ -158,7 +166,7 @@ async function handleGetProcessingDecks(cubeId, env) {
         "FROM processing_jobs " +
         "WHERE cube_id = ? AND status IN ('queued', 'running', 'failed') " +
         "ORDER BY submitted_at DESC " +
-        "LIMIT 50"
+        "LIMIT 50",
     );
     var res = await stmt.bind(cube).all();
     var rows = res.results || [];
@@ -219,6 +227,10 @@ var HEDRON_SYNC_CURSOR_UPSERT_EVERY = 5;
 var HEDRON_SYNC_WALL_BUDGET_MS = 25000;
 /** Nested waitUntil continuations when WORKER_SELF is unavailable (same isolate; limited to avoid spinning). */
 var HEDRON_SYNC_CONTINUE_MAX_DEPTH = 4;
+/** Minimum interval between manual Hedron sync triggers per cube (cron unaffected). */
+var HEDRON_MANUAL_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
+/** Consider Hedron sync in-flight when cursor is mid-pagination and recently updated. */
+var HEDRON_SYNC_IN_FLIGHT_MS = 15 * 60 * 1000;
 /** Synthetic FQDN for WORKER_SELF.fetch only (.invalid is reserved in RFC 2606). Service bindings ignore the host, but the URL must be fully qualified — a host without a dot caused 500s for some runtimes. */
 var HEDRON_SERVICE_SYNC_HOST = "cubewizard-hedron.invalid";
 
@@ -228,9 +240,9 @@ function hedronEnvInt(env, key, defaultVal, maxVal) {
     var raw = env[key];
     if (raw != null && raw !== "") {
       var n = parseInt(String(raw), 10);
-      if (isFinite(n) && n >= 1 && n <= cap) return n;
+      if (Number.isFinite(n) && n >= 1 && n <= cap) return n;
     }
-  } catch (e) {}
+  } catch (_e) {}
   return defaultVal;
 }
 
@@ -259,10 +271,10 @@ function buildHedronPageJobRows(json) {
     var players = draft.players || [];
     for (var pi = 0; pi < players.length; pi++) {
       var player = players[pi];
-      var deckArr = player.images && player.images.deck;
+      var deckArr = player.images?.deck;
       if (!Array.isArray(deckArr) || deckArr.length === 0) continue;
       var first = deckArr[0];
-      var deckPath = first && first.url;
+      var deckPath = first?.url;
       if (!deckPath || typeof deckPath !== "string") continue;
 
       var segs = deckPath.split("/").filter(Boolean);
@@ -322,13 +334,13 @@ function hedronUniqueUuidsFromJobRows(rows) {
 /** One batched D1 read for many UUIDs (replaces N per-row lookups). Chunked for SQLite parameter limits. */
 async function hedronBatchSyncedUuidSet(env, uuids) {
   var existing = new Set();
-  if (!uuids || !uuids.length) return existing;
+  if (!uuids?.length) return existing;
   var chunkSize = 80;
   for (var c = 0; c < uuids.length; c += chunkSize) {
     var slice = uuids.slice(c, c + chunkSize);
     var ph = new Array(slice.length).fill("?").join(",");
     var stmt = env.cubewizard_db.prepare(
-      "SELECT deck_image_uuid FROM hedron_synced_decks WHERE deck_image_uuid IN (" + ph + ")"
+      "SELECT deck_image_uuid FROM hedron_synced_decks WHERE deck_image_uuid IN (" + ph + ")",
     );
     var bound = stmt.bind.apply(stmt, slice);
     var res = await bound.all();
@@ -341,7 +353,7 @@ async function hedronBatchSyncedUuidSet(env, uuids) {
 }
 
 async function insertQueuedHedronDecks(env, cubeId, jobs) {
-  if (!jobs || !jobs.length) return 0;
+  if (!jobs?.length) return 0;
   var nowIso = new Date().toISOString();
   var written = 0;
   // D1 can reject large multi-row inserts with "too many SQL variables".
@@ -354,21 +366,14 @@ async function insertQueuedHedronDecks(env, cubeId, jobs) {
     for (var i = 0; i < slice.length; i++) {
       var job = slice[i];
       placeholders.push("(?, ?, ?, ?, ?, ?)");
-      args.push(
-        job.deckImageUuid,
-        cubeId,
-        job.draftId,
-        job.playerId,
-        hedronR2Prefix(job.deckImageUuid),
-        nowIso
-      );
+      args.push(job.deckImageUuid, cubeId, job.draftId, job.playerId, hedronR2Prefix(job.deckImageUuid), nowIso);
     }
     var stmt = env.cubewizard_db.prepare(
       "INSERT OR IGNORE INTO hedron_synced_decks (deck_image_uuid, cube_id, draft_id, player_id, r2_prefix, synced_at) VALUES " +
-        placeholders.join(",")
+        placeholders.join(","),
     );
     var runResult = await stmt.bind.apply(stmt, args).run();
-    if (runResult && runResult.meta) {
+    if (runResult?.meta) {
       written +=
         runResult.meta.rows_written != null
           ? runResult.meta.rows_written
@@ -381,7 +386,7 @@ async function insertQueuedHedronDecks(env, cubeId, jobs) {
 }
 
 async function enqueueHedronDeckJobs(env, cubeId, jobs) {
-  if (!jobs || !jobs.length) return { ok: true, queued: 0 };
+  if (!jobs?.length) return { ok: true, queued: 0 };
   var q = env.HEDRON_QUEUE;
   if (!q || typeof q.sendBatch !== "function") {
     console.error("hedron queue skipped: missing env.HEDRON_QUEUE binding");
@@ -441,11 +446,8 @@ async function enqueueHedronDeckJobs(env, cubeId, jobs) {
 async function hedronSyncShouldContinue(env, cubeId) {
   var id = String(cubeId || "").trim();
   if (!id) return false;
-  var state = await env.cubewizard_db
-    .prepare("SELECT done FROM hedron_sync_state WHERE cube_id = ?")
-    .bind(id)
-    .first();
-  var done = state && state.done ? 1 : 0;
+  var state = await env.cubewizard_db.prepare("SELECT done FROM hedron_sync_state WHERE cube_id = ?").bind(id).first();
+  var done = state?.done ? 1 : 0;
   if (!done) return true;
   return hedronPageHasMissingDeck(env, id, null);
 }
@@ -477,7 +479,7 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
       return selfBind.fetch(
         new Request("https://" + HEDRON_SERVICE_SYNC_HOST + path, {
           method: "POST",
-        })
+        }),
       );
     }
 
@@ -491,13 +493,8 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
         var errBody = "";
         try {
           errBody = (await r.text()).slice(0, 200);
-        } catch (te) {}
-        console.error(
-          "hedron continuation fetch failed",
-          id,
-          r.status,
-          errBody ? errBody : ""
-        );
+        } catch (_te) {}
+        console.error("hedron continuation fetch failed", id, r.status, errBody ? errBody : "");
       }
       return;
     }
@@ -512,13 +509,10 @@ async function scheduleHedronSyncContinuation(env, ctx, cubeId, depth) {
     ctx.waitUntil(
       syncHedronCube(env, id, ctx, d + 1).catch(function (e) {
         console.error("hedron sync nested continuation", id, e);
-      })
+      }),
     );
   } else {
-    console.error(
-      "hedron sync: continuation depth exceeded; configure WORKER_SELF service binding to this Worker",
-      id
-    );
+    console.error("hedron sync: continuation depth exceeded; configure WORKER_SELF service binding to this Worker", id);
   }
 }
 
@@ -549,18 +543,8 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
   if (!id) return;
   var syncStartedAt = Date.now();
 
-  var maxDecksTick = hedronEnvInt(
-    env,
-    "HEDRON_SYNC_MAX_DECKS_PER_TICK",
-    HEDRON_SYNC_MAX_DECKS_PER_TICK,
-    1000
-  );
-  var maxPagesTick = hedronEnvInt(
-    env,
-    "HEDRON_SYNC_MAX_PAGES_PER_TICK",
-    HEDRON_SYNC_MAX_PAGES_PER_TICK,
-    30
-  );
+  var maxDecksTick = hedronEnvInt(env, "HEDRON_SYNC_MAX_DECKS_PER_TICK", HEDRON_SYNC_MAX_DECKS_PER_TICK, 1000);
+  var maxPagesTick = hedronEnvInt(env, "HEDRON_SYNC_MAX_PAGES_PER_TICK", HEDRON_SYNC_MAX_PAGES_PER_TICK, 30);
 
   var wallStart = Date.now();
   function overWallBudget() {
@@ -575,8 +559,8 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
     .bind(id)
     .first();
 
-  var nextKey = state && state.next_key ? String(state.next_key) : null;
-  var done = state && state.done ? 1 : 0;
+  var nextKey = state?.next_key ? String(state.next_key) : null;
+  var done = state?.done ? 1 : 0;
   logHedron("sync_start", {
     cube_id: id,
     next_key: nextKey,
@@ -680,7 +664,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
           nextKey,
           0,
           new Date().toISOString(),
-          queueResult.reason || "queue_failed"
+          queueResult.reason || "queue_failed",
         );
         throw new Error(queueResult.reason || "queue_failed");
       }
@@ -790,19 +774,25 @@ async function upsertHedronSyncState(env, cubeId, nextKey, done, updatedAtIso, l
         "INSERT INTO hedron_sync_state (cube_id, next_key, done, updated_at, last_error) " +
           "VALUES (?, ?, ?, ?, ?) " +
           "ON CONFLICT(cube_id) DO UPDATE SET " +
-          "next_key = excluded.next_key, done = excluded.done, updated_at = excluded.updated_at, last_error = excluded.last_error"
+          "next_key = excluded.next_key, done = excluded.done, updated_at = excluded.updated_at, last_error = excluded.last_error",
       )
-      .bind(
-        cubeId,
-        nextKey ? String(nextKey) : null,
-        done ? 1 : 0,
-        updatedAtIso,
-        lastError ? String(lastError) : null
-      )
+      .bind(cubeId, nextKey ? String(nextKey) : null, done ? 1 : 0, updatedAtIso, lastError ? String(lastError) : null)
       .run();
   } catch (e) {
     console.error("hedron upsert sync state failed", cubeId, e);
   }
+}
+
+async function isHedronSyncInFlight(env, cubeId) {
+  var state = await env.cubewizard_db
+    .prepare("SELECT next_key, done, updated_at FROM hedron_sync_state WHERE cube_id = ?")
+    .bind(cubeId)
+    .first();
+  if (!state || state.done) return false;
+  if (!state.next_key) return false;
+  var updated = new Date(state.updated_at).getTime();
+  if (!Number.isFinite(updated)) return false;
+  return Date.now() - updated < HEDRON_SYNC_IN_FLIGHT_MS;
 }
 
 async function fetchHedronSearchPage(cubeId, nextKey) {
@@ -836,7 +826,7 @@ async function findFirstMissingDeckJobInPage(env, json, skipDeckUuids) {
   var synced = await hedronBatchSyncedUuidSet(env, uuids);
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
-    if (skipDeckUuids && skipDeckUuids.has(row.deckImageUuid)) continue;
+    if (skipDeckUuids?.has(row.deckImageUuid)) continue;
     if (synced.has(row.deckImageUuid)) continue;
     return row.job;
   }
@@ -979,8 +969,7 @@ function handleGetVersion(env) {
   var envLabel = typeof env.CWW_ENV === "string" ? env.CWW_ENV.trim() : "";
   if (!envLabel) envLabel = "local";
   var verRaw = env.CWW_DEPLOY_VERSION;
-  var version =
-    typeof verRaw === "string" ? verRaw.trim() : verRaw != null ? String(verRaw).trim() : "";
+  var version = typeof verRaw === "string" ? verRaw.trim() : verRaw != null ? String(verRaw).trim() : "";
   if (!version) {
     version = envLabel === "local" ? "dev" : "unknown";
   }
@@ -998,41 +987,71 @@ const SYNERGY_MIN_APPEARANCES = 3;
 const SYNERGY_TABLE_RESPONSE_CAP = 1000;
 
 async function handleGetCubes(env) {
-  const { results } = await env.cubewizard_db.prepare(
-    "SELECT c.cube_id, c.total_decks, c.created, c.last_updated," +
-    " c.auto_sync_hedron_network," +
-    " COALESCE(m.cube_name, c.cube_id) AS cube_name," +
-    " COALESCE(m.description, '') AS description" +
-    " FROM cubes c" +
-    " LEFT JOIN cube_mapping m ON c.cube_id = m.cube_id" +
-    " ORDER BY c.total_decks DESC"
-  ).all();
+  const { results } = await env.cubewizard_db
+    .prepare(
+      "SELECT c.cube_id, c.total_decks, c.created, c.last_updated," +
+        " c.auto_sync_hedron_network," +
+        " COALESCE(m.cube_name, c.cube_id) AS cube_name," +
+        " COALESCE(m.description, '') AS description" +
+        " FROM cubes c" +
+        " LEFT JOIN cube_mapping m ON c.cube_id = m.cube_id" +
+        " ORDER BY c.total_decks DESC",
+    )
+    .all();
 
   return jsonResponse({ cubes: results });
 }
 
-async function handleGetDashboard(cubeId, env) {
-  const cubeRow = await env.cubewizard_db.prepare(
-    "SELECT * FROM cubes WHERE cube_id = ?"
-  ).bind(cubeId).first();
+async function handleGetDashboard(cubeId, env, request) {
+  var origin = new URL(request.url).origin;
+  var ip = clientIpFromRequest(request);
+  var rlCfg = dashboardRateLimitConfig(env);
+  var rl = await checkRateLimit(env.RATE_LIMIT_KV, "dashboard:" + ip + ":" + cubeId, rlCfg.limit, rlCfg.windowSeconds);
+  if (!rl.allowed) {
+    return jsonResponse({ error: "Rate limit exceeded. Try again later." }, 429, {
+      "Retry-After": String(rl.retryAfter || rlCfg.windowSeconds),
+    });
+  }
+
+  var cached = await getCachedDashboard(origin, cubeId);
+  if (cached) {
+    var hitHeaders = new Headers(cached.headers);
+    hitHeaders.set("X-CW-Dashboard-Cache", "hit");
+    return new Response(cached.body, { status: cached.status, headers: hitHeaders });
+  }
+
+  var response = await buildDashboardResponse(cubeId, env);
+  if (response.status === 200) {
+    var ttl = dashboardCacheTtlSeconds(env);
+    await putCachedDashboard(origin, cubeId, response.clone(), ttl);
+    var freshHeaders = new Headers(response.headers);
+    freshHeaders.set("Cache-Control", "public, max-age=" + String(ttl));
+    freshHeaders.set("X-CW-Dashboard-Cache", "miss");
+    return new Response(response.body, { status: response.status, headers: freshHeaders });
+  }
+  return response;
+}
+
+async function buildDashboardResponse(cubeId, env) {
+  const cubeRow = await env.cubewizard_db.prepare("SELECT * FROM cubes WHERE cube_id = ?").bind(cubeId).first();
 
   if (!cubeRow) {
     return jsonResponse({ error: "Cube not found" }, 404);
   }
 
-  const { results: decks } = await env.cubewizard_db.prepare(
-    "SELECT * FROM decks WHERE cube_id = ?"
-  ).bind(cubeId).all();
+  const { results: decks } = await env.cubewizard_db
+    .prepare("SELECT * FROM decks WHERE cube_id = ?")
+    .bind(cubeId)
+    .all();
 
   if (decks.length === 0) {
     return jsonResponse({ error: "No decks found for this cube" }, 404);
   }
 
-  const { results: allCards } = await env.cubewizard_db.prepare(
-    "SELECT dc.* FROM deck_cards dc" +
-    " JOIN decks d ON dc.deck_id = d.deck_id" +
-    " WHERE d.cube_id = ?"
-  ).bind(cubeId).all();
+  const { results: allCards } = await env.cubewizard_db
+    .prepare("SELECT dc.* FROM deck_cards dc" + " JOIN decks d ON dc.deck_id = d.deck_id" + " WHERE d.cube_id = ?")
+    .bind(cubeId)
+    .all();
 
   var analyticsCardRows = filterDeckCardRowsForAnalytics(allCards);
   var cardsByDeck = {};
@@ -1090,19 +1109,16 @@ async function handleGetDashboard(cubeId, env) {
 }
 
 async function handleGetChart(cubeId, chartType, env) {
-  var { results: decks } = await env.cubewizard_db.prepare(
-    "SELECT * FROM decks WHERE cube_id = ?"
-  ).bind(cubeId).all();
+  var { results: decks } = await env.cubewizard_db.prepare("SELECT * FROM decks WHERE cube_id = ?").bind(cubeId).all();
 
   if (decks.length === 0) {
     return jsonResponse({ error: "No decks found" }, 404);
   }
 
-  var { results: allCards } = await env.cubewizard_db.prepare(
-    "SELECT dc.* FROM deck_cards dc" +
-    " JOIN decks d ON dc.deck_id = d.deck_id" +
-    " WHERE d.cube_id = ?"
-  ).bind(cubeId).all();
+  var { results: allCards } = await env.cubewizard_db
+    .prepare("SELECT dc.* FROM deck_cards dc" + " JOIN decks d ON dc.deck_id = d.deck_id" + " WHERE d.cube_id = ?")
+    .bind(cubeId)
+    .all();
 
   var analyticsCardRows = filterDeckCardRowsForAnalytics(allCards);
   var cardsByDeck = {};
@@ -1135,22 +1151,14 @@ function parseImageUrisCell(raw) {
   if (typeof raw === "object") return raw;
   try {
     return JSON.parse(raw);
-  } catch (e) {
+  } catch (_e) {
     return null;
   }
 }
 
 function pickCardImageUrl(uriObj) {
   if (!uriObj || typeof uriObj !== "object") return null;
-  return (
-    uriObj.normal ||
-    uriObj.small ||
-    uriObj.large ||
-    uriObj.png ||
-    uriObj.art_crop ||
-    uriObj.border_crop ||
-    null
-  );
+  return uriObj.normal || uriObj.small || uriObj.large || uriObj.png || uriObj.art_crop || uriObj.border_crop || null;
 }
 
 function buildCardImageMapFromRows(rows) {
@@ -1189,10 +1197,7 @@ function attachSynergyImages(arr, map) {
 
 function buildBlobImageUrl(request, deckId, objectKey, pathSegment) {
   if (!objectKey) return null;
-  return new URL(
-    "/api/deck/" + encodeURIComponent(String(deckId)) + "/" + pathSegment,
-    request.url
-  ).href;
+  return new URL("/api/deck/" + encodeURIComponent(String(deckId)) + "/" + pathSegment, request.url).href;
 }
 
 function contentTypeForDeckPhotoKey(key) {
@@ -1205,11 +1210,12 @@ function contentTypeForDeckPhotoKey(key) {
 }
 
 async function handleGetDeckThumb(deckId, env) {
-  const deck = await env.cubewizard_db.prepare(
-    "SELECT oriented_thumb_r2_key FROM decks WHERE deck_id = ?"
-  ).bind(deckId).first();
+  const deck = await env.cubewizard_db
+    .prepare("SELECT oriented_thumb_r2_key FROM decks WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
 
-  if (!deck || !deck.oriented_thumb_r2_key) {
+  if (!deck?.oriented_thumb_r2_key) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -1218,10 +1224,7 @@ async function handleGetDeckThumb(deckId, env) {
     return new Response("Not found", { status: 404 });
   }
 
-  var ct =
-    obj.httpMetadata && obj.httpMetadata.contentType
-      ? obj.httpMetadata.contentType
-      : "image/webp";
+  var ct = obj.httpMetadata?.contentType ? obj.httpMetadata.contentType : "image/webp";
   var headers = new Headers();
   headers.set("Content-Type", ct);
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -1229,11 +1232,12 @@ async function handleGetDeckThumb(deckId, env) {
 }
 
 async function handleGetDeckPhoto(deckId, env) {
-  const deck = await env.cubewizard_db.prepare(
-    "SELECT oriented_image_r2_key FROM decks WHERE deck_id = ?"
-  ).bind(deckId).first();
+  const deck = await env.cubewizard_db
+    .prepare("SELECT oriented_image_r2_key FROM decks WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
 
-  if (!deck || !deck.oriented_image_r2_key) {
+  if (!deck?.oriented_image_r2_key) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -1242,10 +1246,9 @@ async function handleGetDeckPhoto(deckId, env) {
     return new Response("Not found", { status: 404 });
   }
 
-  var ct =
-    obj.httpMetadata && obj.httpMetadata.contentType
-      ? obj.httpMetadata.contentType
-      : contentTypeForDeckPhotoKey(deck.oriented_image_r2_key);
+  var ct = obj.httpMetadata?.contentType
+    ? obj.httpMetadata.contentType
+    : contentTypeForDeckPhotoKey(deck.oriented_image_r2_key);
   var headers = new Headers();
   headers.set("Content-Type", ct);
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -1253,19 +1256,20 @@ async function handleGetDeckPhoto(deckId, env) {
 }
 
 async function handleGetDecks(cubeId, env, request) {
-  const { results } = await env.cubewizard_db.prepare(
-    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-    " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
-    " oriented_thumb_r2_key" +
-    " FROM decks WHERE cube_id = ?" +
-    " ORDER BY created DESC"
-  ).bind(cubeId).all();
+  const { results } = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+        " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
+        " oriented_thumb_r2_key" +
+        " FROM decks WHERE cube_id = ?" +
+        " ORDER BY created DESC",
+    )
+    .bind(cubeId)
+    .all();
 
   for (var i = 0; i < results.length; i++) {
     var d = results[i];
-    d.deck_photo_url = buildBlobImageUrl(
-      request, d.deck_id, d.oriented_image_r2_key, "photo"
-    );
+    d.deck_photo_url = buildBlobImageUrl(request, d.deck_id, d.oriented_image_r2_key, "photo");
     d.deck_thumb_url = d.oriented_thumb_r2_key
       ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
@@ -1289,24 +1293,20 @@ async function handleGetDecksByPilot(url, env, request) {
   }
   var needle = q.toLowerCase();
 
-  const { results } = await env.cubewizard_db.prepare(
-    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-      " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
-      " oriented_thumb_r2_key" +
-      " FROM decks WHERE instr(lower(COALESCE(pilot_name, '')), ?) > 0" +
-      " ORDER BY created DESC LIMIT 200"
-  )
+  const { results } = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+        " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
+        " oriented_thumb_r2_key" +
+        " FROM decks WHERE instr(lower(COALESCE(pilot_name, '')), ?) > 0" +
+        " ORDER BY created DESC LIMIT 200",
+    )
     .bind(needle)
     .all();
 
   for (var i = 0; i < results.length; i++) {
     var d = results[i];
-    d.deck_photo_url = buildBlobImageUrl(
-      request,
-      d.deck_id,
-      d.oriented_image_r2_key,
-      "photo"
-    );
+    d.deck_photo_url = buildBlobImageUrl(request, d.deck_id, d.oriented_image_r2_key, "photo");
     d.deck_thumb_url = d.oriented_thumb_r2_key
       ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
@@ -1316,19 +1316,20 @@ async function handleGetDecksByPilot(url, env, request) {
 }
 
 async function handleGetTrophyDecks(cubeId, env, request) {
-  const { results } = await env.cubewizard_db.prepare(
-    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-    " win_rate, total_cards, created, oriented_image_r2_key, oriented_thumb_r2_key" +
-    " FROM decks WHERE cube_id = ? AND match_losses = 0" +
-    " ORDER BY created DESC" +
-    " LIMIT 5"
-  ).bind(cubeId).all();
+  const { results } = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+        " win_rate, total_cards, created, oriented_image_r2_key, oriented_thumb_r2_key" +
+        " FROM decks WHERE cube_id = ? AND match_losses = 0" +
+        " ORDER BY created DESC" +
+        " LIMIT 5",
+    )
+    .bind(cubeId)
+    .all();
 
   for (var j = 0; j < results.length; j++) {
     var t = results[j];
-    t.deck_photo_url = buildBlobImageUrl(
-      request, t.deck_id, t.oriented_image_r2_key, "photo"
-    );
+    t.deck_photo_url = buildBlobImageUrl(request, t.deck_id, t.oriented_image_r2_key, "photo");
     t.deck_thumb_url = t.oriented_thumb_r2_key
       ? buildBlobImageUrl(request, t.deck_id, t.oriented_thumb_r2_key, "thumb")
       : t.deck_photo_url;
@@ -1339,45 +1340,40 @@ async function handleGetTrophyDecks(cubeId, env, request) {
 
 function normalizeCmc(value) {
   var n = Number(value);
-  if (!isFinite(n)) return 0;
+  if (!Number.isFinite(n)) return 0;
   if (n < 0) return 0;
   return n;
 }
 
 async function handleGetDeck(deckId, env, request) {
-  const deck = await env.cubewizard_db.prepare(
-    "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-    " win_rate, record_logged, image_id, total_cards, created," +
-    " oriented_image_r2_key, oriented_thumb_r2_key, staging_image_r2_key" +
-    " FROM decks WHERE deck_id = ?"
-  ).bind(deckId).first();
+  const deck = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+        " win_rate, record_logged, image_id, total_cards, created," +
+        " oriented_image_r2_key, oriented_thumb_r2_key, staging_image_r2_key" +
+        " FROM decks WHERE deck_id = ?",
+    )
+    .bind(deckId)
+    .first();
 
   if (!deck) {
     return jsonResponse({ error: "Deck not found" }, 404);
   }
 
-  deck.deck_photo_url = buildBlobImageUrl(
-    request,
-    deck.deck_id,
-    deck.oriented_image_r2_key,
-    "photo"
-  );
+  deck.deck_photo_url = buildBlobImageUrl(request, deck.deck_id, deck.oriented_image_r2_key, "photo");
   deck.deck_thumb_url = deck.oriented_thumb_r2_key
-    ? buildBlobImageUrl(
-        request,
-        deck.deck_id,
-        deck.oriented_thumb_r2_key,
-        "thumb"
-      )
+    ? buildBlobImageUrl(request, deck.deck_id, deck.oriented_thumb_r2_key, "thumb")
     : deck.deck_photo_url;
 
-  const deckStats = await env.cubewizard_db.prepare(
-    "SELECT total_found, total_not_found, processing_notes FROM deck_stats WHERE deck_id = ?"
-  ).bind(deckId).first();
+  const deckStats = await env.cubewizard_db
+    .prepare("SELECT total_found, total_not_found, processing_notes FROM deck_stats WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
 
-  const { results: cardsRows } = await env.cubewizard_db.prepare(
-    "SELECT name, mana_cost, cmc, type_line, image_uris FROM deck_cards WHERE deck_id = ?"
-  ).bind(deckId).all();
+  const { results: cardsRows } = await env.cubewizard_db
+    .prepare("SELECT name, mana_cost, cmc, type_line, image_uris FROM deck_cards WHERE deck_id = ?")
+    .bind(deckId)
+    .all();
 
   var cards = [];
   for (var i = 0; i < cardsRows.length; i++) {
@@ -1392,9 +1388,10 @@ async function handleGetDeck(deckId, env, request) {
     });
   }
 
-  const { results: orderRows } = await env.cubewizard_db.prepare(
-    "SELECT name FROM deck_cards WHERE deck_id = ? ORDER BY card_id ASC"
-  ).bind(deckId).all();
+  const { results: orderRows } = await env.cubewizard_db
+    .prepare("SELECT name FROM deck_cards WHERE deck_id = ? ORDER BY card_id ASC")
+    .bind(deckId)
+    .all();
 
   var card_names_ordered = [];
   for (var oi = 0; oi < orderRows.length; oi++) {
@@ -1409,15 +1406,58 @@ async function handleGetDeck(deckId, env, request) {
   });
 }
 
-async function handleTriggerHedronSync(cubeId, env, ctx) {
+async function handleTriggerHedronSync(cubeId, request, env, ctx) {
   try {
     var id = String(cubeId || "").trim();
     if (!id) return jsonResponse({ error: "cubeId is required" }, 400);
+
+    var body = {};
+    try {
+      body = await request.json();
+    } catch (_e) {
+      /* empty body */
+    }
+
+    if (!(await verifyTurnstileFromRequest(request, env, body))) {
+      return jsonResponse({ error: "Bot verification failed. Please try again." }, 403);
+    }
+
+    var ip = clientIpFromRequest(request);
+    var rlCfg = hedronSyncRateLimitConfig(env);
+    var rl = await checkRateLimit(env.RATE_LIMIT_KV, "hedron:" + ip + ":" + id, rlCfg.limit, rlCfg.windowSeconds);
+    if (!rl.allowed) {
+      return jsonResponse({ error: "Rate limit exceeded. Try again later." }, 429, {
+        "Retry-After": String(rl.retryAfter || rlCfg.windowSeconds),
+      });
+    }
+
+    var cube = await env.cubewizard_db
+      .prepare("SELECT cube_id, last_hedron_sync FROM cubes WHERE cube_id = ?")
+      .bind(id)
+      .first();
+    if (!cube) return jsonResponse({ error: "Unknown cube" }, 404);
+
+    if (cube.last_hedron_sync) {
+      var elapsed = Date.now() - new Date(cube.last_hedron_sync).getTime();
+      if (Number.isFinite(elapsed) && elapsed < HEDRON_MANUAL_SYNC_COOLDOWN_MS) {
+        return jsonResponse({ error: "Sync recently completed. Try again later." }, 429);
+      }
+    }
+
+    if (await isHedronSyncInFlight(env, id)) {
+      return jsonResponse({ error: "Sync already in progress for this cube." }, 409);
+    }
 
     // Keep manual sync request-bound so the UI spinner reflects the producer phase:
     // Hedron JSON fetch, parse, D1 dedupe, and Cloudflare Queue publishing. Running
     // this in waitUntil risks Cloudflare cancelling it 30s after the response returns.
     var result = await syncHedronCube(env, id, ctx);
+
+    await env.cubewizard_db
+      .prepare("UPDATE cubes SET last_hedron_sync = ? WHERE cube_id = ?")
+      .bind(new Date().toISOString(), id)
+      .run();
+
     return jsonResponse(result || { ok: true, cube_id: id, decks_queued: 0 }, 200);
   } catch (e) {
     console.error("hedron manual sync handler", e);
@@ -1432,7 +1472,7 @@ function scryfallCardToDeckRow(card) {
     imgUris = card.card_faces[0].image_uris;
   }
   var cmc = typeof card.cmc === "number" ? card.cmc : parseFloat(card.cmc);
-  if (!isFinite(cmc)) cmc = 0;
+  if (!Number.isFinite(cmc)) cmc = 0;
   return {
     name: card.name || "",
     mana_cost: card.mana_cost || "",
@@ -1523,7 +1563,7 @@ function buildScryfallNamePool(dataArr) {
   var pool = {};
   for (var i = 0; i < dataArr.length; i++) {
     var c = dataArr[i];
-    if (!c || !c.name) continue;
+    if (!c?.name) continue;
     var k = String(c.name).toLowerCase();
     if (!pool[k]) pool[k] = [];
     pool[k].push(c);
@@ -1603,7 +1643,7 @@ async function resolveDeckCardRowsFromNames(trimmed) {
             foundRows[q.index] = scryfallCardToDeckRow(card);
           }
         });
-      })
+      }),
     );
   }
 
@@ -1611,7 +1651,7 @@ async function resolveDeckCardRowsFromNames(trimmed) {
   var outRows = [];
   for (var ri = 0; ri < trimmed.length; ri++) {
     var row = foundRows[ri];
-    if (row && row.scryfall_uri) {
+    if (row?.scryfall_uri) {
       outRows.push(row);
     } else {
       outRows.push(stubDeckRowForName(trimmed[ri]));
@@ -1624,12 +1664,12 @@ async function resolveDeckCardRowsFromNames(trimmed) {
 
 async function handlePutDeckCards(deckIdStr, request, env) {
   var deckId = parseInt(String(deckIdStr), 10);
-  if (!isFinite(deckId)) {
+  if (!Number.isFinite(deckId)) {
     return jsonResponse({ error: "Invalid deck id" }, 400);
   }
 
   var deck = await env.cubewizard_db
-    .prepare("SELECT deck_id FROM decks WHERE deck_id = ?")
+    .prepare("SELECT deck_id, cube_id FROM decks WHERE deck_id = ?")
     .bind(deckId)
     .first();
   if (!deck) {
@@ -1639,7 +1679,7 @@ async function handlePutDeckCards(deckIdStr, request, env) {
   var body;
   try {
     body = await request.json();
-  } catch (e) {
+  } catch (_e) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
@@ -1676,7 +1716,7 @@ async function handlePutDeckCards(deckIdStr, request, env) {
       .prepare(
         "INSERT INTO deck_cards (deck_id, name, mana_cost, cmc, type_line, colors, color_identity, " +
           "rarity, set_code, set_name, collector_number, power, toughness, oracle_text, scryfall_uri, image_uris, prices) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .bind(
         deckId,
@@ -1695,7 +1735,7 @@ async function handlePutDeckCards(deckIdStr, request, env) {
         row.oracle_text,
         row.scryfall_uri,
         row.image_uris,
-        row.prices
+        row.prices,
       )
       .run();
   }
@@ -1717,16 +1757,12 @@ async function handlePutDeckCards(deckIdStr, request, env) {
     .first();
   if (statRow) {
     await env.cubewizard_db
-      .prepare(
-        "UPDATE deck_stats SET total_found = ?, total_not_found = ?, processing_notes = ? WHERE deck_id = ?"
-      )
+      .prepare("UPDATE deck_stats SET total_found = ?, total_not_found = ?, processing_notes = ? WHERE deck_id = ?")
       .bind(totalFound, notFoundNames.length, notesStr, deckId)
       .run();
   } else {
     await env.cubewizard_db
-      .prepare(
-        "INSERT INTO deck_stats (deck_id, total_found, total_not_found, processing_notes) VALUES (?, ?, ?, ?)"
-      )
+      .prepare("INSERT INTO deck_stats (deck_id, total_found, total_not_found, processing_notes) VALUES (?, ?, ?, ?)")
       .bind(deckId, totalFound, notFoundNames.length, notesStr)
       .run();
   }
@@ -1735,6 +1771,12 @@ async function handlePutDeckCards(deckIdStr, request, env) {
     .prepare("UPDATE decks SET total_cards = ? WHERE deck_id = ?")
     .bind(trimmed.length, deckId)
     .run();
+
+  try {
+    await invalidateDashboardCache(new URL(request.url).origin, deck.cube_id);
+  } catch (cacheErr) {
+    console.error("dashboard cache invalidation failed:", cacheErr);
+  }
 
   return jsonResponse({
     success: true,
@@ -1817,7 +1859,7 @@ function computeCardPerformance(decks, cardsByDeck) {
     }
   }
 
-  performances.sort(function(a, b) {
+  performances.sort(function (a, b) {
     if (b.performance_delta !== a.performance_delta) {
       return b.performance_delta - a.performance_delta;
     }
@@ -1941,7 +1983,9 @@ function computeColorPerformance(decks, cardsByDeck) {
               }
             }
           }
-        } catch (e) { /* ignore */ }
+        } catch (_e) {
+          /* ignore */
+        }
       }
     }
 
@@ -2052,7 +2096,7 @@ function computeColorIdentityTable(decks, cardsByDeck) {
   function sortIdentitySymbols(syms) {
     var u = {};
     for (var si = 0; si < syms.length; si++) {
-      if (WUBRG_INDEX.hasOwnProperty(syms[si])) u[syms[si]] = true;
+      if (Object.hasOwn(WUBRG_INDEX, syms[si])) u[syms[si]] = true;
     }
     var arr = Object.keys(u);
     arr.sort(function (a, b) {
@@ -2072,10 +2116,10 @@ function computeColorIdentityTable(decks, cardsByDeck) {
         if (Array.isArray(colorsList)) {
           for (var cli = 0; cli < colorsList.length; cli++) {
             var sym = colorsList[cli];
-            if (WUBRG_INDEX.hasOwnProperty(sym)) seen[sym] = true;
+            if (Object.hasOwn(WUBRG_INDEX, sym)) seen[sym] = true;
           }
         }
-      } catch (e) {
+      } catch (_e) {
         /* ignore */
       }
     }
@@ -2093,7 +2137,7 @@ function computeColorIdentityTable(decks, cardsByDeck) {
     var g = 0;
     var k;
     for (k in map) {
-      if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
+      if (!Object.hasOwn(map, k)) continue;
       if (k.length === len) {
         w += map[k].wins;
         g += map[k].games;
@@ -2241,8 +2285,11 @@ function buildPerformanceScatterChart(performances) {
       shapes: [
         {
           type: "line",
-          x0: 0, x1: 1, xref: "paper",
-          y0: 0, y1: 0,
+          x0: 0,
+          x1: 1,
+          xref: "paper",
+          y0: 0,
+          y1: 0,
           line: { color: "gray", width: 1, dash: "dash" },
         },
       ],
@@ -2282,7 +2329,8 @@ function buildColorBarChart(colorStats) {
         textposition: "auto",
         customdata: customData,
         marker: { color: barColors, line: { color: borderColors, width: 1 } },
-        hovertemplate: "<b>%{x}</b><br>Performance Delta: %{y:+.1%}<br>Win Rate: %{customdata[0]:.1%}<br>Deck Usage: %{customdata[1]:.1f}%<extra></extra>",
+        hovertemplate:
+          "<b>%{x}</b><br>Performance Delta: %{y:+.1%}<br>Win Rate: %{customdata[0]:.1%}<br>Deck Usage: %{customdata[1]:.1f}%<extra></extra>",
       },
     ],
     layout: {
@@ -2293,8 +2341,11 @@ function buildColorBarChart(colorStats) {
       shapes: [
         {
           type: "line",
-          x0: 0, x1: 1, xref: "paper",
-          y0: 0, y1: 0,
+          x0: 0,
+          x1: 1,
+          xref: "paper",
+          y0: 0,
+          y1: 0,
           line: { color: "gray", width: 1, dash: "dash" },
         },
       ],
@@ -2307,44 +2358,6 @@ function buildColorBarChart(colorStats) {
 //  Existing handlers (unchanged)
 // ============================================================
 
-/** True when `CWW_ENV` is `local` (Wrangler top-level default): skip Turnstile for local `wrangler dev`. */
-function isCwwLocalEnv(env) {
-  var v = env.CWW_ENV;
-  if (v == null || v === "") return false;
-  return String(v).trim().toLowerCase() === "local";
-}
-
-/**
- * Verify a Cloudflare Turnstile token server-side.
- * Returns true if valid, false otherwise. When `CWW_ENV` is `local`, always returns true (no secret or widget required).
- */
-async function verifyTurnstile(token, ip, env) {
-  if (isCwwLocalEnv(env)) return true;
-  if (!token) return false;
-  var secret = env.TURNSTILE_SECRET;
-  if (!secret) {
-    console.error("TURNSTILE_SECRET is not configured");
-    return false;
-  }
-
-  try {
-    var resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        secret: secret,
-        response: token,
-        remoteip: ip || "",
-      }),
-    });
-    var result = await resp.json();
-    return result.success === true;
-  } catch (err) {
-    console.error("Turnstile verification error:", err);
-    return false;
-  }
-}
-
 async function handleUpload(request, env) {
   try {
     var formData = await request.formData();
@@ -2352,15 +2365,15 @@ async function handleUpload(request, env) {
     // Verify Turnstile token
     var turnstileToken = formData.get("cf-turnstile-response");
     var clientIp = request.headers.get("CF-Connecting-IP");
-    if (!await verifyTurnstile(turnstileToken, clientIp, env)) {
-      return jsonResponse(
-        { success: false, errors: ["Bot verification failed. Please try again."] },
-        403
-      );
+    if (!(await verifyTurnstile(turnstileToken, clientIp, env))) {
+      return jsonResponse({ success: false, errors: ["Bot verification failed. Please try again."] }, 403);
     }
 
     var cubeId = formData.get("cube_id")?.trim();
-    var pilotName = formData.get("pilot_name")?.trim();
+    var pilotName = String(formData.get("pilot_name") || "")
+      .trim()
+      .replace(/[<>]/g, "");
+    if (pilotName.length > 100) pilotName = pilotName.slice(0, 100);
     var winsRaw = formData.get("wins");
     var lossesRaw = formData.get("losses");
     var drawsRaw = formData.get("draws") || "0";
@@ -2383,9 +2396,9 @@ async function handleUpload(request, env) {
     var losses = parseInt(lossesRaw, 10);
     var draws = parseInt(drawsRaw, 10);
 
-    if (isNaN(wins) || wins < 0) errors.push("wins must be a non-negative integer");
-    if (isNaN(losses) || losses < 0) errors.push("losses must be a non-negative integer");
-    if (isNaN(draws) || draws < 0) errors.push("draws must be a non-negative integer");
+    if (Number.isNaN(wins) || wins < 0) errors.push("wins must be a non-negative integer");
+    if (Number.isNaN(losses) || losses < 0) errors.push("losses must be a non-negative integer");
+    if (Number.isNaN(draws) || draws < 0) errors.push("draws must be a non-negative integer");
 
     if (errors.length > 0) {
       return jsonResponse({ success: false, errors: errors }, 400);
@@ -2395,16 +2408,13 @@ async function handleUpload(request, env) {
     if (allowedTypes.indexOf(imageFile.type) === -1) {
       return jsonResponse(
         { success: false, errors: ["Invalid image type: " + imageFile.type + ". Allowed: JPEG, PNG, WebP, HEIC"] },
-        400
+        400,
       );
     }
 
     var MAX_SIZE = 20 * 1024 * 1024;
     if (imageFile.size > MAX_SIZE) {
-      return jsonResponse(
-        { success: false, errors: ["Image file must be under 20 MB"] },
-        400
-      );
+      return jsonResponse({ success: false, errors: ["Image file must be under 20 MB"] }, 400);
     }
 
     var now = new Date();
@@ -2433,7 +2443,7 @@ async function handleUpload(request, env) {
           success: false,
           errors: ["Could not process image. Try a smaller photo or a different format."],
         },
-        500
+        500,
       );
     }
 
@@ -2443,7 +2453,7 @@ async function handleUpload(request, env) {
       customMetadata: { pilotName: pilotName, cubeId: cubeId },
     });
 
-    var winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
+    var winRate = wins + losses > 0 ? wins / (wins + losses) : 0;
     var metadata = {
       cube_id: cubeId,
       pilot_name: pilotName,
@@ -2507,14 +2517,11 @@ async function handleUpload(request, env) {
     });
   } catch (err) {
     console.error("Upload error:", err);
-    return jsonResponse(
-      { success: false, errors: ["Internal server error. Please try again."] },
-      500
-    );
+    return jsonResponse({ success: false, errors: ["Internal server error. Please try again."] }, 500);
   }
 }
 
-async function handleValidateCube(url, env) {
+async function handleValidateCube(url, _env) {
   var cubeId = url.searchParams.get("cube_id")?.trim();
   if (!cubeId) {
     return jsonResponse({ valid: false, error: "cube_id parameter is required" }, 400);
@@ -2526,7 +2533,7 @@ async function handleValidateCube(url, env) {
         error:
           "This CubeCobra id matches a CubeWizard URL path and cannot be used. Pick another cube or contact support.",
       },
-      400
+      400,
     );
   }
 
@@ -2561,28 +2568,22 @@ async function handleAddCube(request, env, ctx) {
     // Verify Turnstile token
     var turnstileToken = body["cf-turnstile-response"];
     var clientIp = request.headers.get("CF-Connecting-IP");
-    if (!await verifyTurnstile(turnstileToken, clientIp, env)) {
-      return jsonResponse(
-        { success: false, errors: ["Bot verification failed. Please try again."] },
-        403
-      );
+    if (!(await verifyTurnstile(turnstileToken, clientIp, env))) {
+      return jsonResponse({ success: false, errors: ["Bot verification failed. Please try again."] }, 403);
     }
 
     var cubeId = body.cube_id?.trim();
     var cubeName = body.cube_name?.trim();
     var description = body.description?.trim() || "";
     var autoSyncHedronRaw = body.auto_sync_hedron_network;
-    var autoSyncHedron =
-      autoSyncHedronRaw !== false &&
-      autoSyncHedronRaw !== 0 &&
-      autoSyncHedronRaw !== "false";
+    var autoSyncHedron = autoSyncHedronRaw !== false && autoSyncHedronRaw !== 0 && autoSyncHedronRaw !== "false";
 
     var errors = [];
     if (!cubeId) errors.push("Cube ID is required");
     if (!cubeName) errors.push("Cube Name is required");
     if (cubeId && isReservedCubeId(cubeId)) {
       errors.push(
-        "This CubeCobra ID cannot be used inside CubeWizard. Please change the the ID in CubeCobra and try again."
+        "This CubeCobra ID cannot be used inside CubeWizard. Please change the the ID in CubeCobra and try again.",
       );
     }
     if (errors.length > 0) {
@@ -2590,9 +2591,7 @@ async function handleAddCube(request, env, ctx) {
     }
 
     // Check if cube already exists in D1
-    var existing = await env.cubewizard_db.prepare(
-      "SELECT cube_id FROM cubes WHERE cube_id = ?"
-    ).bind(cubeId).first();
+    var existing = await env.cubewizard_db.prepare("SELECT cube_id FROM cubes WHERE cube_id = ?").bind(cubeId).first();
 
     if (existing) {
       return jsonResponse({ success: false, errors: ["Cube '" + cubeId + "' already exists."] }, 409);
@@ -2602,13 +2601,15 @@ async function handleAddCube(request, env, ctx) {
     var now = new Date().toISOString();
 
     await env.cubewizard_db.batch([
-      env.cubewizard_db.prepare(
-        "INSERT INTO cubes (cube_id, created, last_updated, total_decks, auto_sync_hedron_network) " +
-          "VALUES (?, ?, ?, 0, ?)"
-      ).bind(cubeId, now, now, autoSyncHedron ? 1 : 0),
-      env.cubewizard_db.prepare(
-        "INSERT INTO cube_mapping (cube_id, cube_name, description) VALUES (?, ?, ?)"
-      ).bind(cubeId, cubeName, description),
+      env.cubewizard_db
+        .prepare(
+          "INSERT INTO cubes (cube_id, created, last_updated, total_decks, auto_sync_hedron_network) " +
+            "VALUES (?, ?, ?, 0, ?)",
+        )
+        .bind(cubeId, now, now, autoSyncHedron ? 1 : 0),
+      env.cubewizard_db
+        .prepare("INSERT INTO cube_mapping (cube_id, cube_name, description) VALUES (?, ?, ?)")
+        .bind(cubeId, cubeName, description),
     ]);
 
     // Also write to R2 as an audit trail
@@ -2629,7 +2630,7 @@ async function handleAddCube(request, env, ctx) {
       ctx.waitUntil(
         syncHedronCube(env, cubeId, ctx).catch(function (e) {
           console.error("hedron sync on add-cube", cubeId, e);
-        })
+        }),
       );
     }
 
@@ -2639,10 +2640,7 @@ async function handleAddCube(request, env, ctx) {
     });
   } catch (err) {
     console.error("Add cube error:", err);
-    return jsonResponse(
-      { success: false, errors: ["Internal server error. Please try again."] },
-      500
-    );
+    return jsonResponse({ success: false, errors: ["Internal server error. Please try again."] }, 500);
   }
 }
 
@@ -2663,7 +2661,7 @@ function round3(n) {
   return Math.round(n * 1000) / 1000;
 }
 
-function round1(n) {
+function _round1(n) {
   return Math.round(n * 10) / 10;
 }
 
@@ -2682,20 +2680,26 @@ function sanitizeJsonResponseBody(body) {
   }
   var out = {};
   for (var k in body) {
-    if (!Object.prototype.hasOwnProperty.call(body, k)) continue;
+    if (!Object.hasOwn(body, k)) continue;
     if (k === "stack" || k === "stackTrace") continue;
     out[k] = sanitizeJsonResponseBody(body[k]);
   }
   return out;
 }
 
-function jsonResponse(body, status) {
+function jsonResponse(body, status, extraHeaders) {
   if (status === undefined) status = 200;
+  var headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  };
+  if (extraHeaders) {
+    for (var hk in extraHeaders) {
+      if (Object.hasOwn(extraHeaders, hk)) headers[hk] = extraHeaders[hk];
+    }
+  }
   return new Response(JSON.stringify(sanitizeJsonResponseBody(body)), {
     status: status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
+    headers: headers,
   });
 }
