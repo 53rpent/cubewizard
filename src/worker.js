@@ -2372,7 +2372,7 @@ async function handleUpload(request, env) {
     var cubeId = formData.get("cube_id")?.trim();
     var pilotName = String(formData.get("pilot_name") || "")
       .trim()
-      .replace(/<[^>]*>/g, "");
+      .replace(/[<>]/g, "");
     if (pilotName.length > 100) pilotName = pilotName.slice(0, 100);
     var winsRaw = formData.get("wins");
     var lossesRaw = formData.get("losses");
