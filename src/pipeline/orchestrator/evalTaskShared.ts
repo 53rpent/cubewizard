@@ -18,6 +18,7 @@ export interface StagingMetadata {
   win_rate?: number;
   record_logged?: string;
   image_key?: string;
+  image_source?: string;
   original_filename?: string;
   expected_deck_size?: number;
   expected_count?: number;

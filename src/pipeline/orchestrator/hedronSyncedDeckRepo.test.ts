@@ -7,6 +7,13 @@ import {
   releaseHedronSyncedDeck,
 } from "./hedronSyncedDeckRepo";
 
+function stubStmt(runResult: unknown = {}) {
+  return {
+    run: async () => runResult,
+    first: async () => null,
+  };
+}
+
 describe("hedronSyncedDeckRepo", () => {
   it("parses deck uuid from hedron upload_id", () => {
     expect(deckImageUuidFromHedronUploadId("hedron:abc-123")).toBe("abc-123");
@@ -29,10 +36,11 @@ describe("hedronSyncedDeckRepo", () => {
         return {
           bind(...args: unknown[]) {
             runs.push(args);
-            return { run: async () => ({}) };
+            return stubStmt();
           },
         };
       },
+      batch: async () => [],
     };
     await ensureHedronSyncedDeck(db, "cube1", "hedron:uuid-1", { draftId: "d1", playerId: "p1" });
     expect(runs).toHaveLength(1);
@@ -50,12 +58,11 @@ describe("hedronSyncedDeckRepo", () => {
         return {
           bind(uuid: string) {
             expect(uuid).toBe("uuid-1");
-            return {
-              run: async () => ({ meta: { changes: 1 } }),
-            };
+            return stubStmt({ meta: { changes: 1 } });
           },
         };
       },
+      batch: async () => [],
     };
     await expect(releaseHedronSyncedDeck(db, "uuid-1")).resolves.toBe(1);
   });
@@ -65,8 +72,9 @@ describe("hedronSyncedDeckRepo", () => {
     const db = {
       prepare() {
         called = true;
-        return { bind: () => ({ run: async () => ({}) }) };
+        return { bind: () => stubStmt() };
       },
+      batch: async () => [],
     };
     await ensureHedronSyncedDeck(db, "cube1", "manual-upload");
     expect(called).toBe(false);
