@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/site-header.css">
+    <link rel="stylesheet" href="/site-auth.css">
     <link rel="stylesheet" href="/card-tooltip.css">
     <link rel="stylesheet" href="/analysis-shared.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -32,6 +33,7 @@
                 </div>
             </div>
             <nav class="header-nav" aria-label="Primary">
+                <div class="header-nav-links">
                 <div class="nav-dropdown">
                     <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
                     <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
@@ -50,6 +52,8 @@
                         <li role="none"><a role="menuitem" href="/resources/pilot-search">Search by pilot</a></li>
                     </ul>
                 </div>
+                </div>
+                <div class="header-auth" id="header-auth-slot"></div>
             </nav>
         </div>
     </div>
@@ -94,6 +98,7 @@
 
     <script src="/site-footer.js"></script>
     <script src="/cw-paths.js"></script>
+    <script src="/site-auth.js"></script>
     <script src="/site-nav.js"></script>
     <script src="/card-tooltip.js"></script>
     <script src="/analysis-shared.js"></script>

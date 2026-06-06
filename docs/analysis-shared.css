@@ -207,6 +207,45 @@ body {
     margin: 2rem 0;
 }
 
+.error-banner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+}
+
+.error-banner-text {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+}
+
+.error-banner-dismiss {
+    flex: 0 0 auto;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 1.15rem;
+    line-height: 1;
+    padding: 0.15rem 0.35rem;
+    border-radius: 6px;
+    cursor: pointer;
+    opacity: 0.75;
+}
+
+.error-banner-dismiss:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.error-banner-dismiss:focus-visible {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
 @media (max-width: 768px) {
     .container {
         margin: 1rem auto;
@@ -481,9 +520,12 @@ body {
 
 .modal-header-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.5rem;
     flex-shrink: 0;
+    max-width: min(100%, 420px);
 }
 
 .btn-edit-deck {
@@ -507,8 +549,116 @@ body {
     cursor: not-allowed;
 }
 
+.btn-deck-danger {
+    border-color: #c0392b;
+    color: #c0392b;
+}
+
+.btn-deck-danger:hover {
+    background: #fdf2f2;
+}
+
+.btn-confirm-danger {
+    border: none;
+    background: #c0392b;
+    color: #fff;
+    border-radius: 8px;
+    padding: 0.55rem 1rem;
+    min-height: 44px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.btn-confirm-danger:hover {
+    background: #a93226;
+}
+
+.btn-table-claim {
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    border: 1px solid #667eea;
+    background: #fff;
+    color: #667eea;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-table-claim:hover {
+    background: #f5f7ff;
+}
+
+.btn-table-claim:focus-visible {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+.btn-table-claim:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.deck-table-claim-cell {
+    width: 1%;
+    white-space: nowrap;
+    text-align: center;
+}
+
+.claim-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(40, 30, 25, 0.45);
+}
+
+.claim-confirm-overlay.is-open {
+    display: flex;
+}
+
+.claim-confirm-dialog {
+    width: 100%;
+    max-width: 420px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+    padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.claim-confirm-title {
+    margin: 0 0 0.75rem;
+    font-family: "Fraunces", serif;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #523f38;
+}
+
+.claim-confirm-body {
+    margin: 0 0 1.25rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: #555;
+}
+
+.claim-confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
 .deck-edit-panel {
     margin-top: 0.5rem;
+}
+
+.deck-edit-photo-wrap {
+    margin-bottom: 0.75rem;
 }
 
 .deck-edit-panel textarea {
@@ -715,4 +865,40 @@ body {
     border-color: #ffd6d6;
     background: #fff5f5;
     color: #c0392b;
+}
+
+.cw-processing-status-actions {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 0.15rem;
+}
+
+.cw-processing-dismiss {
+    flex: 0 0 auto;
+    border: none;
+    background: transparent;
+    color: #888;
+    font: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.15rem 0.35rem;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-left: 0.35rem;
+}
+
+.cw-processing-dismiss:hover {
+    color: #333;
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.cw-processing-dismiss:focus-visible {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+.cw-processing-dismiss:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }

@@ -5,8 +5,30 @@
  * and static assets for the dashboard SPA.
  */
 
+import { computeImageId } from "./pipeline/d1/imageId.ts";
 import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
+import {
+  deckImageUuidFromHedronUploadId,
+  ensureHedronSyncedDeck,
+  safeReleaseHedronSyncedDeckForUpload,
+} from "./pipeline/orchestrator/hedronSyncedDeckRepo.ts";
+import { orientedObjectKey, orientedThumbObjectKey } from "./pipeline/r2/orientedKeys.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import {
+  authRateLimitConfig,
+  createSession,
+  deckCanClaim,
+  deckCanEdit,
+  deckCanManage,
+  destroySession,
+  getSessionUser,
+  hashPassword,
+  purgeExpiredSessions,
+  validateEmail,
+  validatePassword,
+  validateUsername,
+  verifyPassword,
+} from "./security/auth.js";
 import {
   dashboardCacheTtlSeconds,
   getCachedDashboard,
@@ -27,6 +49,22 @@ export default {
     const url = new URL(request.url);
 
     // --- Analytics API endpoints (D1) ---
+    if (url.pathname === "/api/auth/register" && request.method === "POST") {
+      return handleAuthRegister(request, env);
+    }
+
+    if (url.pathname === "/api/auth/login" && request.method === "POST") {
+      return handleAuthLogin(request, env);
+    }
+
+    if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+      return handleAuthLogout(request, env);
+    }
+
+    if (url.pathname === "/api/auth/me" && request.method === "GET") {
+      return handleAuthMe(request, env);
+    }
+
     if (url.pathname === "/api/version" && request.method === "GET") {
       return handleGetVersion(env);
     }
@@ -64,6 +102,10 @@ export default {
       return handleGetProcessingDecks(processingDecksMatch[1], env);
     }
 
+    if (url.pathname === "/api/processing-job/dismiss" && request.method === "POST") {
+      return handleDismissProcessingJob(request, env);
+    }
+
     const deckThumbMatch = url.pathname.match(/^\/api\/deck\/([^/]+)\/thumb$/);
     if (deckThumbMatch && request.method === "GET") {
       return handleGetDeckThumb(deckThumbMatch[1], env);
@@ -74,12 +116,26 @@ export default {
       return handleGetDeckPhoto(deckPhotoMatch[1], env);
     }
 
+    const deckClaimMatch = url.pathname.match(/^\/api\/deck\/([^/]+)\/claim$/);
+    if (deckClaimMatch && request.method === "POST") {
+      return handleClaimDeck(deckClaimMatch[1], request, env);
+    }
+
+    const deckReprocessMatch = url.pathname.match(/^\/api\/deck\/([^/]+)\/reprocess$/);
+    if (deckReprocessMatch && request.method === "POST") {
+      return handleReprocessDeck(deckReprocessMatch[1], request, env);
+    }
+
     const deckCardsPut = url.pathname.match(/^\/api\/deck\/([^/]+)\/cards$/);
     if (deckCardsPut && request.method === "PUT") {
       return handlePutDeckCards(deckCardsPut[1], request, env);
     }
 
     const deckMatch = url.pathname.match(/^\/api\/deck\/([^/]+)$/);
+    if (deckMatch && request.method === "DELETE") {
+      return handleDeleteDeck(deckMatch[1], request, env);
+    }
+
     if (deckMatch && request.method === "GET") {
       return handleGetDeck(deckMatch[1], env, request);
     }
@@ -193,6 +249,107 @@ async function handleGetProcessingDecks(cubeId, env) {
     console.error("processing-decks error:", e);
     return jsonResponse({ error: "Failed to load processing status" }, 500);
   }
+}
+
+async function tryDeleteR2Object(bucket, key) {
+  if (!bucket || !key) return;
+  try {
+    await bucket.delete(String(key));
+  } catch (e) {
+    console.error("R2 delete failed:", key, e);
+  }
+}
+
+async function deleteStagingUpload(env, uploadId, r2Prefix) {
+  var prefix = String(r2Prefix || uploadId || "").trim();
+  if (!prefix) return;
+  if (!prefix.endsWith("/")) prefix += "/";
+
+  var metaKey = prefix + "metadata.json";
+  var imageKey = prefix + "image.jpg";
+  var metaObj = await env.BUCKET.get(metaKey);
+  if (metaObj) {
+    try {
+      var metadata = JSON.parse(new TextDecoder().decode(await metaObj.arrayBuffer()));
+      if (metadata.image_key && typeof metadata.image_key === "string") {
+        imageKey = metadata.image_key;
+      }
+    } catch (metaErr) {
+      console.error("staging metadata parse failed on dismiss:", metaErr);
+    }
+  }
+
+  await tryDeleteR2Object(env.BUCKET, imageKey);
+  await tryDeleteR2Object(env.BUCKET, metaKey);
+}
+
+async function handleDismissProcessingJob(request, env) {
+  var body;
+  try {
+    body = await request.json();
+  } catch (_e) {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  var uploadId = String(body.upload_id || "").trim();
+  var cubeId = String(body.cube_id || "").trim();
+  if (!uploadId || !cubeId) {
+    return jsonResponse({ error: "upload_id and cube_id are required." }, 400);
+  }
+
+  var job = await env.cubewizard_db
+    .prepare("SELECT upload_id, cube_id, status, r2_prefix FROM processing_jobs WHERE upload_id = ? LIMIT 1")
+    .bind(uploadId)
+    .first();
+  if (!job) {
+    return jsonResponse({ error: "Processing job not found." }, 404);
+  }
+  if (String(job.cube_id || "") !== cubeId) {
+    return jsonResponse({ error: "Processing job does not belong to this cube." }, 403);
+  }
+  if (String(job.status || "") !== "failed") {
+    return jsonResponse({ error: "Only failed uploads can be removed." }, 409);
+  }
+
+  var deckRows = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, oriented_image_r2_key, oriented_thumb_r2_key FROM decks" +
+        " WHERE cube_id = ? AND processing_timestamp = ?",
+    )
+    .bind(cubeId, uploadId)
+    .all();
+  var decks = deckRows.results || [];
+  for (var di = 0; di < decks.length; di++) {
+    var deck = decks[di] || {};
+    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_image_r2_key);
+    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_thumb_r2_key);
+    if (deck.deck_id != null) {
+      await deleteDeckRowsFromDb(env.cubewizard_db, deck.deck_id, cubeId);
+    }
+  }
+
+  if (job.pilot_name) {
+    try {
+      var imageId = await computeImageId(cubeId, String(job.pilot_name), uploadId, {
+        imageSource: uploadId.indexOf("hedron:") === 0 ? "hedron" : "",
+      });
+      await tryDeleteR2Object(env.DECK_IMAGES_BLOB, orientedObjectKey(cubeId, imageId, "jpg"));
+      await tryDeleteR2Object(env.DECK_IMAGES_BLOB, orientedThumbObjectKey(cubeId, imageId));
+    } catch (imgErr) {
+      console.error("oriented image cleanup failed on dismiss:", imgErr);
+    }
+  }
+
+  await deleteStagingUpload(env, uploadId, job.r2_prefix);
+  await env.cubewizard_db.prepare("DELETE FROM processing_jobs WHERE upload_id = ?").bind(uploadId).run();
+
+  try {
+    await invalidateDashboardCache(new URL(request.url).origin, cubeId);
+  } catch (cacheErr) {
+    console.error("dashboard cache invalidation failed:", cacheErr);
+  }
+
+  return jsonResponse({ success: true, upload_id: uploadId });
 }
 
 async function enqueueCfEvalJob(env, body) {
@@ -331,6 +488,18 @@ function hedronUniqueUuidsFromJobRows(rows) {
   return u;
 }
 
+function isHedronSourceDeck(deck) {
+  var ts = String(deck?.processing_timestamp || "").trim();
+  var src = String(deck?.image_source || "")
+    .trim()
+    .toLowerCase();
+  return ts.indexOf("hedron:") === 0 || src === "hedron";
+}
+
+function hedronDeckUuidAlreadyHandled(uuid, syncedOnPage, importedOnPage, skipSet) {
+  return skipSet.has(uuid) || syncedOnPage.has(uuid) || importedOnPage.has(uuid);
+}
+
 /** One batched D1 read for many UUIDs (replaces N per-row lookups). Chunked for SQLite parameter limits. */
 async function hedronBatchSyncedUuidSet(env, uuids) {
   var existing = new Set();
@@ -350,6 +519,32 @@ async function hedronBatchSyncedUuidSet(env, uuids) {
     }
   }
   return existing;
+}
+
+/** Decks already imported for Hedron UUIDs (by `processing_timestamp` = `hedron:{uuid}`). */
+async function hedronBatchImportedDeckUuidSet(env, uuids) {
+  var imported = new Set();
+  if (!uuids?.length) return imported;
+  var chunkSize = 80;
+  for (var c = 0; c < uuids.length; c += chunkSize) {
+    var slice = uuids.slice(c, c + chunkSize);
+    var uploadIds = [];
+    for (var si = 0; si < slice.length; si++) {
+      uploadIds.push("hedron:" + slice[si]);
+    }
+    var ph = new Array(uploadIds.length).fill("?").join(",");
+    var stmt = env.cubewizard_db.prepare(
+      "SELECT processing_timestamp FROM decks WHERE processing_timestamp IN (" + ph + ")",
+    );
+    var bound = stmt.bind.apply(stmt, uploadIds);
+    var res = await bound.all();
+    var results = res.results || [];
+    for (var i = 0; i < results.length; i++) {
+      var uuid = deckImageUuidFromHedronUploadId(String(results[i].processing_timestamp || ""));
+      if (uuid) imported.add(uuid);
+    }
+  }
+  return imported;
 }
 
 async function insertQueuedHedronDecks(env, cubeId, jobs) {
@@ -611,6 +806,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
     var pageJobRows = buildHedronPageJobRows(page);
     var syncUuids = hedronUniqueUuidsFromJobRows(pageJobRows);
     var syncedOnPage = await hedronBatchSyncedUuidSet(env, syncUuids);
+    var importedOnPage = await hedronBatchImportedDeckUuidSet(env, syncUuids);
     var skipDeckUuidsThisPage = new Set();
     var attemptsThisPage = 0;
     logHedron("page_parsed", {
@@ -621,6 +817,7 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
       parsed_decks: pageJobRows.length,
       unique_decks: syncUuids.length,
       already_synced: syncedOnPage.size,
+      already_imported: importedOnPage.size,
     });
 
     var jobsToQueue = [];
@@ -630,8 +827,9 @@ async function syncHedronCube(env, cubeId, ctx, depth) {
         break;
       }
       var prow = pageJobRows[ri];
-      if (skipDeckUuidsThisPage.has(prow.deckImageUuid)) continue;
-      if (syncedOnPage.has(prow.deckImageUuid)) continue;
+      if (hedronDeckUuidAlreadyHandled(prow.deckImageUuid, syncedOnPage, importedOnPage, skipDeckUuidsThisPage)) {
+        continue;
+      }
       jobsToQueue.push(prow.job);
       skipDeckUuidsThisPage.add(prow.deckImageUuid);
       attemptsThisPage++;
@@ -824,10 +1022,12 @@ async function findFirstMissingDeckJobInPage(env, json, skipDeckUuids) {
   if (!rows.length) return null;
   var uuids = hedronUniqueUuidsFromJobRows(rows);
   var synced = await hedronBatchSyncedUuidSet(env, uuids);
+  var imported = await hedronBatchImportedDeckUuidSet(env, uuids);
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
-    if (skipDeckUuids?.has(row.deckImageUuid)) continue;
-    if (synced.has(row.deckImageUuid)) continue;
+    if (hedronDeckUuidAlreadyHandled(row.deckImageUuid, synced, imported, skipDeckUuids || new Set())) {
+      continue;
+    }
     return row.job;
   }
   return null;
@@ -1259,20 +1459,22 @@ async function handleGetDecks(cubeId, env, request) {
   const { results } = await env.cubewizard_db
     .prepare(
       "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-        " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
-        " oriented_thumb_r2_key" +
+        " win_rate, record_logged, total_cards, created, owner_user_id," +
+        " oriented_image_r2_key, oriented_thumb_r2_key" +
         " FROM decks WHERE cube_id = ?" +
         " ORDER BY created DESC",
     )
     .bind(cubeId)
     .all();
 
+  var sessionUser = await getSessionUser(request, env);
   for (var i = 0; i < results.length; i++) {
     var d = results[i];
     d.deck_photo_url = buildBlobImageUrl(request, d.deck_id, d.oriented_image_r2_key, "photo");
     d.deck_thumb_url = d.oriented_thumb_r2_key
       ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
+    d.can_claim = deckCanClaim(d.owner_user_id, sessionUser);
   }
 
   return jsonResponse({ decks: results });
@@ -1296,20 +1498,22 @@ async function handleGetDecksByPilot(url, env, request) {
   const { results } = await env.cubewizard_db
     .prepare(
       "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-        " win_rate, record_logged, total_cards, created, oriented_image_r2_key," +
-        " oriented_thumb_r2_key" +
+        " win_rate, record_logged, total_cards, created, owner_user_id," +
+        " oriented_image_r2_key, oriented_thumb_r2_key" +
         " FROM decks WHERE instr(lower(COALESCE(pilot_name, '')), ?) > 0" +
         " ORDER BY created DESC LIMIT 200",
     )
     .bind(needle)
     .all();
 
+  var sessionUser = await getSessionUser(request, env);
   for (var i = 0; i < results.length; i++) {
     var d = results[i];
     d.deck_photo_url = buildBlobImageUrl(request, d.deck_id, d.oriented_image_r2_key, "photo");
     d.deck_thumb_url = d.oriented_thumb_r2_key
       ? buildBlobImageUrl(request, d.deck_id, d.oriented_thumb_r2_key, "thumb")
       : d.deck_photo_url;
+    d.can_claim = deckCanClaim(d.owner_user_id, sessionUser);
   }
 
   return jsonResponse({ decks: results, query: q });
@@ -1345,11 +1549,392 @@ function normalizeCmc(value) {
   return n;
 }
 
+async function handleAuthRegister(request, env) {
+  var ip = clientIpFromRequest(request);
+  var rlCfg = authRateLimitConfig(env);
+  var rl = await checkRateLimit(env.RATE_LIMIT_KV, "auth:register:" + ip, rlCfg.limit, rlCfg.windowSeconds);
+  if (!rl.allowed) {
+    return jsonResponse({ error: "Rate limit exceeded. Try again later." }, 429, {
+      "Retry-After": String(rl.retryAfter || rlCfg.windowSeconds),
+    });
+  }
+
+  var body;
+  try {
+    body = await request.json();
+  } catch (_e) {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  var userCheck = validateUsername(body.username);
+  if (!userCheck.ok) return jsonResponse({ error: userCheck.error }, 400);
+  var emailCheck = validateEmail(body.email);
+  if (!emailCheck.ok) return jsonResponse({ error: emailCheck.error }, 400);
+  var passCheck = validatePassword(body.password);
+  if (!passCheck.ok) return jsonResponse({ error: passCheck.error }, 400);
+
+  try {
+    await purgeExpiredSessions(env.cubewizard_db);
+    var passwordHash = await hashPassword(passCheck.password);
+    var insert = await env.cubewizard_db
+      .prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)")
+      .bind(userCheck.username, emailCheck.email, passwordHash)
+      .run();
+    var userId = insert.meta?.last_row_id;
+    if (!userId) {
+      return jsonResponse({ error: "Registration failed." }, 500);
+    }
+    var session = await createSession(env.cubewizard_db, userId, env);
+    return jsonResponse({ success: true, user: { user_id: userId, username: userCheck.username } }, 200, {
+      "Set-Cookie": session.cookieHeader,
+    });
+  } catch (err) {
+    var msg = String(err?.message || err || "");
+    if (msg.includes("UNIQUE") || msg.includes("unique")) {
+      return jsonResponse({ error: "That username is already taken." }, 409);
+    }
+    console.error("auth register:", err);
+    return jsonResponse({ error: "Registration failed." }, 500);
+  }
+}
+
+async function handleAuthLogin(request, env) {
+  var ip = clientIpFromRequest(request);
+  var rlCfg = authRateLimitConfig(env);
+  var rl = await checkRateLimit(env.RATE_LIMIT_KV, "auth:login:" + ip, rlCfg.limit, rlCfg.windowSeconds);
+  if (!rl.allowed) {
+    return jsonResponse({ error: "Rate limit exceeded. Try again later." }, 429, {
+      "Retry-After": String(rl.retryAfter || rlCfg.windowSeconds),
+    });
+  }
+
+  var body;
+  try {
+    body = await request.json();
+  } catch (_e) {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  var userCheck = validateUsername(body.username);
+  if (!userCheck.ok) return jsonResponse({ error: "Invalid username or password." }, 401);
+  var passCheck = validatePassword(body.password);
+  if (!passCheck.ok) return jsonResponse({ error: "Invalid username or password." }, 401);
+
+  try {
+    await purgeExpiredSessions(env.cubewizard_db);
+    var row = await env.cubewizard_db
+      .prepare("SELECT user_id, username, password_hash FROM users WHERE username = ? COLLATE NOCASE")
+      .bind(userCheck.username)
+      .first();
+    if (!row) return jsonResponse({ error: "Invalid username or password." }, 401);
+    var ok = await verifyPassword(passCheck.password, row.password_hash);
+    if (!ok) return jsonResponse({ error: "Invalid username or password." }, 401);
+    var session = await createSession(env.cubewizard_db, row.user_id, env);
+    return jsonResponse({ success: true, user: { user_id: row.user_id, username: row.username } }, 200, {
+      "Set-Cookie": session.cookieHeader,
+    });
+  } catch (err) {
+    console.error("auth login:", err);
+    return jsonResponse({ error: "Login failed." }, 500);
+  }
+}
+
+async function handleAuthLogout(request, env) {
+  try {
+    var clearCookie = await destroySession(env.cubewizard_db, request, env);
+    return jsonResponse({ success: true }, 200, { "Set-Cookie": clearCookie });
+  } catch (err) {
+    console.error("auth logout:", err);
+    return jsonResponse({ error: "Logout failed." }, 500);
+  }
+}
+
+async function handleAuthMe(request, env) {
+  try {
+    var user = await getSessionUser(request, env);
+    if (!user) return jsonResponse({ user: null });
+    return jsonResponse({ user: { user_id: user.user_id, username: user.username } });
+  } catch (err) {
+    console.error("auth me:", err);
+    return jsonResponse({ user: null });
+  }
+}
+
+async function handleClaimDeck(deckIdStr, request, env) {
+  var sessionUser = await getSessionUser(request, env);
+  if (!sessionUser) {
+    return jsonResponse({ error: "Login required to claim a deck." }, 401);
+  }
+
+  var deckId = parseInt(String(deckIdStr), 10);
+  if (!Number.isFinite(deckId)) {
+    return jsonResponse({ error: "Invalid deck id" }, 400);
+  }
+
+  var deck = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, cube_id, owner_user_id, pilot_name, processing_timestamp, image_source" +
+        " FROM decks WHERE deck_id = ?",
+    )
+    .bind(deckId)
+    .first();
+  if (!deck) {
+    return jsonResponse({ error: "Deck not found" }, 404);
+  }
+  if (deck.owner_user_id != null && deck.owner_user_id !== "") {
+    return jsonResponse({ error: "This deck has already been claimed." }, 409);
+  }
+
+  var fromHedron = isHedronSourceDeck(deck);
+  var result = await env.cubewizard_db
+    .prepare("UPDATE decks SET owner_user_id = ?, pilot_name = ? WHERE deck_id = ? AND owner_user_id IS NULL")
+    .bind(sessionUser.user_id, sessionUser.username, deckId)
+    .run();
+  if ((result.meta?.changes ?? 0) === 0) {
+    return jsonResponse({ error: "This deck has already been claimed." }, 409);
+  }
+
+  if (fromHedron) {
+    try {
+      await ensureHedronSyncedDeck(
+        env.cubewizard_db,
+        String(deck.cube_id || ""),
+        String(deck.processing_timestamp || ""),
+      );
+    } catch (hedronErr) {
+      console.error("hedron_synced_decks ensure on claim failed:", hedronErr);
+    }
+  }
+
+  try {
+    await invalidateDashboardCache(new URL(request.url).origin, deck.cube_id);
+  } catch (cacheErr) {
+    console.error("dashboard cache invalidation failed:", cacheErr);
+  }
+
+  return jsonResponse({
+    success: true,
+    deck_id: deckId,
+    owner_user_id: sessionUser.user_id,
+    pilot_name: sessionUser.username,
+  });
+}
+
+async function loadDeckForManage(deckIdStr, request, env) {
+  var deckId = parseInt(String(deckIdStr), 10);
+  if (!Number.isFinite(deckId)) {
+    return { error: jsonResponse({ error: "Invalid deck id" }, 400) };
+  }
+  var sessionUser = await getSessionUser(request, env);
+  if (!sessionUser) {
+    return { error: jsonResponse({ error: "Login required." }, 401) };
+  }
+  var deck = await env.cubewizard_db
+    .prepare(
+      "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
+        " win_rate, record_logged, image_source, processing_timestamp, owner_user_id," +
+        " image_id, oriented_image_r2_key, staging_image_r2_key" +
+        " FROM decks WHERE deck_id = ?",
+    )
+    .bind(deckId)
+    .first();
+  if (!deck) {
+    return { error: jsonResponse({ error: "Deck not found" }, 404) };
+  }
+  if (!deckCanManage(deck.owner_user_id, sessionUser)) {
+    return { error: jsonResponse({ error: "You do not have permission to manage this deck." }, 403) };
+  }
+  return { deckId: deckId, deck: deck, sessionUser: sessionUser };
+}
+
+async function deleteDeckRowsFromDb(db, deckId, cubeId) {
+  var now = new Date().toISOString();
+  await db.batch([
+    db.prepare("DELETE FROM deck_cards WHERE deck_id = ?").bind(deckId),
+    db.prepare("DELETE FROM deck_stats WHERE deck_id = ?").bind(deckId),
+    db.prepare("DELETE FROM decks WHERE deck_id = ?").bind(deckId),
+    db
+      .prepare(
+        "UPDATE cubes SET total_decks = (SELECT COUNT(*) FROM decks WHERE cube_id = ?), last_updated = ? WHERE cube_id = ?;",
+      )
+      .bind(cubeId, now, cubeId),
+  ]);
+}
+
+async function handleDeleteDeck(deckIdStr, request, env) {
+  var loaded = await loadDeckForManage(deckIdStr, request, env);
+  if (loaded.error) return loaded.error;
+  var deckId = loaded.deckId;
+  var cubeId = String(loaded.deck.cube_id || "");
+  var uploadId = String(loaded.deck.processing_timestamp || "").trim();
+
+  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
+
+  if (uploadId) {
+    await safeReleaseHedronSyncedDeckForUpload(env.cubewizard_db, uploadId);
+    try {
+      await env.cubewizard_db.prepare("DELETE FROM processing_jobs WHERE upload_id = ?").bind(uploadId).run();
+    } catch (jobErr) {
+      console.error("processing_jobs cleanup failed:", jobErr);
+    }
+  }
+
+  try {
+    await invalidateDashboardCache(new URL(request.url).origin, cubeId);
+  } catch (cacheErr) {
+    console.error("dashboard cache invalidation failed:", cacheErr);
+  }
+
+  return jsonResponse({ success: true, deck_id: deckId });
+}
+
+async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
+  var orientedKey = String(deck.oriented_image_r2_key || "").trim();
+  var imageId = deck.image_id != null ? String(deck.image_id) : "";
+  if (!orientedKey || !imageId) return null;
+
+  var orientedObj = await env.DECK_IMAGES_BLOB.get(orientedKey);
+  if (!orientedObj) return null;
+
+  var taskBody = {
+    upload_id: uploadId,
+    schema_version: 2,
+    cube_id: cubeId,
+    image_id: imageId,
+    oriented_image_r2_key: orientedKey,
+    processing_timestamp: uploadId,
+    pilot_name: String(deck.pilot_name || ""),
+    record_logged: deck.record_logged || new Date().toISOString(),
+    image_source: deck.image_source || "",
+    match_wins: deck.match_wins,
+    match_losses: deck.match_losses,
+    match_draws: deck.match_draws ?? 0,
+    win_rate: deck.win_rate,
+  };
+  var stagingKey = String(deck.staging_image_r2_key || "").trim();
+  if (stagingKey) taskBody.staging_image_r2_key = stagingKey;
+  if (deck.owner_user_id != null && deck.owner_user_id !== "") {
+    taskBody.owner_user_id = Number(deck.owner_user_id);
+  }
+  return taskBody;
+}
+
+async function buildReprocessOrientTask(deck, cubeId, uploadId, sessionUser, env) {
+  var r2Prefix = uploadId.replace(/\/+$/, "") + "/";
+  var metaKey = r2Prefix + "metadata.json";
+  var metaObj = await env.BUCKET.get(metaKey);
+  if (!metaObj) return null;
+
+  var metadata;
+  try {
+    metadata = JSON.parse(new TextDecoder().decode(await metaObj.arrayBuffer()));
+  } catch (_e) {
+    return { error: jsonResponse({ error: "Staging metadata is invalid." }, 500) };
+  }
+
+  var imageKey = metadata.image_key;
+  if (!imageKey || typeof imageKey !== "string") {
+    imageKey = r2Prefix + "image.jpg";
+  }
+  var imageObj = await env.BUCKET.get(imageKey);
+  if (!imageObj) return null;
+
+  metadata.cube_id = cubeId;
+  metadata.pilot_name = String(deck.pilot_name || metadata.pilot_name || sessionUser.username);
+  metadata.match_wins = deck.match_wins;
+  metadata.match_losses = deck.match_losses;
+  metadata.match_draws = deck.match_draws ?? 0;
+  metadata.win_rate = deck.win_rate;
+  metadata.record_logged = deck.record_logged;
+  metadata.owner_user_id = Number(sessionUser.user_id);
+  metadata.image_key = imageKey;
+
+  await env.BUCKET.put(metaKey, JSON.stringify(metadata, null, 2), {
+    httpMetadata: { contentType: "application/json" },
+  });
+
+  var r2Bucket = String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim();
+  return {
+    upload_id: uploadId,
+    r2_bucket: r2Bucket,
+    r2_prefix: r2Prefix,
+    cube_id: cubeId,
+    pilot_name: String(deck.pilot_name || ""),
+    submitted_at: deck.record_logged || new Date().toISOString(),
+    schema_version: 1,
+    match_wins: deck.match_wins,
+    match_losses: deck.match_losses,
+    match_draws: deck.match_draws ?? 0,
+    image_source: deck.image_source || metadata.image_source || "",
+  };
+}
+
+async function handleReprocessDeck(deckIdStr, request, env) {
+  var loaded = await loadDeckForManage(deckIdStr, request, env);
+  if (loaded.error) return loaded.error;
+
+  var deck = loaded.deck;
+  var deckId = loaded.deckId;
+  var cubeId = String(deck.cube_id || "");
+  var uploadId = String(deck.processing_timestamp || "").trim();
+  if (!uploadId) {
+    return jsonResponse({ error: "This deck cannot be re-processed (missing upload id)." }, 400);
+  }
+
+  var taskBody = await buildReprocessExtractTask(deck, cubeId, uploadId, env);
+  if (!taskBody) {
+    var orientResult = await buildReprocessOrientTask(deck, cubeId, uploadId, loaded.sessionUser, env);
+    if (orientResult?.error) return orientResult.error;
+    taskBody = orientResult;
+  }
+  if (!taskBody) {
+    return jsonResponse(
+      { error: "Stored deck photo is no longer available. Re-process requires the saved image in storage." },
+      409,
+    );
+  }
+
+  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
+
+  var jobTask = {
+    upload_id: uploadId,
+    cube_id: cubeId,
+    pilot_name: String(deck.pilot_name || ""),
+    submitted_at: deck.record_logged || new Date().toISOString(),
+    schema_version: 1,
+  };
+
+  try {
+    await upsertQueuedProcessingJob(env.cubewizard_db, jobTask);
+  } catch (jobErr) {
+    console.error("processing_jobs upsert failed on reprocess:", jobErr);
+  }
+
+  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
+  if (!enqueueResult.ok && !enqueueResult.skipped) {
+    console.error("Reprocess enqueue failed:", enqueueResult);
+    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
+  }
+
+  try {
+    await invalidateDashboardCache(new URL(request.url).origin, cubeId);
+  } catch (cacheErr) {
+    console.error("dashboard cache invalidation failed:", cacheErr);
+  }
+
+  return jsonResponse({
+    success: true,
+    deck_id: deckId,
+    upload_id: uploadId,
+    enqueue: enqueueResult,
+  });
+}
+
 async function handleGetDeck(deckId, env, request) {
   const deck = await env.cubewizard_db
     .prepare(
       "SELECT deck_id, cube_id, pilot_name, match_wins, match_losses, match_draws," +
-        " win_rate, record_logged, image_id, total_cards, created," +
+        " win_rate, record_logged, image_id, total_cards, created, owner_user_id," +
         " oriented_image_r2_key, oriented_thumb_r2_key, staging_image_r2_key" +
         " FROM decks WHERE deck_id = ?",
     )
@@ -1398,11 +1983,20 @@ async function handleGetDeck(deckId, env, request) {
     card_names_ordered.push(orderRows[oi].name);
   }
 
+  var sessionUser = await getSessionUser(request, env);
+  var permissions = {
+    can_edit: deckCanEdit(deck.owner_user_id, sessionUser),
+    can_claim: deckCanClaim(deck.owner_user_id, sessionUser),
+    can_delete: deckCanManage(deck.owner_user_id, sessionUser),
+    can_reprocess: deckCanManage(deck.owner_user_id, sessionUser),
+  };
+
   return jsonResponse({
     deck: deck,
     deck_stats: deckStats || null,
     cards: cards,
     card_names_ordered: card_names_ordered,
+    permissions: permissions,
   });
 }
 
@@ -1669,11 +2263,16 @@ async function handlePutDeckCards(deckIdStr, request, env) {
   }
 
   var deck = await env.cubewizard_db
-    .prepare("SELECT deck_id, cube_id FROM decks WHERE deck_id = ?")
+    .prepare("SELECT deck_id, cube_id, owner_user_id FROM decks WHERE deck_id = ?")
     .bind(deckId)
     .first();
   if (!deck) {
     return jsonResponse({ error: "Deck not found" }, 404);
+  }
+
+  var sessionUser = await getSessionUser(request, env);
+  if (!deckCanEdit(deck.owner_user_id, sessionUser)) {
+    return jsonResponse({ error: "You do not have permission to edit this deck." }, 403);
   }
 
   var body;
@@ -2369,10 +2968,15 @@ async function handleUpload(request, env) {
       return jsonResponse({ success: false, errors: ["Bot verification failed. Please try again."] }, 403);
     }
 
+    var sessionUser = await getSessionUser(request, env);
+
     var cubeId = formData.get("cube_id")?.trim();
     var pilotName = String(formData.get("pilot_name") || "")
       .trim()
       .replace(/[<>]/g, "");
+    if (sessionUser) {
+      pilotName = sessionUser.username;
+    }
     if (pilotName.length > 100) pilotName = pilotName.slice(0, 100);
     var winsRaw = formData.get("wins");
     var lossesRaw = formData.get("losses");
@@ -2475,6 +3079,9 @@ async function handleUpload(request, env) {
     if (normalized.originalWidth != null) {
       metadata.original_width = normalized.originalWidth;
       metadata.original_height = normalized.originalHeight;
+    }
+    if (sessionUser) {
+      metadata.owner_user_id = sessionUser.user_id;
     }
 
     var metadataKey = prefix + "/metadata.json";

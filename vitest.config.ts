@@ -36,7 +36,7 @@ export default defineConfig({
   plugins: [wasmPrecompiledForVitest()],
   test: {
     environment: "node",
-    include: ["src/pipeline/**/*.test.ts"],
+    include: ["src/pipeline/**/*.test.ts", "src/security/**/*.test.js"],
     exclude: ["**/node_modules/**", "**/goldenEval.harness.test.ts"],
     testTimeout: 60_000,
   },

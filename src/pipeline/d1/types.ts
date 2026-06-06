@@ -17,6 +17,7 @@ export interface DeckMetadata {
   image_source?: string;
   processing_timestamp: string;
   total_cards: number;
+  owner_user_id?: number | null;
 }
 
 /** One row of Scryfall-enriched card data (subset stored in `deck_cards`). */

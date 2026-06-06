@@ -91,6 +91,8 @@
 
   var pilotListSnapshot = [];
   var pilotListSort = { key: "created", asc: false };
+  var loggedInUser = null;
+  var pendingDeckAction = null;
 
   function pilotPhotoSortValue(d) {
     return d.deck_thumb_url || d.deck_photo_url ? 1 : 0;
@@ -204,6 +206,9 @@
         arrow +
         "</button></th>";
     }
+    if (loggedInUser) {
+      hr += '<th scope="col" class="deck-table-claim-cell">Claim</th>';
+    }
     hr += "</tr>";
     thead.innerHTML = hr;
 
@@ -251,12 +256,162 @@
         escapeHtmlText(fmtDate(d.created)) +
         "</td>";
 
+      if (loggedInUser) {
+        var claimTd = document.createElement("td");
+        claimTd.className = "deck-table-claim-cell";
+        if (d.can_claim) {
+          var claimBtn = document.createElement("button");
+          claimBtn.type = "button";
+          claimBtn.className = "btn-table-claim";
+          claimBtn.textContent = "Claim";
+          claimBtn.addEventListener(
+            "click",
+            (function (deckId) {
+              return function (e) {
+                e.stopPropagation();
+                openDeckConfirm("claim", deckId);
+              };
+            })(d.deck_id),
+          );
+          claimTd.appendChild(claimBtn);
+        }
+        tr.appendChild(claimTd);
+      }
+
       tr.style.cursor = "pointer";
       tr.addEventListener("click", function () {
         var url = deckUrlForRow(this.dataset.cubeId, this.dataset.deckId);
         window.location.href = url;
       });
       tbody.appendChild(tr);
+    }
+  }
+
+  function pilotRowById(deckId) {
+    var id = String(deckId || "");
+    for (var i = 0; i < pilotListSnapshot.length; i++) {
+      if (String(pilotListSnapshot[i].deck_id) === id) return pilotListSnapshot[i];
+    }
+    return null;
+  }
+
+  function openDeckConfirm(action, deckId) {
+    if (!deckId || action !== "claim") return;
+    if (!loggedInUser) return;
+    pendingDeckAction = { action: action, deckId: String(deckId) };
+    var row = pilotRowById(deckId);
+    var pilot = row?.pilot_name ? String(row.pilot_name) : "";
+    var title = $("deck-confirm-title");
+    var body = $("deck-confirm-body");
+    var okBtn = $("deck-confirm-ok");
+    if (title && body && okBtn) {
+      okBtn.className = "btn-primary";
+      title.textContent = "Claim this deck?";
+      okBtn.textContent = "Claim";
+      if (pilot) {
+        body.textContent =
+          "Claim the deck uploaded as " +
+          pilot +
+          "? It will be linked to your account (" +
+          loggedInUser.username +
+          ") and only you will be able to edit its card list.";
+      } else {
+        body.textContent =
+          "This deck will be linked to your account (" +
+          loggedInUser.username +
+          "). You will be able to edit its card list; others will not.";
+      }
+    }
+    var overlay = $("deck-confirm-overlay");
+    if (overlay) {
+      overlay.classList.add("is-open");
+      overlay.setAttribute("aria-hidden", "false");
+    }
+    if (okBtn) okBtn.focus();
+  }
+
+  function closeDeckConfirm() {
+    pendingDeckAction = null;
+    var overlay = $("deck-confirm-overlay");
+    if (overlay) {
+      overlay.classList.remove("is-open");
+      overlay.setAttribute("aria-hidden", "true");
+    }
+    var okBtn = $("deck-confirm-ok");
+    if (okBtn) okBtn.className = "btn-primary";
+  }
+
+  function executeDeckClaim(deckId) {
+    if (!deckId) return;
+    var confirmBtn = $("deck-confirm-ok");
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    fetch("/api/deck/" + encodeURIComponent(deckId) + "/claim", {
+      method: "POST",
+      credentials: "include",
+    })
+      .then(function (r) {
+        return r
+          .json()
+          .catch(function () {
+            return {};
+          })
+          .then(function (data) {
+            return { ok: r.ok, data: data };
+          });
+      })
+      .then(function (res) {
+        if (confirmBtn) confirmBtn.disabled = false;
+        closeDeckConfirm();
+        if (!res.ok) {
+          alert(res.data?.error || "Could not claim deck.");
+          return;
+        }
+        for (var i = 0; i < pilotListSnapshot.length; i++) {
+          if (String(pilotListSnapshot[i].deck_id) === String(deckId)) {
+            pilotListSnapshot[i].can_claim = false;
+            if (loggedInUser) pilotListSnapshot[i].owner_user_id = loggedInUser.user_id;
+            break;
+          }
+        }
+        renderPilotTable();
+      })
+      .catch(function (err) {
+        if (confirmBtn) confirmBtn.disabled = false;
+        console.error(err);
+        alert("Network error.");
+      });
+  }
+
+  function bindConfirmUi() {
+    if ($("deck-confirm-cancel")) {
+      $("deck-confirm-cancel").addEventListener("click", closeDeckConfirm);
+    }
+    if ($("deck-confirm-ok")) {
+      $("deck-confirm-ok").addEventListener("click", function () {
+        if (pendingDeckAction?.action === "claim") {
+          executeDeckClaim(pendingDeckAction.deckId);
+        }
+      });
+    }
+    if ($("deck-confirm-overlay")) {
+      $("deck-confirm-overlay").addEventListener("click", function (e) {
+        if (e.target === this) closeDeckConfirm();
+      });
+    }
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && $("deck-confirm-overlay")?.classList.contains("is-open")) {
+        closeDeckConfirm();
+      }
+    });
+  }
+
+  function onAuthReady(user) {
+    loggedInUser = user || null;
+    if (pilotListSnapshot.length) {
+      renderPilotTable();
+      var q = ($("pilot-q")?.value ? String($("pilot-q").value) : "").trim();
+      if (q.length >= 2) runSearchFromForm();
     }
   }
 
@@ -273,7 +428,7 @@
     $("pilot-results").style.display = "none";
     $("pilot-results-hint").hidden = true;
 
-    fetch("/api/decks/by-pilot?q=" + encodeURIComponent(q))
+    fetch("/api/decks/by-pilot?q=" + encodeURIComponent(q), { credentials: "include" })
       .then(function (r) {
         return r.json().then(function (data) {
           return { ok: r.ok, status: r.status, data: data };
@@ -320,7 +475,11 @@
   }
 
   function init() {
+    bindConfirmUi();
     ensurePilotTableSortDelegation();
+    if (window.CWAuth && typeof CWAuth.onReady === "function") {
+      CWAuth.onReady(onAuthReady);
+    }
     var form = $("pilot-search-form");
     if (!form) return;
     form.addEventListener("submit", function (e) {

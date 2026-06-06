@@ -129,6 +129,7 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
             image_source: task.image_source ?? "",
             processing_timestamp: task.processing_timestamp,
             total_cards: cardNames.length,
+            owner_user_id: task.owner_user_id ?? null,
           },
           cards: cardsBlock,
         },

@@ -75,6 +75,8 @@ async function turnstileTokenFromFormRequest(request) {
  * @param {object} [parsedBody] Already-parsed JSON body when available
  */
 export async function verifyTurnstileFromRequest(request, env, parsedBody) {
+  if (isCwwLocalEnv(env)) return true;
+
   var clientIp = clientIpFromTurnstileRequest(request);
 
   var headerToken = request.headers.get("Cf-Turnstile-Response");
