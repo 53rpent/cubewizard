@@ -1,6 +1,8 @@
 /** Strip gateway provider prefix (`openai/gpt-5-mini` → `gpt-5-mini`). */
 export function normalizeOpenAiModelId(model: string): string {
-  const id = String(model ?? "").trim().toLowerCase();
+  const id = String(model ?? "")
+    .trim()
+    .toLowerCase();
   const slash = id.indexOf("/");
   if (slash <= 0) return id;
   const provider = id.slice(0, slash);

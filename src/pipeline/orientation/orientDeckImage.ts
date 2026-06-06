@@ -5,9 +5,9 @@ import { cropCenter, resizeToMaxSide, rotateClockwise } from "../images/transfor
 import type { ImageFormatHint, RgbaFrame } from "../images/types";
 import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
+import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { orientationConfirmJsonSchema } from "../openai/jsonSchemas";
 import { ORIENTATION_CONFIRM_DEVELOPER_PROMPT, ORIENTATION_CONFIRM_USER_PROMPT } from "../openai/prompts";
-import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { OrientationConfirmResultSchema } from "../openai/schemas";
 import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
 import { isEvalConsumerLogActive } from "../util/evalConsumerLog";

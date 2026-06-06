@@ -1,8 +1,8 @@
 import { join } from "node:path";
+import { resolveEvalVisionModel } from "../config/resolveEvalVisionLlm";
 import type { EvalRunReport } from "../evalUsage/evalUsageReport";
 import { parseEvalJpegQuality, parseEvalMaxImageSide } from "../orchestrator/evalImageLimits";
 import { loadGoldenCases } from "./loadCases";
-import { resolveEvalVisionModel } from "../config/resolveEvalVisionLlm";
 import { loadDevVarsIntoEnv, resolveOpenAiKeyFromEnv } from "./loadDevVars";
 import { buildGoldenEvalConsumerEnv, loadWranglerEvalConsumerVars } from "./loadEvalConsumerEnv";
 import { aggregateCaseMetrics, computeCaseMetrics } from "./metrics";

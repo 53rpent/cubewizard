@@ -60,7 +60,10 @@ export function parseAiGatewayNameFromGatewayUrl(url: string): string | null {
 export function resolveAiGatewayName(env?: { AI_GATEWAY_NAME?: string; OPENAI_BASE_URL?: string }): string {
   const explicit = String(env?.AI_GATEWAY_NAME ?? "").trim();
   if (explicit) return explicit;
-  return parseAiGatewayNameFromGatewayUrl(String(env?.OPENAI_BASE_URL ?? OPENAI_GATEWAY_BASE_URL_DEFAULT)) ?? AI_GATEWAY_NAME_DEFAULT;
+  return (
+    parseAiGatewayNameFromGatewayUrl(String(env?.OPENAI_BASE_URL ?? OPENAI_GATEWAY_BASE_URL_DEFAULT)) ??
+    AI_GATEWAY_NAME_DEFAULT
+  );
 }
 
 /** Cloudflare account REST API — Workers AI via AI Gateway (`cf-aig-gateway-id` required). */

@@ -3,13 +3,13 @@ import { resizeToMaxSide } from "../images/transform";
 import type { RgbaFrame } from "../images/types";
 import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
+import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { cardExtractionJsonSchema } from "../openai/jsonSchemas";
 import {
   buildCubeListDeveloperSuffix,
   buildExtractionUserPrompt,
   EXTRACTION_DEVELOPER_PROMPT,
 } from "../openai/prompts";
-import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { type CardExtractionResult, CardExtractionResultSchema } from "../openai/schemas";
 import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
 import type { VisionImageInput } from "./chatCompletionsApi";

@@ -8,8 +8,8 @@ import { createEvalUsageReporter, logEvalUsageReport, runWithEvalUsageReporter }
 import { decodeToRgba } from "../images/decode";
 import type { RgbaFrame } from "../images/types";
 import { assertVisionPublishConfigured, createVisionImagePublisher } from "../images/visionPublish";
-import { extractCardNamesFromRgba } from "../openai/extractCardNames";
 import { ModelOutputInvalidError } from "../openai/chatCompletionsApi";
+import { extractCardNamesFromRgba } from "../openai/extractCardNames";
 import { createEvalScryfallClient } from "../scryfall/client";
 import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
 import { formatEvalError } from "../util/formatEvalError";
