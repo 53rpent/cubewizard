@@ -51,6 +51,8 @@ export function buildGoldenEvalConsumerEnv(opts: GoldenEvalConsumerEnvOptions): 
     OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
     EVAL_VISION_BASE_URL: process.env.EVAL_VISION_BASE_URL,
     EVAL_GATEWAY_PROVIDER: process.env.EVAL_GATEWAY_PROVIDER,
+    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+    AI_GATEWAY_NAME: process.env.AI_GATEWAY_NAME,
     OPENAI_GATEWAY_TOKEN: process.env.OPENAI_GATEWAY_TOKEN,
     OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL,
     EVAL_VISION_MODEL: process.env.EVAL_VISION_MODEL,

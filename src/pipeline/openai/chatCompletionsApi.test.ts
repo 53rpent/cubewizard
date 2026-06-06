@@ -209,6 +209,61 @@ describe("callOpenAiVisionJsonSchema", () => {
     );
   });
 
+  it("omits reasoning_effort for models that do not support it", async () => {
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { reasoning_effort?: string; model: string };
+      expect(body.model).toBe("gemini-2.5-flash-lite");
+      expect(body.reasoning_effort).toBeUndefined();
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gemini-2.5-flash-lite",
+        maxOutputTokens: 100,
+        userText: "hi",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient-0.jpg",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        reasoningEffort: "medium",
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+      OrientationResultSchema,
+    );
+  });
+
+  it("includes reasoning_effort for gpt-5 models", async () => {
+    const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { reasoning_effort?: string };
+      expect(body.reasoning_effort).toBe("medium");
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await callOpenAiVisionJsonSchema(
+      {
+        apiKey: "sk-test",
+        model: "gpt-5-mini-2025-08-07",
+        maxOutputTokens: 100,
+        userText: "hi",
+        imageUrl: "https://cdn.example.com/tmp/vision/u1/orient-0.jpg",
+        schemaName: "orientation_result",
+        jsonSchema: orientationJsonSchema as unknown as Record<string, unknown>,
+        reasoningEffort: "medium",
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+      OrientationResultSchema,
+    );
+  });
+
   it("defaults to AI Gateway URL and sends cf-aig headers", async () => {
     const payload = chatCompletionPayload('{"rotation_needed":0,"confidence":"high"}');
     const fetchImpl = vi.fn(async (url, init) => {

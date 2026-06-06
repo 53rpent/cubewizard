@@ -7,7 +7,12 @@ import {
   resolveEvalVisionLlm,
   resolveEvalVisionModel,
 } from "./resolveEvalVisionLlm";
-import { OPENAI_DIRECT_BASE_URL, OPENAI_GATEWAY_BASE_URL_DEFAULT } from "./resolveOpenAiBaseUrl";
+import {
+  buildCloudflareAiRestV1BaseUrl,
+  CLOUDFLARE_ACCOUNT_ID_DEFAULT,
+  OPENAI_DIRECT_BASE_URL,
+  OPENAI_GATEWAY_BASE_URL_DEFAULT,
+} from "./resolveOpenAiBaseUrl";
 
 describe("resolveEvalVisionModel", () => {
   it("prefers EVAL_VISION_MODEL over OPENAI_VISION_MODEL", () => {
@@ -47,6 +52,16 @@ describe("resolveEvalVisionBaseUrl", () => {
     );
   });
 
+  it("uses Cloudflare account REST API for workers-ai", () => {
+    expect(
+      resolveEvalVisionBaseUrl({
+        EVAL_GATEWAY_PROVIDER: "workers-ai",
+        CLOUDFLARE_ACCOUNT_ID: "abc123",
+        OPENAI_BASE_URL: "https://gateway.ai.cloudflare.com/v1/account/cubewizard/openai",
+      }),
+    ).toBe(buildCloudflareAiRestV1BaseUrl("abc123"));
+  });
+
   it("defaults to openai gateway path", () => {
     expect(resolveEvalVisionBaseUrl({})).toBe(OPENAI_GATEWAY_BASE_URL_DEFAULT);
   });
@@ -64,5 +79,16 @@ describe("resolveEvalVisionLlm", () => {
     expect(cfg.apiKey).toBe("sk-ant-test");
     expect(cfg.baseUrl).toContain("/anthropic");
     expect(cfg.requestTimeoutMs).toBe(120_000);
+  });
+
+  it("sets aiGatewayId for workers-ai", () => {
+    const cfg = resolveEvalVisionLlm({
+      EVAL_VISION_MODEL: "@cf/google/gemma-4-26b-a4b-it",
+      EVAL_VISION_API_KEY: "cfut_test",
+      EVAL_GATEWAY_PROVIDER: "workers-ai",
+      CLOUDFLARE_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID_DEFAULT,
+    });
+    expect(cfg.baseUrl).toBe(buildCloudflareAiRestV1BaseUrl(CLOUDFLARE_ACCOUNT_ID_DEFAULT));
+    expect(cfg.aiGatewayId).toBe("cubewizard");
   });
 });

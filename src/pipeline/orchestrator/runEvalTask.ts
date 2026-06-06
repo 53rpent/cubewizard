@@ -31,6 +31,7 @@ export interface RunEvalTaskEnv {
   OPENAI_BASE_URL?: string;
   OPENAI_GATEWAY_TOKEN?: string;
   OPENAI_REQUEST_TIMEOUT_MS?: string;
+  AI_GATEWAY_NAME?: string;
   CW_EVAL_MAX_CUBECOBRA_CARDS?: string;
   CW_EVAL_USE_MULTI_PASS?: string;
   CW_EVAL_JPEG_QUALITY?: string;

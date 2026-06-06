@@ -86,6 +86,7 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         openAiLogLevel: cfg.openAiLogLevel,
         baseUrl: cfg.visionBaseUrl,
         gatewayToken: cfg.openAiGatewayToken,
+        aiGatewayId: cfg.aiGatewayId,
         requestTimeoutMs: cfg.openAiRequestTimeoutMs,
       });
 

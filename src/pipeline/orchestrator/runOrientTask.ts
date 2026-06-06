@@ -120,6 +120,7 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     openAiLogLevel: cfg.openAiLogLevel,
     baseUrl: cfg.visionBaseUrl,
     gatewayToken: cfg.openAiGatewayToken,
+    aiGatewayId: cfg.aiGatewayId,
     requestTimeoutMs: cfg.openAiRequestTimeoutMs,
     onStagingBytesDecoded: () => {
       imageBytes = undefined;
@@ -138,6 +139,7 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
       openAiLogLevel: cfg.openAiLogLevel,
       baseUrl: cfg.visionBaseUrl,
       gatewayToken: cfg.openAiGatewayToken,
+      aiGatewayId: cfg.aiGatewayId,
       requestTimeoutMs: cfg.openAiRequestTimeoutMs,
     },
   });

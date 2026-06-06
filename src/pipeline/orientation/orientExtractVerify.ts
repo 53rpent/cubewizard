@@ -36,6 +36,7 @@ export interface OrientLightExtractOptions {
   vision?: VisionImagePublisher;
   baseUrl?: string;
   gatewayToken?: string;
+  aiGatewayId?: string;
   requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
@@ -93,6 +94,7 @@ export async function lightExtractScoreFromRgba(
       jsonSchema: cardExtractionJsonSchema as unknown as Record<string, unknown>,
       baseUrl: opts.baseUrl,
       gatewayToken: opts.gatewayToken,
+      aiGatewayId: opts.aiGatewayId,
       requestTimeoutMs: opts.requestTimeoutMs,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,

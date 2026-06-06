@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCloudflareAiRestV1BaseUrl,
   buildOpenAiRequestHeaders,
   isAiGatewayBaseUrl,
   OPENAI_DIRECT_BASE_URL,
@@ -26,8 +27,9 @@ describe("resolveOpenAiBaseUrl", () => {
     );
   });
 
-  it("detects gateway hostname", () => {
+  it("detects gateway hostname and Cloudflare account REST API", () => {
     expect(isAiGatewayBaseUrl(OPENAI_GATEWAY_BASE_URL_DEFAULT)).toBe(true);
+    expect(isAiGatewayBaseUrl(buildCloudflareAiRestV1BaseUrl("abc123"))).toBe(true);
     expect(isAiGatewayBaseUrl(OPENAI_DIRECT_BASE_URL)).toBe(false);
     expect(isAiGatewayBaseUrl("not-a-url")).toBe(false);
   });
@@ -55,5 +57,12 @@ describe("resolveOpenAiBaseUrl", () => {
       gatewayToken: "gw-token",
     });
     expect(gw["cf-aig-authorization"]).toBe("Bearer gw-token");
+  });
+
+  it("adds cf-aig-gateway-id for Workers AI REST API", () => {
+    const rest = buildCloudflareAiRestV1BaseUrl("abc123");
+    const headers = buildOpenAiRequestHeaders("cfut_test", rest, { aiGatewayId: "cubewizard" });
+    expect(headers["cf-aig-gateway-id"]).toBe("cubewizard");
+    expect(headers["cf-aig-request-timeout"]).toBe(String(OPENAI_REQUEST_TIMEOUT_MS_DEFAULT));
   });
 });

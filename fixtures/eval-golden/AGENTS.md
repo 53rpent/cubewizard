@@ -13,7 +13,7 @@ eval-golden/
 │       ├── image.jpg|png|webp|heic   # required
 │       └── expected.json             # required
 ├── cases/_template/                  # copy for new cases (ignored: names starting with _)
-├── data/openai-standard-pricing.csv  # token cost estimates
+├── data/model-pricing.csv  # AI Gateway model token costs (regenerate: node scripts/sync-ai-gateway-pricing-csv.mjs)
 └── scores/
     ├── baseline.json                 # committed reference (promote via golden:baseline)
     ├── baseline.explanation.json     # glossary only

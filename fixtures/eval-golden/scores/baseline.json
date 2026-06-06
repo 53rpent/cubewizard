@@ -22,7 +22,7 @@
     "usd_per_1m_output": 2,
     "source": "pricing_csv",
     "fetched_at": "2026-05-17",
-    "pricing_csv_path": "C:\\Users\\amatv\\CubeWizard\\fixtures\\eval-golden\\data\\openai-standard-pricing.csv"
+    "pricing_csv_path": "C:\\Users\\amatv\\CubeWizard\\fixtures\\eval-golden\\data\\model-pricing.csv"
   },
   "runner": "eval_consumer",
   "aggregate": {

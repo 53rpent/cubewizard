@@ -12,7 +12,7 @@
       "config": "Snapshot of harness env (multi-pass, reasoning, image resize, etc.)."
     },
     "pricing": {
-      "usd_per_1m_input": "Standard-tier input token rate from fixtures/eval-golden/data/openai-standard-pricing.csv.",
+      "usd_per_1m_input": "Input token rate from fixtures/eval-golden/data/model-pricing.csv (Cloudflare AI Gateway compat/v1/models).",
       "usd_per_1m_cached_input": "Cached-input rate when published; otherwise same as input.",
       "usd_per_1m_output": "Standard-tier output token rate from CSV.",
       "source": "pricing_csv or env_override (GOLDEN_EVAL_USD_PER_1M_*).",

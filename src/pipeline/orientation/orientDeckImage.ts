@@ -38,6 +38,7 @@ export interface OrientDeckImageOptions {
   vision?: VisionImagePublisher;
   baseUrl?: string;
   gatewayToken?: string;
+  aiGatewayId?: string;
   requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
@@ -83,6 +84,7 @@ async function confirmOrientation(
       jsonSchema: orientationConfirmJsonSchema as unknown as Record<string, unknown>,
       baseUrl: opts.baseUrl,
       gatewayToken: opts.gatewayToken,
+      aiGatewayId: opts.aiGatewayId,
       requestTimeoutMs: opts.requestTimeoutMs,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,

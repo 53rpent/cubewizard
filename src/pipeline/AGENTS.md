@@ -102,7 +102,7 @@ Vitest WASM: `vitest.config.ts` plugin precompiles `vendor/jsquash-webp/*.wasm` 
 
 Config: `EVAL_VISION_MODEL`, `EVAL_VISION_API_KEY`, `EVAL_VISION_BASE_URL` / `EVAL_GATEWAY_PROVIDER`, `OPENAI_MAX_OUTPUT_TOKENS`, `OPENAI_REASONING_EFFORT`, `CW_EVAL_USE_MULTI_PASS`, `CW_EVAL_LOG_LEVEL` (`off|low|medium|high`). Legacy: `OPENAI_VISION_MODEL`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`.
 
-**AI Gateway (default):** `wrangler-eval-consumer.jsonc` sets `OPENAI_BASE_URL` to `…/cubewizard/openai`. Override model/key/provider in `.dev.vars` via `EVAL_VISION_*`. `config/resolveEvalVisionLlm.ts` resolves model, API key, and base URL; `resolveOpenAiBaseUrl.ts` builds `/chat/completions` and `cf-aig-*` headers (`OPENAI_REQUEST_TIMEOUT_MS`, default `300000`).
+**AI Gateway (default):** `wrangler-eval-consumer.jsonc` sets `OPENAI_BASE_URL` to `…/cubewizard/openai`. Override model/key/provider in `.dev.vars` via `EVAL_VISION_*` and `EVAL_GATEWAY_PROVIDER` (wins over wrangler `OPENAI_BASE_URL`). For `workers-ai`, requests use `api.cloudflare.com/client/v4/accounts/{id}/ai/v1/chat/completions` with `cf-aig-gateway-id` (not the provider-native gateway path). `config/resolveEvalVisionLlm.ts` resolves model, API key, and base URL; `resolveOpenAiBaseUrl.ts` builds `/chat/completions` and `cf-aig-*` headers (`OPENAI_REQUEST_TIMEOUT_MS`, default `300000`).
 
 Token accounting: `evalUsage/evalUsageReport.ts` — reporter attached during extract; logged as `eval_usage_report`.
 

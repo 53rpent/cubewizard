@@ -2,6 +2,7 @@ import type { ZodType } from "zod";
 import { buildOpenAiRequestHeaders, resolveOpenAiBaseUrl } from "../config/resolveOpenAiBaseUrl";
 import { extractOpenAiUsageFromResponse, getActiveEvalUsageReporter } from "../evalUsage/evalUsageReport";
 import { getActiveEvalConsumerUploadId, isEvalConsumerLogActive, logEvalConsumer } from "../util/evalConsumerLog";
+import { modelSupportsReasoningEffort } from "./openAiModelCapabilities";
 import type { CardExtractionResult, OrientationConfirmResult, OrientationResult } from "./schemas";
 
 /** Eval consumer OpenAI console logging (see `CW_EVAL_LOG_LEVEL` / legacy `CW_EVAL_VERBOSE_LOG`). */
@@ -94,6 +95,8 @@ export type VisionJsonCallOptions = {
   baseUrl?: string;
   /** `cf-aig-authorization` when Authenticated Gateway is enabled. */
   gatewayToken?: string;
+  /** `cf-aig-gateway-id` — required for Workers AI via account REST API. */
+  aiGatewayId?: string;
   /** AI Gateway upstream timeout (`cf-aig-request-timeout`, ms). Ignored for direct OpenAI base URLs. */
   requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -156,7 +159,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
     },
   };
 
-  if (opts.reasoningEffort) {
+  if (opts.reasoningEffort && modelSupportsReasoningEffort(opts.model)) {
     body.reasoning_effort = opts.reasoningEffort;
   }
   if (opts.promptCacheKey?.trim()) {
@@ -201,6 +204,7 @@ export async function callOpenAiVisionJsonSchema<T>(opts: VisionJsonCallOptions,
   const headers = buildOpenAiRequestHeaders(opts.apiKey, baseUrl, {
     gatewayToken: opts.gatewayToken,
     requestTimeoutMs: opts.requestTimeoutMs,
+    aiGatewayId: opts.aiGatewayId,
   });
 
   const res = await fetchImpl(chatUrl, {

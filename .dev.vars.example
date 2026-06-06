@@ -20,9 +20,13 @@ EVAL_VISION_MODEL=gpt-5-mini-2025-08-07
 
 EVAL_VISION_API_KEY=
 
+# Provider route: openai | anthropic | google-ai-studio | workers-ai (uses Cloudflare account REST API)
+
 EVAL_GATEWAY_PROVIDER=anthropic
 
-# Optional — bypass gateway (direct OpenAI):
+# Optional — override gateway slug for Workers AI (`cf-aig-gateway-id`; default from wrangler OPENAI_BASE_URL)
+
+# AI_GATEWAY_NAME=cubewizard
 
 # EVAL_VISION_BASE_URL=https://api.openai.com/v1
 

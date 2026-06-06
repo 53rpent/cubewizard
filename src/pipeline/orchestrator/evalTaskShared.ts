@@ -36,6 +36,7 @@ export interface EvalPipelineConfig {
   visionApiKey: string;
   visionBaseUrl: string;
   openAiGatewayToken?: string;
+  aiGatewayId?: string;
   openAiRequestTimeoutMs: number;
 }
 
@@ -65,6 +66,7 @@ export function resolveEvalPipelineConfig(env: RunEvalTaskEnv): EvalPipelineConf
     visionApiKey: vision.apiKey,
     visionBaseUrl: vision.baseUrl,
     openAiGatewayToken: vision.gatewayToken,
+    aiGatewayId: vision.aiGatewayId,
     openAiRequestTimeoutMs: vision.requestTimeoutMs,
   };
 }
