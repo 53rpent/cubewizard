@@ -8,13 +8,20 @@
     return CWPaths.preferredCubeId() || "";
   }
 
+  function normalizeNavCubeId(raw) {
+    if (window.CWPaths && typeof CWPaths.normalizeCubeId === "function") {
+      return CWPaths.normalizeCubeId(raw) || "";
+    }
+    return String(raw || "").trim();
+  }
+
   function cubeIdFromUrl() {
     if (window.CWPaths) {
       var parsed = CWPaths.parsePathname(window.location.pathname);
       if (parsed.cubeId) return parsed.cubeId;
     }
     var params = new URLSearchParams(window.location.search);
-    return params.get("cube") || "";
+    return normalizeNavCubeId(params.get("cube") || "");
   }
 
   function cubeIdForNav() {
@@ -27,10 +34,20 @@
       if (fromUrl) return fromUrl;
     } catch (_e2) {}
     try {
-      return localStorage.getItem("selectedCubeId") || "";
+      return normalizeNavCubeId(localStorage.getItem("selectedCubeId") || "");
     } catch (_e3) {
       return "";
     }
+  }
+
+  /** Same-origin relative path only — blocks open redirects and non-path href values. */
+  function sanitizeNavHref(href) {
+    if (window.CWPaths && typeof CWPaths.safeAppPath === "function") {
+      return CWPaths.safeAppPath(href);
+    }
+    var p = String(href || "").trim();
+    if (p.charAt(0) !== "/" || p.indexOf("//") === 0) return "#";
+    return p;
   }
 
   function hrefForDataView(id, view) {
@@ -44,7 +61,7 @@
 
   function setNavAnchorState(anchor, enabled, href) {
     if (enabled) {
-      anchor.href = href;
+      anchor.setAttribute("href", sanitizeNavHref(href));
       anchor.classList.remove("is-disabled");
       anchor.removeAttribute("aria-disabled");
       anchor.removeAttribute("title");
@@ -63,9 +80,9 @@
     var id = cubeIdForNav();
     var dash = document.getElementById("nav-dashboard-trigger");
     var brand = document.querySelector(".header-brand-link");
-    var homeOrDash = CWPaths.safeAppPath(id ? CWPaths.dashboard(id) : CWPaths.home());
-    if (dash) dash.href = homeOrDash;
-    if (brand) brand.href = homeOrDash;
+    var homeOrDash = sanitizeNavHref(id ? CWPaths.dashboard(id) : CWPaths.home());
+    if (dash) dash.setAttribute("href", homeOrDash);
+    if (brand) brand.setAttribute("href", homeOrDash);
 
     var viewLinks = document.querySelectorAll("a.js-data-view-link[data-data-view]");
     for (var i = 0; i < viewLinks.length; i++) {
@@ -77,7 +94,7 @@
     var deckLinks = document.querySelectorAll("a.js-decks-link");
     for (var j = 0; j < deckLinks.length; j++) {
       var d = deckLinks[j];
-      setNavAnchorState(d, !!id, CWPaths.safeAppPath(CWPaths.decks(id)));
+      setNavAnchorState(d, !!id, CWPaths.decks(id));
     }
   }
 
