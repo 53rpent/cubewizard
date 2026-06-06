@@ -30,7 +30,9 @@
 		"CW_EVAL_MAX_RETRIES": "5",
 		// Override in `.dev.vars` (off: 0 | false). Ensures the binding exists on queue `env` in multi-worker dev.
 		"CW_EVAL_MEMORY_LOG": "1",
-		"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
+		"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c",
+		"OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/82dc60a1fbcc9e8767c55a198d0dd22c/cubewizard/openai",
+		"OPENAI_REQUEST_TIMEOUT_MS": "300000"
 	},
 	"r2_buckets": [
 		{
@@ -109,7 +111,9 @@
 				"CW_EVAL_MAX_IMAGE_SIDE": "3072",
 				"CW_EVAL_MAX_CONSUMERS": "4",
 				"CW_EVAL_MAX_RETRIES": "5",
-				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
+				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c",
+				"OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/82dc60a1fbcc9e8767c55a198d0dd22c/cubewizard/openai",
+				"OPENAI_REQUEST_TIMEOUT_MS": "300000"
 			},
 			"r2_buckets": [
 				{
@@ -187,7 +191,9 @@
 				"CW_EVAL_MAX_IMAGE_SIDE": "3072",
 				"CW_EVAL_MAX_CONSUMERS": "4",
 				"CW_EVAL_MAX_RETRIES": "5",
-				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c"
+				"CLOUDFLARE_ACCOUNT_ID": "82dc60a1fbcc9e8767c55a198d0dd22c",
+				"OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/82dc60a1fbcc9e8767c55a198d0dd22c/cubewizard/openai",
+				"OPENAI_REQUEST_TIMEOUT_MS": "300000"
 			},
 			"r2_buckets": [
 				{

@@ -5,9 +5,9 @@ import { cropCenter, resizeToMaxSide, rotateClockwise } from "../images/transfor
 import type { ImageFormatHint, RgbaFrame } from "../images/types";
 import { visionInputFromJpegBytes } from "../images/visionImageInput";
 import type { VisionImagePublisher } from "../images/visionPublish";
+import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/chatCompletionsApi";
 import { orientationConfirmJsonSchema } from "../openai/jsonSchemas";
 import { ORIENTATION_CONFIRM_DEVELOPER_PROMPT, ORIENTATION_CONFIRM_USER_PROMPT } from "../openai/prompts";
-import { callOpenAiVisionJsonSchema, type EvalOpenAiLogLevel } from "../openai/responsesApi";
 import { OrientationConfirmResultSchema } from "../openai/schemas";
 import { EVAL_IMAGE_SIDE_UNLIMITED } from "../orchestrator/evalImageLimits";
 import { isEvalConsumerLogActive } from "../util/evalConsumerLog";
@@ -36,6 +36,10 @@ export interface OrientDeckImageOptions {
   maxImageSide?: number;
   visionEnv: { CWW_ENV?: string };
   vision?: VisionImagePublisher;
+  baseUrl?: string;
+  gatewayToken?: string;
+  aiGatewayId?: string;
+  requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   openAiLogLevel?: EvalOpenAiLogLevel;
   /** Required: used to score each 90° rotation before a yes/no confirm call. */
@@ -78,6 +82,10 @@ async function confirmOrientation(
       ...imageInput,
       schemaName: "orientation_confirm",
       jsonSchema: orientationConfirmJsonSchema as unknown as Record<string, unknown>,
+      baseUrl: opts.baseUrl,
+      gatewayToken: opts.gatewayToken,
+      aiGatewayId: opts.aiGatewayId,
+      requestTimeoutMs: opts.requestTimeoutMs,
       fetchImpl: opts.fetchImpl,
       openAiLogLevel: opts.openAiLogLevel,
     },

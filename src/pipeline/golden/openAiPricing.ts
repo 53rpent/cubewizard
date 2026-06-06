@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Bundled Standard-tier rates (no live fetch — avoids 403 on pricing docs). */
-export const GOLDEN_OPENAI_PRICING_CSV = "fixtures/eval-golden/data/openai-standard-pricing.csv";
+/** Bundled AI Gateway model rates (see `scripts/sync-ai-gateway-pricing-csv.mjs`). */
+export const GOLDEN_MODEL_PRICING_CSV = "fixtures/eval-golden/data/model-pricing.csv";
 
 export interface OpenAiPricingRates {
   model: string;
@@ -103,7 +103,7 @@ export function loadOpenAiPricingCsv(csvText: string, csvPath?: string): Map<str
 }
 
 export function loadOpenAiPricingCsvFromRepo(repoRoot: string): Map<string, OpenAiPricingRates> {
-  const csvPath = join(repoRoot, GOLDEN_OPENAI_PRICING_CSV);
+  const csvPath = join(repoRoot, GOLDEN_MODEL_PRICING_CSV);
   if (!existsSync(csvPath)) {
     throw new OpenAiPricingError(`Pricing CSV not found: ${csvPath}`);
   }
@@ -163,7 +163,7 @@ export function resolveOpenAiModelPricing(model: string, repoRoot: string): Open
   const matched = matchPricingRates(model, table);
   if (!matched) {
     throw new OpenAiPricingError(
-      `No pricing row for model "${model}" in ${GOLDEN_OPENAI_PRICING_CSV}. ` +
+      `No pricing row for model "${model}" in ${GOLDEN_MODEL_PRICING_CSV}. ` +
         "Add a row to the CSV or set GOLDEN_EVAL_USD_PER_1M_INPUT / GOLDEN_EVAL_USD_PER_1M_OUTPUT.",
     );
   }

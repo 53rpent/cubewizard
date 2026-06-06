@@ -1,4 +1,4 @@
-import { OpenAiApiError } from "../openai/responsesApi";
+import { OpenAiApiError } from "../openai/chatCompletionsApi";
 
 /** One-line error summary for logs and `processing_jobs.error`. */
 export function formatEvalError(e: unknown): string {

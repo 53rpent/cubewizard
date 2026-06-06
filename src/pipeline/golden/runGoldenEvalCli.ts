@@ -22,7 +22,9 @@ export async function runGoldenEvalCli(opts: RunGoldenEvalCliOptions): Promise<v
 
   const apiKey = resolveOpenAiKeyFromEnv();
   if (!apiKey) {
-    throw new GoldenEvalCliError("OPENAI_API_KEY is not set. Copy .dev.vars.example to .dev.vars and add your key.");
+    throw new GoldenEvalCliError(
+      "EVAL_VISION_API_KEY or OPENAI_API_KEY is not set. Copy .dev.vars.example to .dev.vars and add your key.",
+    );
   }
 
   const cases = loadGoldenCases(opts.repoRoot);
