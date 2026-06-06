@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import worker from "./worker.js";
 import { createSession } from "./security/auth.js";
+import worker from "./worker.js";
 
 function createJsonR2Object(value) {
   return {
