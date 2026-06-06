@@ -52,10 +52,14 @@ export function resolveEvalVisionModel(
   return model;
 }
 
+function trimmedNonEmpty(value: string | undefined): string {
+  return String(value ?? "").trim();
+}
+
 export function resolveEvalVisionApiKey(
   env?: Pick<EvalVisionLlmEnv, "EVAL_VISION_API_KEY" | "OPENAI_API_KEY">,
 ): string {
-  const apiKey = String(env?.EVAL_VISION_API_KEY ?? env?.OPENAI_API_KEY ?? "").trim();
+  const apiKey = trimmedNonEmpty(env?.EVAL_VISION_API_KEY) || trimmedNonEmpty(env?.OPENAI_API_KEY);
   if (!apiKey) {
     throw new PermanentEvalError("EVAL_VISION_API_KEY_missing");
   }

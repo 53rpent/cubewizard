@@ -10,6 +10,14 @@
 
 
 
+# --- Site auth (session cookies) ---
+
+# Required in staging/production (`wrangler secret put SESSION_SECRET`).
+
+SESSION_SECRET=
+
+
+
 # --- Vision LLM (eval orient + extract) ---
 
 # Model id sent in Chat Completions `model` (must match the gateway provider route).
@@ -17,8 +25,12 @@
 EVAL_VISION_MODEL=gpt-5-mini-2025-08-07
 
 # Provider API key (Bearer); forwarded by AI Gateway to the upstream provider.
+# Eval consumer wrangler config only loads keys listed in secrets.required — set at least one:
+#   EVAL_VISION_API_KEY (preferred) or OPENAI_API_KEY (legacy alias).
 
 EVAL_VISION_API_KEY=
+
+# OPENAI_API_KEY=
 
 # Provider route: openai | anthropic | google-ai-studio | workers-ai (uses Cloudflare account REST API)
 

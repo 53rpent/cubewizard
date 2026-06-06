@@ -21,6 +21,9 @@
   var activeProcessingJobCount = 0;
   var deckListSnapshot = [];
   var deckListSort = { key: "created", asc: false };
+  var loggedInUser = null;
+  var pendingDeckAction = null;
+  var dismissingProcessingJobIds = {};
 
   function deckPhotoSortValue(d) {
     return d.deck_thumb_url || d.deck_photo_url ? 1 : 0;
@@ -212,9 +215,18 @@
     return d.toLocaleString();
   }
 
+  function clearError() {
+    var banner = $("error");
+    var msgEl = $("error-message");
+    if (msgEl) msgEl.textContent = "";
+    if (banner) banner.style.display = "none";
+  }
+
   function showError(msg) {
-    $("error").textContent = msg;
-    $("error").style.display = "block";
+    var banner = $("error");
+    var msgEl = $("error-message");
+    if (msgEl) msgEl.textContent = msg;
+    if (banner) banner.style.display = "flex";
     $("loading").style.display = "none";
     setDecksMainVisible(false);
   }
@@ -253,12 +265,50 @@
     setHedronSyncUiState();
   }
 
+  function dismissProcessingJob(uploadId) {
+    var id = String(uploadId || "").trim();
+    if (!id || !currentCubeId || dismissingProcessingJobIds[id]) return;
+    dismissingProcessingJobIds[id] = true;
+
+    fetch("/api/processing-job/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ upload_id: id, cube_id: currentCubeId }),
+    })
+      .then(function (r) {
+        return r
+          .json()
+          .catch(function () {
+            return {};
+          })
+          .then(function (data) {
+            return { ok: r.ok, data: data };
+          });
+      })
+      .then(function (res) {
+        delete dismissingProcessingJobIds[id];
+        if (!res.ok) {
+          alert(res.data?.error || "Could not remove failed upload.");
+          return;
+        }
+        refreshProcessingStatus();
+      })
+      .catch(function (err) {
+        delete dismissingProcessingJobIds[id];
+        console.error(err);
+        alert("Network error.");
+      });
+  }
+
   function renderProcessingJobs(jobs) {
     var ul = $("processing-status-list");
     if (!ul) return;
     ul.innerHTML = "";
     for (var i = 0; i < jobs.length; i++) {
       var j = jobs[i] || {};
+      var uploadId = String(j.upload_id || "");
+      var st = String(j.status || "queued");
       var pilot = j.pilot_name ? String(j.pilot_name) : "";
       if (!pilot && j.upload_id) {
         var parts = String(j.upload_id).split("/");
@@ -266,7 +316,6 @@
       }
       if (!pilot) pilot = "Deck";
 
-      var st = String(j.status || "queued");
       var badgeClass = "cw-processing-badge";
       if (st === "processing") badgeClass += " processing";
       if (st === "error") badgeClass += " error";
@@ -288,11 +337,32 @@
         "</div>" +
         meta +
         "</div>" +
+        '<div class="cw-processing-status-actions">' +
         '<span class="' +
         badgeClass +
         '">' +
         escapeHtmlText(label) +
-        "</span>";
+        "</span>" +
+        (st === "error"
+          ? '<button type="button" class="cw-processing-dismiss" aria-label="Remove failed upload"' +
+            (dismissingProcessingJobIds[uploadId] ? " disabled" : "") +
+            ">✕</button>"
+          : "") +
+        "</div>";
+      if (st === "error" && uploadId) {
+        var dismissBtn = li.querySelector(".cw-processing-dismiss");
+        if (dismissBtn) {
+          dismissBtn.addEventListener(
+            "click",
+            (function (jobUploadId) {
+              return function (e) {
+                e.stopPropagation();
+                dismissProcessingJob(jobUploadId);
+              };
+            })(uploadId),
+          );
+        }
+      }
       ul.appendChild(li);
     }
   }
@@ -394,6 +464,9 @@
         arrow +
         "</button></th>";
     }
+    if (loggedInUser) {
+      hr += '<th scope="col" class="deck-table-claim-cell">Claim</th>';
+    }
     hr += "</tr>";
     thead.innerHTML = hr;
 
@@ -437,6 +510,28 @@
         fmtDate(d.created) +
         "</td>";
 
+      if (loggedInUser) {
+        var claimTd = document.createElement("td");
+        claimTd.className = "deck-table-claim-cell";
+        if (d.can_claim) {
+          var claimBtn = document.createElement("button");
+          claimBtn.type = "button";
+          claimBtn.className = "btn-table-claim";
+          claimBtn.textContent = "Claim";
+          claimBtn.addEventListener(
+            "click",
+            (function (deckId) {
+              return function (e) {
+                e.stopPropagation();
+                openDeckConfirm("claim", deckId);
+              };
+            })(d.deck_id),
+          );
+          claimTd.appendChild(claimBtn);
+        }
+        tr.appendChild(claimTd);
+      }
+
       tr.addEventListener("click", function () {
         openDeck(this.dataset.deckId);
       });
@@ -445,7 +540,7 @@
   }
 
   function loadDecks() {
-    $("error").style.display = "none";
+    clearError();
     setDecksMainVisible(false);
     setLoading(true);
 
@@ -459,7 +554,7 @@
 
     startProcessingStatusPoll();
 
-    fetch("/api/decks/" + encodeURIComponent(currentCubeId))
+    fetch("/api/decks/" + encodeURIComponent(currentCubeId), { credentials: "include" })
       .then(function (r) {
         return r.json();
       })
@@ -471,8 +566,7 @@
         }
         var decks = data.decks || [];
         if (decks.length === 0) {
-          $("error").textContent = "No decks found for this cube yet.";
-          $("error").style.display = "block";
+          showError("No decks found for this cube yet.");
           setDecksMainVisible(false);
           return;
         }
@@ -489,15 +583,54 @@
       });
   }
 
-  var deckEditContext = { deckId: null, names: [] };
+  var deckEditContext = { deckId: null, names: [], permissions: null, photoUrl: "" };
+
+  function updateModalActionButtons() {
+    var perms = deckEditContext.permissions || {};
+    var claimBtn = $("modal-claim-deck-btn");
+    var editBtn = $("modal-edit-cards-btn");
+    var deleteBtn = $("modal-delete-deck-btn");
+    var reprocessBtn = $("modal-reprocess-deck-btn");
+    if (claimBtn) {
+      claimBtn.style.display = perms.can_claim ? "inline-block" : "none";
+    }
+    if (deleteBtn) {
+      deleteBtn.style.display = perms.can_delete && deckEditContext.deckId ? "inline-block" : "none";
+    }
+    if (reprocessBtn) {
+      reprocessBtn.style.display = perms.can_reprocess && deckEditContext.deckId ? "inline-block" : "none";
+    }
+    if (editBtn && $("deck-edit-panel").style.display !== "block") {
+      editBtn.style.display = perms.can_edit && deckEditContext.deckId ? "inline-block" : "none";
+    }
+  }
+
+  function updateDeckEditPhoto() {
+    var wrap = $("deck-edit-photo-wrap");
+    var img = $("deck-edit-photo");
+    if (!wrap || !img) return;
+    var url = deckEditContext.photoUrl || "";
+    if (url) {
+      img.src = url;
+      img.alt = "Deck photo";
+      wrap.style.display = "block";
+    } else {
+      wrap.style.display = "none";
+      img.removeAttribute("src");
+    }
+  }
 
   function setDeckViewMode(editing) {
     $("deck-dynamic-root").style.display = editing ? "none" : "block";
     $("deck-edit-panel").style.display = editing ? "block" : "none";
+    if (editing) updateDeckEditPhoto();
     if (editing) {
       $("modal-edit-cards-btn").style.display = "none";
+      if ($("modal-claim-deck-btn")) $("modal-claim-deck-btn").style.display = "none";
+      if ($("modal-delete-deck-btn")) $("modal-delete-deck-btn").style.display = "none";
+      if ($("modal-reprocess-deck-btn")) $("modal-reprocess-deck-btn").style.display = "none";
     } else {
-      $("modal-edit-cards-btn").style.display = deckEditContext.deckId ? "inline-block" : "none";
+      updateModalActionButtons();
     }
     $("deck-edit-message").textContent = "";
     $("deck-edit-message").className = "deck-edit-message";
@@ -526,6 +659,7 @@
     $("deck-edit-message").className = "deck-edit-message";
     fetch("/api/deck/" + encodeURIComponent(deckEditContext.deckId) + "/cards", {
       method: "PUT",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ names: names }),
     })
@@ -572,9 +706,171 @@
     document.body.style.overflow = "hidden";
   }
 
+  function deckRowById(deckId) {
+    var id = String(deckId || "");
+    for (var i = 0; i < deckListSnapshot.length; i++) {
+      if (String(deckListSnapshot[i].deck_id) === id) return deckListSnapshot[i];
+    }
+    return null;
+  }
+
+  function pilotLabelForDeck(deckId) {
+    var row = deckRowById(deckId);
+    if (row?.pilot_name) return String(row.pilot_name);
+    if (deckEditContext.deckId && String(deckEditContext.deckId) === String(deckId)) {
+      var title = $("modal-title")?.textContent || "";
+      var dash = title.indexOf(" \u2014 ");
+      if (dash > 0) return title.slice(0, dash);
+    }
+    return "";
+  }
+
+  function openDeckConfirm(action, deckId) {
+    if (!deckId) return;
+    if (action === "claim" && !loggedInUser) return;
+    pendingDeckAction = { action: action, deckId: String(deckId) };
+    var pilot = pilotLabelForDeck(deckId);
+    var pilotPhrase = pilot ? ' for "' + pilot + '"' : "";
+    var title = $("deck-confirm-title");
+    var body = $("deck-confirm-body");
+    var okBtn = $("deck-confirm-ok");
+    if (title && body && okBtn) {
+      okBtn.className = "btn-primary";
+      if (action === "claim") {
+        title.textContent = "Claim this deck?";
+        okBtn.textContent = "Claim";
+        if (pilot) {
+          body.textContent =
+            "Claim the deck uploaded as " +
+            pilot +
+            "? It will be linked to your account (" +
+            loggedInUser.username +
+            ") and only you will be able to edit its card list.";
+        } else {
+          body.textContent =
+            "This deck will be linked to your account (" +
+            loggedInUser.username +
+            "). You will be able to edit its card list; others will not.";
+        }
+      } else if (action === "delete") {
+        title.textContent = "Delete this deck?";
+        okBtn.textContent = "Delete";
+        okBtn.className = "btn-confirm-danger";
+        body.textContent =
+          "Permanently delete this deck" +
+          pilotPhrase +
+          " from the database? All card data will be removed. This cannot be undone.";
+      } else if (action === "reprocess") {
+        title.textContent = "Re-process this deck?";
+        okBtn.textContent = "Re-process";
+        body.textContent =
+          "Re-run vision extraction on the saved deck photo" +
+          pilotPhrase +
+          "? The current card list will be removed and replaced when processing completes.";
+      }
+    }
+    var overlay = $("deck-confirm-overlay");
+    if (overlay) {
+      overlay.classList.add("is-open");
+      overlay.setAttribute("aria-hidden", "false");
+    }
+    if (okBtn) okBtn.focus();
+  }
+
+  function closeDeckConfirm() {
+    pendingDeckAction = null;
+    var overlay = $("deck-confirm-overlay");
+    if (overlay) {
+      overlay.classList.remove("is-open");
+      overlay.setAttribute("aria-hidden", "true");
+    }
+    var okBtn = $("deck-confirm-ok");
+    if (okBtn) okBtn.className = "btn-primary";
+  }
+
+  function executeDeckAction(action, deckId) {
+    if (!deckId || !action) return;
+    var confirmBtn = $("deck-confirm-ok");
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    var url = "/api/deck/" + encodeURIComponent(deckId);
+    var opts = { method: "POST", credentials: "include" };
+    if (action === "claim") {
+      url += "/claim";
+    } else if (action === "delete") {
+      opts.method = "DELETE";
+    } else if (action === "reprocess") {
+      url += "/reprocess";
+    }
+
+    fetch(url, opts)
+      .then(function (r) {
+        return r
+          .json()
+          .catch(function () {
+            return {};
+          })
+          .then(function (data) {
+            return { ok: r.ok, data: data };
+          });
+      })
+      .then(function (res) {
+        if (confirmBtn) confirmBtn.disabled = false;
+        closeDeckConfirm();
+        if (!res.ok) {
+          var err =
+            res.data?.error ||
+            (action === "delete"
+              ? "Could not delete deck."
+              : action === "reprocess"
+                ? "Could not re-process deck."
+                : "Could not claim deck.");
+          alert(err);
+          return;
+        }
+        if (action === "delete") {
+          closeModal();
+          loadDecks();
+          return;
+        }
+        if (action === "reprocess") {
+          closeModal();
+          loadDecks();
+          refreshProcessingStatus();
+          return;
+        }
+        if (deckEditContext.deckId && String(deckEditContext.deckId) === String(deckId)) {
+          openDeck(deckId);
+        }
+        loadDecks();
+      })
+      .catch(function (err) {
+        if (confirmBtn) confirmBtn.disabled = false;
+        console.error(err);
+        alert("Network error.");
+      });
+  }
+
+  function requestClaimDeck() {
+    if (!deckEditContext.deckId) return;
+    openDeckConfirm("claim", deckEditContext.deckId);
+  }
+
+  function requestDeleteDeck() {
+    if (!deckEditContext.deckId) return;
+    openDeckConfirm("delete", deckEditContext.deckId);
+  }
+
+  function requestReprocessDeck() {
+    if (!deckEditContext.deckId) return;
+    openDeckConfirm("reprocess", deckEditContext.deckId);
+  }
+
   function closeModal() {
     deckEditContext.deckId = null;
     deckEditContext.names = [];
+    deckEditContext.permissions = null;
+    deckEditContext.photoUrl = "";
     setDeckViewMode(false);
     var overlay = $("modal-overlay");
     overlay.style.display = "none";
@@ -680,9 +976,12 @@
     $("deck-dynamic-root").style.display = "block";
     $("deck-dynamic-root").innerHTML = '<div class="loading">Loading deck...</div>';
     $("modal-edit-cards-btn").style.display = "none";
+    if ($("modal-claim-deck-btn")) $("modal-claim-deck-btn").style.display = "none";
+    if ($("modal-delete-deck-btn")) $("modal-delete-deck-btn").style.display = "none";
+    if ($("modal-reprocess-deck-btn")) $("modal-reprocess-deck-btn").style.display = "none";
     openModal();
 
-    fetch("/api/deck/" + encodeURIComponent(deckId))
+    fetch("/api/deck/" + encodeURIComponent(deckId), { credentials: "include" })
       .then(function (r) {
         return r.json();
       })
@@ -696,6 +995,7 @@
         var cards = data.cards || [];
 
         deckEditContext.deckId = deckId;
+        deckEditContext.permissions = data.permissions || { can_edit: true, can_claim: false };
         var ordered = data.card_names_ordered;
         if (!ordered?.length && cards.length) {
           ordered = cards.map(function (c) {
@@ -703,6 +1003,7 @@
           });
         }
         deckEditContext.names = ordered || [];
+        deckEditContext.photoUrl = deck.deck_photo_url || "";
 
         var title =
           (deck.pilot_name ? deck.pilot_name + " \u2014 " : "") +
@@ -728,7 +1029,7 @@
         $("deck-dynamic-root").innerHTML =
           photoBlock + '<div id="deck-curve-container">' + renderManaCurve(cards) + "</div>";
         fitCurveText();
-        $("modal-edit-cards-btn").style.display = "inline-block";
+        updateModalActionButtons();
 
         if (deckStats?.processing_notes) {
           try {
@@ -778,13 +1079,40 @@
       if (e.target === this) closeModal();
     });
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") closeModal();
+      if (e.key !== "Escape") return;
+      if ($("deck-confirm-overlay")?.classList.contains("is-open")) {
+        closeDeckConfirm();
+        return;
+      }
+      closeModal();
     });
 
     $("modal-edit-cards-btn").addEventListener("click", function () {
       $("deck-edit-textarea").value = (deckEditContext.names || []).join("\n");
       setDeckViewMode(true);
     });
+    if ($("modal-claim-deck-btn")) {
+      $("modal-claim-deck-btn").addEventListener("click", requestClaimDeck);
+    }
+    if ($("modal-delete-deck-btn")) {
+      $("modal-delete-deck-btn").addEventListener("click", requestDeleteDeck);
+    }
+    if ($("modal-reprocess-deck-btn")) {
+      $("modal-reprocess-deck-btn").addEventListener("click", requestReprocessDeck);
+    }
+    if ($("deck-confirm-cancel")) {
+      $("deck-confirm-cancel").addEventListener("click", closeDeckConfirm);
+    }
+    if ($("deck-confirm-ok")) {
+      $("deck-confirm-ok").addEventListener("click", function () {
+        if (pendingDeckAction) executeDeckAction(pendingDeckAction.action, pendingDeckAction.deckId);
+      });
+    }
+    if ($("deck-confirm-overlay")) {
+      $("deck-confirm-overlay").addEventListener("click", function (e) {
+        if (e.target === this) closeDeckConfirm();
+      });
+    }
     $("deck-edit-cancel").addEventListener("click", function () {
       setDeckViewMode(false);
     });
@@ -851,8 +1179,7 @@
           } catch (_e5) {}
           if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
           closeModal();
-          $("error").style.display = "none";
-          $("error").textContent = "";
+          clearError();
           $("decks-subtitle").textContent = subtitleForCube(v, cubes);
           loadDecks();
         });
@@ -897,17 +1224,27 @@
     currentCubeId = id;
     if (window.cubeWizardRefreshNavLinks) window.cubeWizardRefreshNavLinks();
     closeModal();
-    var errEl = document.getElementById("error");
-    if (errEl) {
-      errEl.style.display = "none";
-      errEl.textContent = "";
-    }
+    clearError();
     loadDecks();
   }
 
+  function onAuthReady(user) {
+    loggedInUser = user || null;
+    if (currentCubeId) loadDecks();
+  }
+
+  function bindErrorUi() {
+    var btn = $("error-dismiss");
+    if (btn) btn.addEventListener("click", clearError);
+  }
+
   function init() {
+    bindErrorUi();
     bindModalUi();
     ensureDeckTableSortDelegation();
+    if (window.CWAuth && typeof CWAuth.onReady === "function") {
+      CWAuth.onReady(onAuthReady);
+    }
     try {
       var btn = $("hedron-sync-btn");
       if (btn) btn.addEventListener("click", triggerHedronSync);

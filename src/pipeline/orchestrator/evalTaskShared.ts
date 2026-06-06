@@ -21,6 +21,7 @@ export interface StagingMetadata {
   original_filename?: string;
   expected_deck_size?: number;
   expected_count?: number;
+  owner_user_id?: number;
 }
 
 export interface EvalPipelineConfig {

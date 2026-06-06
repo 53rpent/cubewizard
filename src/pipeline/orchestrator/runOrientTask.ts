@@ -151,7 +151,13 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     oriented_h: orientedRgba.height,
   });
 
-  const imageId = await computeImageId(cubeId, deckMeta.pilot, deckMeta.processingTs);
+  const imageSource =
+    typeof metadata.image_source === "string"
+      ? metadata.image_source
+      : typeof task.image_source === "string"
+        ? task.image_source
+        : undefined;
+  const imageId = await computeImageId(cubeId, deckMeta.pilot, deckMeta.processingTs, { imageSource });
   const orientedBytes = encodeJpeg(orientedRgba, cfg.jpegQ);
   const uploaded = await uploadOrientedJpeg({
     blob: env.DECK_IMAGES_BLOB,
@@ -169,7 +175,7 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     processing_timestamp: deckMeta.processingTs,
     pilot_name: deckMeta.pilot,
     record_logged: deckMeta.recordLogged,
-    image_source: task.image_url || metadata.image_key || "",
+    image_source: imageSource ?? "",
     staging_image_r2_key: metadata.image_key,
     match_wins: deckMeta.wins,
     match_losses: deckMeta.losses,
@@ -177,6 +183,13 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     win_rate: deckMeta.winRate,
     expected_deck_size: deckMeta.expectedDeckSize,
   };
+  if (
+    typeof metadata.owner_user_id === "number" &&
+    Number.isFinite(metadata.owner_user_id) &&
+    metadata.owner_user_id > 0
+  ) {
+    extractBody.owner_user_id = Math.floor(metadata.owner_user_id);
+  }
 
   await enqueueExtractTask(env, extractBody);
 }

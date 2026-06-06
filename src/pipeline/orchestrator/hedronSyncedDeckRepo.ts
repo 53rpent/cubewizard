@@ -31,6 +31,36 @@ export async function releaseHedronSyncedDeck(db: D1DatabaseLike, deckImageUuid:
   return result?.meta?.changes ?? 0;
 }
 
+/** Default R2 prefix for a Hedron deck image UUID (matches site worker `hedronR2Prefix`). */
+export function hedronSyncedDeckR2Prefix(deckImageUuid: string): string {
+  return "hedron/" + String(deckImageUuid || "").replace(/[^a-zA-Z0-9_\-:.]/g, "_");
+}
+
+/**
+ * Keep a Hedron deck in `hedron_synced_decks` after claim (or repair a missing row).
+ * No-op for non-Hedron `upload_id` values.
+ */
+export async function ensureHedronSyncedDeck(
+  db: D1DatabaseLike,
+  cubeId: string,
+  uploadId: string,
+  opts?: { draftId?: string; playerId?: string; r2Prefix?: string },
+): Promise<void> {
+  const uuid = deckImageUuidFromHedronUploadId(uploadId);
+  if (!uuid) return;
+  const cube = String(cubeId || "").trim();
+  if (!cube) return;
+  const r2Prefix = opts?.r2Prefix?.trim() || hedronSyncedDeckR2Prefix(uuid);
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO hedron_synced_decks " +
+        "(deck_image_uuid, cube_id, draft_id, player_id, r2_prefix, synced_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(uuid, cube, opts?.draftId ?? "", opts?.playerId ?? "", r2Prefix, new Date().toISOString())
+    .run();
+}
+
 export async function safeReleaseHedronSyncedDeckForUpload(db: D1DatabaseLike, uploadId: string): Promise<void> {
   const deckUuid = deckImageUuidFromHedronUploadId(uploadId);
   if (!deckUuid) return;

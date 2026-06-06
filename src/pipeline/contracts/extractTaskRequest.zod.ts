@@ -19,6 +19,7 @@ export const ExtractTaskRequestSchema = z.object({
   match_draws: z.number().int().optional(),
   win_rate: z.number().optional(),
   expected_deck_size: z.number().int().positive().optional(),
+  owner_user_id: z.number().int().positive().optional(),
 });
 
 export type ExtractTaskRequest = z.infer<typeof ExtractTaskRequestSchema>;

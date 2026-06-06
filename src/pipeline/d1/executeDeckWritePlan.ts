@@ -23,6 +23,22 @@ export async function executeDeckWritePlan(
   deck: DeckPayload,
 ): Promise<{ success: boolean; duplicate: boolean; deckId?: number; imageId: string }> {
   const plan = await buildDeckWritePlan(cubeId, deck);
+  const processingTs = deck.deck.metadata.processing_timestamp;
+  const existingBound = db.prepare(
+    "SELECT deck_id, image_id FROM decks WHERE cube_id = ? AND processing_timestamp = ? LIMIT 1",
+  ) as {
+    bind(...args: unknown[]): { first<T = unknown>(): Promise<T | null> };
+  };
+  const existing = await existingBound.bind(cubeId, processingTs).first<{ deck_id?: number; image_id?: string }>();
+  if (existing?.deck_id != null) {
+    return {
+      success: true,
+      duplicate: true,
+      deckId: existing.deck_id,
+      imageId: typeof existing.image_id === "string" ? existing.image_id : plan.imageId,
+    };
+  }
+
   const batchAResults = await db.batch(plan.batchA.map((s) => bindStatement(db, s)));
   if (deckInsertWasDuplicate(batchAResults)) {
     return { success: true, duplicate: true, imageId: plan.imageId };

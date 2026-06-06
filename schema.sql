@@ -1,6 +1,25 @@
 -- CubeWizard D1 Schema
 -- Mirrors local SQLite schema from database_manager.py
 
+-- Users — optional accounts (username + password login)
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
+
 -- Cubes table - stores cube metadata
 CREATE TABLE IF NOT EXISTS cubes (
     cube_id TEXT PRIMARY KEY,
@@ -29,8 +48,10 @@ CREATE TABLE IF NOT EXISTS decks (
     image_id TEXT UNIQUE,
     processing_timestamp TEXT NOT NULL,
     total_cards INTEGER NOT NULL,
+    owner_user_id INTEGER,
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (cube_id) REFERENCES cubes (cube_id)
+    FOREIGN KEY (cube_id) REFERENCES cubes (cube_id),
+    FOREIGN KEY (owner_user_id) REFERENCES users (user_id)
 );
 
 -- Cards table - stores individual card data for each deck
@@ -128,6 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_processing_jobs_submitted ON processing_jobs (cub
 CREATE INDEX IF NOT EXISTS idx_decks_cube_id ON decks(cube_id);
 CREATE INDEX IF NOT EXISTS idx_decks_pilot_name ON decks(pilot_name);
 CREATE INDEX IF NOT EXISTS idx_decks_processing_timestamp ON decks(processing_timestamp);
+CREATE INDEX IF NOT EXISTS idx_decks_owner_user_id ON decks(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_name ON deck_cards(name);
 CREATE INDEX IF NOT EXISTS idx_hedron_synced_decks_cube_id ON hedron_synced_decks(cube_id);
