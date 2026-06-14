@@ -4,7 +4,8 @@
 
 var SESSION_COOKIE_NAME = "cw_session";
 var SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-var PBKDF2_ITERATIONS = 210_000;
+/** Workers Web Crypto caps PBKDF2 at 100_000 iterations (OWASP suggests 210k for SHA-256 elsewhere). */
+var PBKDF2_ITERATIONS = 100_000;
 var USERNAME_RE = /^[a-zA-Z0-9_-]{3,32}$/;
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
