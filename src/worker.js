@@ -283,7 +283,30 @@ async function deleteStagingUpload(env, uploadId, r2Prefix) {
   await tryDeleteR2Object(env.BUCKET, metaKey);
 }
 
+async function readStagingUploadOwnerUserId(env, uploadId, r2Prefix) {
+  var prefix = String(r2Prefix || uploadId || "").trim();
+  if (!prefix) return null;
+  if (!prefix.endsWith("/")) prefix += "/";
+
+  try {
+    var metaObj = await env.BUCKET.get(prefix + "metadata.json");
+    if (!metaObj) return null;
+    var metadata = JSON.parse(new TextDecoder().decode(await metaObj.arrayBuffer()));
+    if (metadata.owner_user_id == null || metadata.owner_user_id === "") return null;
+    var owner = Number(metadata.owner_user_id);
+    return Number.isFinite(owner) ? owner : null;
+  } catch (metaErr) {
+    console.error("staging metadata owner parse failed on dismiss:", metaErr);
+    return null;
+  }
+}
+
 async function handleDismissProcessingJob(request, env) {
+  var sessionUser = await getSessionUser(request, env);
+  if (!sessionUser) {
+    return jsonResponse({ error: "Login required." }, 401);
+  }
+
   var body;
   try {
     body = await request.json();
@@ -313,12 +336,25 @@ async function handleDismissProcessingJob(request, env) {
 
   var deckRows = await env.cubewizard_db
     .prepare(
-      "SELECT deck_id, oriented_image_r2_key, oriented_thumb_r2_key FROM decks" +
+      "SELECT deck_id, owner_user_id, oriented_image_r2_key, oriented_thumb_r2_key FROM decks" +
         " WHERE cube_id = ? AND processing_timestamp = ?",
     )
     .bind(cubeId, uploadId)
     .all();
   var decks = deckRows.results || [];
+  if (decks.length) {
+    for (var pi = 0; pi < decks.length; pi++) {
+      if (!deckCanManage(decks[pi]?.owner_user_id, sessionUser)) {
+        return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
+      }
+    }
+  } else {
+    var ownerUserId = await readStagingUploadOwnerUserId(env, uploadId, job.r2_prefix);
+    if (ownerUserId == null || Number(sessionUser.user_id) !== ownerUserId) {
+      return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
+    }
+  }
+
   for (var di = 0; di < decks.length; di++) {
     var deck = decks[di] || {};
     await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_image_r2_key);
@@ -1894,7 +1930,11 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     );
   }
 
-  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
+  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
+  if (!enqueueResult.ok) {
+    console.error("Reprocess enqueue failed:", enqueueResult);
+    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
+  }
 
   var jobTask = {
     upload_id: uploadId,
@@ -1910,11 +1950,7 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     console.error("processing_jobs upsert failed on reprocess:", jobErr);
   }
 
-  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
-  if (!enqueueResult.ok && !enqueueResult.skipped) {
-    console.error("Reprocess enqueue failed:", enqueueResult);
-    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
-  }
+  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
 
   try {
     await invalidateDashboardCache(new URL(request.url).origin, cubeId);
