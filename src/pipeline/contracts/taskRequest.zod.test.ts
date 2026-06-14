@@ -22,6 +22,22 @@ describe("TaskRequestSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts internal reprocess replacement metadata", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "reprocess:u1:abc",
+      schema_version: 1,
+      r2_bucket: "decklist-uploads",
+      r2_prefix: "u1/",
+      replaces_deck_id: 42,
+      replaces_upload_id: "u1",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.replaces_deck_id).toBe(42);
+      expect(r.data.replaces_upload_id).toBe("u1");
+    }
+  });
+
   it("rejects when neither R2 nor URL is set", () => {
     const r = TaskRequestSchema.safeParse({
       upload_id: "u1",

@@ -20,6 +20,8 @@ export const ExtractTaskRequestSchema = z.object({
   win_rate: z.number().optional(),
   expected_deck_size: z.number().int().positive().optional(),
   owner_user_id: z.number().int().positive().optional(),
+  replaces_deck_id: z.number().int().positive().optional(),
+  replaces_upload_id: z.string().min(1).optional(),
 });
 
 export type ExtractTaskRequest = z.infer<typeof ExtractTaskRequestSchema>;

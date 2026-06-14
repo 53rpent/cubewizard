@@ -40,7 +40,17 @@
     "image_source": { "type": "string" },
     "match_wins": { "type": "integer" },
     "match_losses": { "type": "integer" },
-    "match_draws": { "type": "integer" }
+    "match_draws": { "type": "integer" },
+    "replaces_deck_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Internal reprocess replacement target. The eval consumer deletes this deck only after the replacement write succeeds."
+    },
+    "replaces_upload_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Original upload_id being replaced by an internal reprocess job."
+    }
   },
   "additionalProperties": false,
   "anyOf": [

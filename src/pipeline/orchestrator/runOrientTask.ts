@@ -190,6 +190,12 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
   ) {
     extractBody.owner_user_id = Math.floor(metadata.owner_user_id);
   }
+  if (task.replaces_deck_id != null) {
+    extractBody.replaces_deck_id = task.replaces_deck_id;
+  }
+  if (task.replaces_upload_id != null) {
+    extractBody.replaces_upload_id = task.replaces_upload_id;
+  }
 
   await enqueueExtractTask(env, extractBody);
 }

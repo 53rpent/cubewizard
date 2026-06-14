@@ -19,6 +19,19 @@ describe("ExtractTaskRequestSchema", () => {
     if (r.success) expect(r.data.owner_user_id).toBe(7);
   });
 
+  it("accepts optional reprocess replacement metadata", () => {
+    const r = ExtractTaskRequestSchema.safeParse({
+      ...base,
+      replaces_deck_id: 42,
+      replaces_upload_id: "u1",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.replaces_deck_id).toBe(42);
+      expect(r.data.replaces_upload_id).toBe("u1");
+    }
+  });
+
   it("accepts body without owner_user_id", () => {
     expect(ExtractTaskRequestSchema.safeParse(base).success).toBe(true);
   });

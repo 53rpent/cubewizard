@@ -18,6 +18,8 @@ export const TaskRequestSchema = z
     match_wins: z.number().int().optional(),
     match_losses: z.number().int().optional(),
     match_draws: z.number().int().optional(),
+    replaces_deck_id: z.number().int().positive().optional(),
+    replaces_upload_id: z.string().min(1).optional(),
   })
   .superRefine((val, ctx) => {
     const hasR2 = Boolean(val.r2_bucket && val.r2_prefix);
