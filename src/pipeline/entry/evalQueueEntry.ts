@@ -1,8 +1,14 @@
 import { resetEvalUsageReporterGlobal } from "../evalUsage/evalUsageReport";
-import { ModelOutputInvalidError } from "../openai/responsesApi";
+import { ModelOutputInvalidError } from "../openai/chatCompletionsApi";
 
 import { parseEvalMaxConsumers } from "../orchestrator/evalConsumerScale";
-import { isEvalDlqQueue, isEvalRetriesExhausted, parseEvalMaxRetries } from "../orchestrator/evalQueueRetries";
+import {
+  computeEvalQueueRetryDelaySeconds,
+  isEvalDlqQueue,
+  isEvalRetriesExhausted,
+  isOpenAi429Error,
+  parseEvalMaxRetries,
+} from "../orchestrator/evalQueueRetries";
 import { shouldRunExtractPhase } from "../orchestrator/evalQueueRouting";
 import {
   buildDlqError,
@@ -200,7 +206,7 @@ async function processEvalQueueMessage(
           return;
         }
 
-        const delay = Math.min(300, 30 * Math.max(1, message.attempts || 1));
+        const delay = computeEvalQueueRetryDelaySeconds(message.attempts, e);
 
         try {
           message.retry({ delaySeconds: delay });
@@ -211,6 +217,8 @@ async function processEvalQueueMessage(
             upload_id: uploadId,
 
             delay_seconds: delay,
+
+            openai_429: isOpenAi429Error(e),
 
             error: err.message,
 

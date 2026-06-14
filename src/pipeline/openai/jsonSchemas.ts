@@ -1,4 +1,4 @@
-/** JSON Schemas for OpenAI Responses API `text.format` (subset of draft-2020-12). */
+/** JSON Schemas for Chat Completions `response_format.json_schema` (subset of draft-2020-12). */
 
 export const orientationJsonSchema = {
   type: "object",

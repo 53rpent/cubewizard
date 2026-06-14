@@ -65,7 +65,7 @@ npm run wrangler:check
 
 ## Global conventions
 
-- **Biome:** 2 spaces, line width 120, double quotes, semicolons, trailing commas. `npm run lint` on `src/**` and `docs/**/*.js`.
+- **Biome:** 2 spaces, line width 120, double quotes, semicolons, trailing commas, **LF line endings** (`biome.json` `lineEnding: "lf"`). `npm run lint` on `src/**` and `docs/**/*.js`. Do not introduce CRLF.
 - **New deck-processing logic:** TypeScript under `src/pipeline/`. Site/Hedron stay JS unless asked to migrate.
 - **Wrangler dev:** one queue consumer at a time locally (no parallel eval isolates).
 - **Dependencies:** justify additions (Worker bundle size / `nodejs_compat` on eval consumer only).

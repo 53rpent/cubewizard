@@ -35,7 +35,7 @@ export interface EvalUsageReporter {
   finish(durationMs: number): EvalRunReport;
 }
 
-/** Token usage from an OpenAI Responses API JSON body. */
+/** Token usage from an OpenAI Chat Completions (or compatible) JSON body. */
 export function extractOpenAiUsageFromResponse(json: unknown): EvalOpenAiUsageTotals {
   return extractUsage(json);
 }

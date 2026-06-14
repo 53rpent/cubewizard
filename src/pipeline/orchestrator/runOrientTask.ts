@@ -1,4 +1,3 @@
-import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
 import type { ExtractTaskRequest } from "../contracts/extractTaskRequest.zod";
 import { TaskRequestSchema } from "../contracts/taskRequest.zod";
 import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
@@ -55,8 +54,6 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     throw new PermanentEvalError("cube_id_required");
   }
 
-  const apiKey = resolveOpenAiApiKey(env);
-  const model = String(env.OPENAI_VISION_MODEL || "gpt-5-mini-2025-08-07").trim();
   const cfg = resolveEvalPipelineConfig(env);
   const localVision = isLocalEvalEnv(env);
   if (!localVision) assertVisionPublishConfigured(env);
@@ -111,8 +108,8 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
   });
 
   const { frame: orientedRgba } = await orientDeckImageRgba(imageBytes, undefined, {
-    apiKey,
-    model,
+    apiKey: cfg.visionApiKey,
+    model: cfg.visionModel,
     reasoningEffort: cfg.orientReasoning,
     promptCacheKey: `cube:${cubeId}`,
     jpegQuality: cfg.jpegQ,
@@ -121,12 +118,16 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     vision,
     fetchImpl,
     openAiLogLevel: cfg.openAiLogLevel,
+    baseUrl: cfg.visionBaseUrl,
+    gatewayToken: cfg.openAiGatewayToken,
+    aiGatewayId: cfg.aiGatewayId,
+    requestTimeoutMs: cfg.openAiRequestTimeoutMs,
     onStagingBytesDecoded: () => {
       imageBytes = undefined;
     },
     orientLightExtract: {
-      apiKey,
-      model,
+      apiKey: cfg.visionApiKey,
+      model: cfg.visionModel,
       cubeCardList: cubeList,
       expectedDeckSize: deckMeta.expectedDeckSize,
       maxImageSide: cfg.maxImageSide,
@@ -136,6 +137,10 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
       vision,
       fetchImpl,
       openAiLogLevel: cfg.openAiLogLevel,
+      baseUrl: cfg.visionBaseUrl,
+      gatewayToken: cfg.openAiGatewayToken,
+      aiGatewayId: cfg.aiGatewayId,
+      requestTimeoutMs: cfg.openAiRequestTimeoutMs,
     },
   });
 
@@ -146,7 +151,13 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     oriented_h: orientedRgba.height,
   });
 
-  const imageId = await computeImageId(cubeId, deckMeta.pilot, deckMeta.processingTs);
+  const imageSource =
+    typeof metadata.image_source === "string"
+      ? metadata.image_source
+      : typeof task.image_source === "string"
+        ? task.image_source
+        : undefined;
+  const imageId = await computeImageId(cubeId, deckMeta.pilot, deckMeta.processingTs, { imageSource });
   const orientedBytes = encodeJpeg(orientedRgba, cfg.jpegQ);
   const uploaded = await uploadOrientedJpeg({
     blob: env.DECK_IMAGES_BLOB,
@@ -164,7 +175,7 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     processing_timestamp: deckMeta.processingTs,
     pilot_name: deckMeta.pilot,
     record_logged: deckMeta.recordLogged,
-    image_source: task.image_url || metadata.image_key || "",
+    image_source: imageSource ?? "",
     staging_image_r2_key: metadata.image_key,
     match_wins: deckMeta.wins,
     match_losses: deckMeta.losses,
@@ -172,6 +183,13 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     win_rate: deckMeta.winRate,
     expected_deck_size: deckMeta.expectedDeckSize,
   };
+  if (
+    typeof metadata.owner_user_id === "number" &&
+    Number.isFinite(metadata.owner_user_id) &&
+    metadata.owner_user_id > 0
+  ) {
+    extractBody.owner_user_id = Math.floor(metadata.owner_user_id);
+  }
 
   await enqueueExtractTask(env, extractBody);
 }

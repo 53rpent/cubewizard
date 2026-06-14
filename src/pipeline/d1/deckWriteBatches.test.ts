@@ -53,7 +53,14 @@ describe("buildDeckWritePlan", () => {
     expect(plan.batchA[1]?.sql).toContain("INSERT OR IGNORE INTO decks");
     expect(plan.batchA[1]?.params?.[8]).toBe(plan.imageId);
     expect(plan.lookup.sql).toContain("SELECT deck_id FROM decks");
-    expect(plan.lookup.params).toEqual([cubeId, "ts1", "P"]);
+    expect(plan.lookup.params).toEqual([cubeId, "ts1"]);
+  });
+
+  it("includes owner_user_id in deck insert when set", async () => {
+    const deck = minimalDeck();
+    deck.deck.metadata.owner_user_id = 42;
+    const plan = await buildDeckWritePlan("c1", deck);
+    expect(plan.batchA[1]?.params?.[11]).toBe(42);
   });
 
   it("buildBatchB includes deck_stats, one deck_card, and cube counter update", async () => {

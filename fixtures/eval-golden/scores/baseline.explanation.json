@@ -7,12 +7,12 @@
       "run_id": "UTC timestamp id for a single golden:eval run (omitted when saved as baseline).",
       "recorded_at": "ISO-8601 time the run was written.",
       "label": "Run label from GOLDEN_EVAL_LABEL or default (e.g. baseline, latest).",
-      "model": "OPENAI_VISION_MODEL used for orient + extract.",
+      "model": "EVAL_VISION_MODEL (or OPENAI_VISION_MODEL) used for orient + extract.",
       "runner": "Always eval_consumer — full eval queue handler, not a direct API shortcut.",
       "config": "Snapshot of harness env (multi-pass, reasoning, image resize, etc.)."
     },
     "pricing": {
-      "usd_per_1m_input": "Standard-tier input token rate from fixtures/eval-golden/data/openai-standard-pricing.csv.",
+      "usd_per_1m_input": "Input token rate from fixtures/eval-golden/data/model-pricing.csv (Cloudflare AI Gateway compat/v1/models).",
       "usd_per_1m_cached_input": "Cached-input rate when published; otherwise same as input.",
       "usd_per_1m_output": "Standard-tier output token rate from CSV.",
       "source": "pricing_csv or env_override (GOLDEN_EVAL_USD_PER_1M_*).",
@@ -34,7 +34,7 @@
       "matches": "Aligned pairs: predicted, expected, similarity (0–1)."
     },
     "per_case_run": {
-      "openai_calls": "Total Responses API calls (orient + extract passes).",
+      "openai_calls": "Total Chat Completions API calls (orient + extract passes).",
       "orientation_calls": "Subset of calls tagged as orientation.",
       "extraction_calls": "Subset tagged as extraction.",
       "usage": "Token totals from eval_report for this case.",

@@ -1,5 +1,4 @@
 import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
-import { resolveOpenAiApiKey } from "../config/resolveOpenAiApiKey";
 import { ExtractTaskRequestSchema } from "../contracts/extractTaskRequest.zod";
 import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
 import { executeDeckWritePlan } from "../d1/executeDeckWritePlan";
@@ -9,8 +8,8 @@ import { createEvalUsageReporter, logEvalUsageReport, runWithEvalUsageReporter }
 import { decodeToRgba } from "../images/decode";
 import type { RgbaFrame } from "../images/types";
 import { assertVisionPublishConfigured, createVisionImagePublisher } from "../images/visionPublish";
+import { ModelOutputInvalidError } from "../openai/chatCompletionsApi";
 import { extractCardNamesFromRgba } from "../openai/extractCardNames";
-import { ModelOutputInvalidError } from "../openai/responsesApi";
 import { createEvalScryfallClient } from "../scryfall/client";
 import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
 import { formatEvalError } from "../util/formatEvalError";
@@ -31,8 +30,6 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
   }
   const task = parsed.data;
 
-  const apiKey = resolveOpenAiApiKey(env);
-  const model = String(env.OPENAI_VISION_MODEL || "gpt-5-mini-2025-08-07").trim();
   const cfg = resolveEvalPipelineConfig(env);
   const localVision = isLocalEvalEnv(env);
   if (!localVision) assertVisionPublishConfigured(env);
@@ -72,8 +69,8 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
       });
 
       let cardNames = await extractCardNamesFromRgba(orientedRgba, {
-        apiKey,
-        model,
+        apiKey: cfg.visionApiKey,
+        model: cfg.visionModel,
         maxOutputTokens: cfg.maxOut,
         reasoningEffort: cfg.reasoning,
         cubeCardList: cubeList,
@@ -87,6 +84,10 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         vision,
         fetchImpl,
         openAiLogLevel: cfg.openAiLogLevel,
+        baseUrl: cfg.visionBaseUrl,
+        gatewayToken: cfg.openAiGatewayToken,
+        aiGatewayId: cfg.aiGatewayId,
+        requestTimeoutMs: cfg.openAiRequestTimeoutMs,
       });
 
       if (cubeList.length) {
@@ -128,6 +129,7 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
             image_source: task.image_source ?? "",
             processing_timestamp: task.processing_timestamp,
             total_cards: cardNames.length,
+            owner_user_id: task.owner_user_id ?? null,
           },
           cards: cardsBlock,
         },

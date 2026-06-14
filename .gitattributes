@@ -1,0 +1,2 @@
+# Normalize text files to LF in the working tree and on checkout (Windows included).
+* text=auto eol=lf

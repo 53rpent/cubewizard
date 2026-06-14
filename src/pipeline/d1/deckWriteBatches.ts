@@ -24,7 +24,9 @@ export async function buildDeckWritePlan(cubeId: string, deckData: DeckPayload):
   const cardsData = deckData.deck.cards;
   const now = metadata.record_logged ?? "";
 
-  const imageId = await computeImageId(cubeId, metadata.pilot_name, metadata.processing_timestamp);
+  const imageId = await computeImageId(cubeId, metadata.pilot_name, metadata.processing_timestamp, {
+    imageSource: metadata.image_source,
+  });
 
   const batchA: D1Statement[] = [
     stmt("INSERT OR IGNORE INTO cubes (cube_id, created, last_updated, total_decks) " + "VALUES (?, ?, ?, 0);", [
@@ -35,8 +37,8 @@ export async function buildDeckWritePlan(cubeId: string, deckData: DeckPayload):
     stmt(
       "INSERT OR IGNORE INTO decks " +
         "(cube_id, pilot_name, match_wins, match_losses, match_draws, win_rate, " +
-        "record_logged, image_source, image_id, processing_timestamp, total_cards) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        "record_logged, image_source, image_id, processing_timestamp, total_cards, owner_user_id) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
       [
         cubeId,
         metadata.pilot_name,
@@ -49,15 +51,14 @@ export async function buildDeckWritePlan(cubeId: string, deckData: DeckPayload):
         imageId,
         metadata.processing_timestamp,
         metadata.total_cards,
+        metadata.owner_user_id ?? null,
       ],
     ),
   ];
 
   const lookup = stmt(
-    "SELECT deck_id FROM decks " +
-      "WHERE cube_id = ? AND processing_timestamp = ? AND pilot_name = ? " +
-      "ORDER BY deck_id DESC LIMIT 1;",
-    [cubeId, metadata.processing_timestamp, metadata.pilot_name],
+    "SELECT deck_id FROM decks " + "WHERE cube_id = ? AND processing_timestamp = ? " + "ORDER BY deck_id DESC LIMIT 1;",
+    [cubeId, metadata.processing_timestamp],
   );
 
   function deckCardInsertStmt(deckId: number, card: DeckCardRow): D1Statement {

@@ -150,5 +150,5 @@ Metrics per case and in aggregate include precision, recall, F1, count error, fa
 
 
 
-**Cost:** Before cases run, the harness loads Standard-tier rates from `data/openai-standard-pricing.csv` (no live fetch). Costs are estimated as `(input_tokens × input_rate + output_tokens × output_rate) / 1e6`. Update the CSV when OpenAI changes list prices, or override with `GOLDEN_EVAL_USD_PER_1M_INPUT` and `GOLDEN_EVAL_USD_PER_1M_OUTPUT` in `.dev.vars`.
+**Cost:** Before cases run, the harness loads rates from `data/model-pricing.csv` (no live fetch). Costs are estimated as `(input_tokens × input_rate + output_tokens × output_rate) / 1e6`. Regenerate the CSV with `node scripts/sync-ai-gateway-pricing-csv.mjs`, or override with `GOLDEN_EVAL_USD_PER_1M_INPUT` and `GOLDEN_EVAL_USD_PER_1M_OUTPUT` in `.dev.vars`.
 

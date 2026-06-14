@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/site-header.css">
+  <link rel="stylesheet" href="/site-auth.css">
   <link rel="stylesheet" href="/card-tooltip.css">
   <link rel="stylesheet" href="/analysis-shared.css">
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -32,6 +33,7 @@
         </div>
       </div>
       <nav class="header-nav" aria-label="Primary">
+        <div class="header-nav-links">
         <div class="nav-dropdown">
           <a href="/" class="nav-dropdown-trigger" id="nav-dashboard-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="nav-dashboard-menu">Dashboard</a>
           <ul class="nav-dropdown-menu" id="nav-dashboard-menu" role="menu" aria-labelledby="nav-dashboard-trigger">
@@ -50,6 +52,8 @@
             <li role="none"><a role="menuitem" href="/resources/pilot-search">Search by pilot</a></li>
           </ul>
         </div>
+        </div>
+        <div class="header-auth" id="header-auth-slot"></div>
       </nav>
     </div>
   </div>
@@ -66,7 +70,10 @@
     </div>
 
     <div id="loading" class="loading">Loading decks...</div>
-    <div id="error" class="error" style="display:none;"></div>
+    <div id="error" class="error error-banner" style="display:none;" role="alert">
+      <p id="error-message" class="error-banner-text"></p>
+      <button type="button" id="error-dismiss" class="error-banner-dismiss" aria-label="Dismiss">✕</button>
+    </div>
 
     <div id="processing-status-card" class="cw-processing-card" hidden>
       <div class="cw-processing-card-header">
@@ -87,6 +94,17 @@
     </div>
   </div>
 
+  <div id="deck-confirm-overlay" class="claim-confirm-overlay" aria-hidden="true">
+    <div class="claim-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="deck-confirm-title">
+      <h3 id="deck-confirm-title" class="claim-confirm-title">Confirm</h3>
+      <p id="deck-confirm-body" class="claim-confirm-body"></p>
+      <div class="claim-confirm-actions">
+        <button type="button" id="deck-confirm-cancel" class="btn-secondary">Cancel</button>
+        <button type="button" id="deck-confirm-ok" class="btn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="modal">
       <div class="modal-header">
@@ -95,6 +113,9 @@
           <div id="modal-meta" class="modal-meta"></div>
         </div>
         <div class="modal-header-actions">
+          <button type="button" id="modal-claim-deck-btn" class="btn-edit-deck" style="display:none;">Claim Deck</button>
+          <button type="button" id="modal-reprocess-deck-btn" class="btn-edit-deck" style="display:none;">Re-process</button>
+          <button type="button" id="modal-delete-deck-btn" class="btn-edit-deck btn-deck-danger" style="display:none;">Delete</button>
           <button type="button" id="modal-edit-cards-btn" class="btn-edit-deck" style="display:none;">Edit card list</button>
           <button class="close-btn" onclick="closeModal()" aria-label="Close">✕</button>
         </div>
@@ -104,6 +125,9 @@
           <div class="loading">Loading deck...</div>
         </div>
         <div id="deck-edit-panel" class="deck-edit-panel" style="display:none;">
+          <div id="deck-edit-photo-wrap" class="modal-deck-photo-wrap deck-edit-photo-wrap" style="display:none;">
+            <img id="deck-edit-photo" class="modal-deck-photo" src="" alt="Deck photo" />
+          </div>
           <p class="subtle" style="margin-bottom:0.5rem;">One card per line. Repeat a name for multiple copies. Names are looked up on Scryfall (fuzzy match).</p>
           <label for="deck-edit-textarea" class="visually-hidden">Card names</label>
           <textarea id="deck-edit-textarea" autocomplete="off" spellcheck="false"></textarea>
@@ -129,6 +153,7 @@
   <script src="/site-footer.js"></script>
   <script src="/cw-paths.js"></script>
   <script src="/cw-html.js"></script>
+  <script src="/site-auth.js"></script>
   <script src="/site-nav.js"></script>
   <script src="/card-tooltip.js"></script>
   <script src="/decks-main.js"></script>

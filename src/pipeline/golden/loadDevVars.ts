@@ -32,6 +32,6 @@ export function loadDevVarsIntoEnv(repoRoot: string): void {
 }
 
 export function resolveOpenAiKeyFromEnv(): string | null {
-  const k = String(process.env.OPENAI_API_KEY ?? "").trim();
+  const k = String(process.env.EVAL_VISION_API_KEY ?? process.env.OPENAI_API_KEY ?? "").trim();
   return k || null;
 }
