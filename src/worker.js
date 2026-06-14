@@ -16,6 +16,7 @@ import { orientedObjectKey, orientedThumbObjectKey } from "./pipeline/r2/oriente
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import {
   authRateLimitConfig,
+  canDismissFailedUpload,
   createSession,
   deckCanClaim,
   deckCanEdit,
@@ -342,17 +343,17 @@ async function handleDismissProcessingJob(request, env) {
     .bind(cubeId, uploadId)
     .all();
   var decks = deckRows.results || [];
+
+  var ownerUserId = null;
   if (decks.length) {
-    for (var pi = 0; pi < decks.length; pi++) {
-      if (!deckCanManage(decks[pi]?.owner_user_id, sessionUser)) {
-        return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
-      }
-    }
-  } else {
-    var ownerUserId = await readStagingUploadOwnerUserId(env, uploadId, job.r2_prefix);
-    if (ownerUserId == null || Number(sessionUser.user_id) !== ownerUserId) {
-      return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
-    }
+    var deckOwner = decks[0]?.owner_user_id;
+    if (deckOwner != null && deckOwner !== "") ownerUserId = Number(deckOwner);
+  }
+  if (ownerUserId == null || !Number.isFinite(ownerUserId)) {
+    ownerUserId = await readStagingUploadOwnerUserId(env, uploadId, job.r2_prefix);
+  }
+  if (!canDismissFailedUpload(ownerUserId, sessionUser)) {
+    return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
   }
 
   for (var di = 0; di < decks.length; di++) {
