@@ -16,6 +16,7 @@ import { orientedObjectKey, orientedThumbObjectKey } from "./pipeline/r2/oriente
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import {
   authRateLimitConfig,
+  canDismissFailedUpload,
   createSession,
   deckCanClaim,
   deckCanEdit,
@@ -283,7 +284,30 @@ async function deleteStagingUpload(env, uploadId, r2Prefix) {
   await tryDeleteR2Object(env.BUCKET, metaKey);
 }
 
+async function readStagingUploadOwnerUserId(env, uploadId, r2Prefix) {
+  var prefix = String(r2Prefix || uploadId || "").trim();
+  if (!prefix) return null;
+  if (!prefix.endsWith("/")) prefix += "/";
+
+  try {
+    var metaObj = await env.BUCKET.get(prefix + "metadata.json");
+    if (!metaObj) return null;
+    var metadata = JSON.parse(new TextDecoder().decode(await metaObj.arrayBuffer()));
+    if (metadata.owner_user_id == null || metadata.owner_user_id === "") return null;
+    var owner = Number(metadata.owner_user_id);
+    return Number.isFinite(owner) ? owner : null;
+  } catch (metaErr) {
+    console.error("staging metadata owner parse failed on dismiss:", metaErr);
+    return null;
+  }
+}
+
 async function handleDismissProcessingJob(request, env) {
+  var sessionUser = await getSessionUser(request, env);
+  if (!sessionUser) {
+    return jsonResponse({ error: "Login required." }, 401);
+  }
+
   var body;
   try {
     body = await request.json();
@@ -313,12 +337,25 @@ async function handleDismissProcessingJob(request, env) {
 
   var deckRows = await env.cubewizard_db
     .prepare(
-      "SELECT deck_id, oriented_image_r2_key, oriented_thumb_r2_key FROM decks" +
+      "SELECT deck_id, owner_user_id, oriented_image_r2_key, oriented_thumb_r2_key FROM decks" +
         " WHERE cube_id = ? AND processing_timestamp = ?",
     )
     .bind(cubeId, uploadId)
     .all();
   var decks = deckRows.results || [];
+
+  var ownerUserId = null;
+  if (decks.length) {
+    var deckOwner = decks[0]?.owner_user_id;
+    if (deckOwner != null && deckOwner !== "") ownerUserId = Number(deckOwner);
+  }
+  if (ownerUserId == null || !Number.isFinite(ownerUserId)) {
+    ownerUserId = await readStagingUploadOwnerUserId(env, uploadId, job.r2_prefix);
+  }
+  if (!canDismissFailedUpload(ownerUserId, sessionUser)) {
+    return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
+  }
+
   for (var di = 0; di < decks.length; di++) {
     var deck = decks[di] || {};
     await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_image_r2_key);
