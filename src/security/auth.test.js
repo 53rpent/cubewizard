@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canDismissFailedUpload,
   deckCanClaim,
   deckCanEdit,
   deckCanManage,
@@ -72,5 +73,24 @@ describe("deck permissions", () => {
     expect(deckCanManage(5, { user_id: 9, username: "other" })).toBe(false);
     expect(deckCanManage(null, session)).toBe(false);
     expect(deckCanManage(5, null)).toBe(false);
+  });
+});
+
+describe("canDismissFailedUpload", () => {
+  var session = { user_id: 5, username: "pilot" };
+
+  it("requires login", () => {
+    expect(canDismissFailedUpload(null, null)).toBe(false);
+    expect(canDismissFailedUpload(5, null)).toBe(false);
+  });
+
+  it("allows any logged-in user to dismiss unowned failed uploads", () => {
+    expect(canDismissFailedUpload(null, session)).toBe(true);
+    expect(canDismissFailedUpload("", session)).toBe(true);
+  });
+
+  it("restricts owned failed uploads to the uploader", () => {
+    expect(canDismissFailedUpload(5, session)).toBe(true);
+    expect(canDismissFailedUpload(9, session)).toBe(false);
   });
 });

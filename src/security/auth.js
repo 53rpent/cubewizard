@@ -287,3 +287,15 @@ export function deckCanManage(ownerUserId, sessionUser) {
   if (!Number.isFinite(owner)) return false;
   return Number(sessionUser.user_id) === owner;
 }
+
+/**
+ * Remove a failed upload: login required; unowned jobs are open to any logged-in user;
+ * owned jobs (metadata or partial deck) are uploader-only.
+ */
+export function canDismissFailedUpload(ownerUserId, sessionUser) {
+  if (!sessionUser) return false;
+  if (ownerUserId == null || ownerUserId === "") return true;
+  var owner = Number(ownerUserId);
+  if (!Number.isFinite(owner)) return true;
+  return Number(sessionUser.user_id) === owner;
+}
