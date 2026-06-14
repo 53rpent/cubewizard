@@ -1931,7 +1931,11 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     );
   }
 
-  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
+  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
+  if (!enqueueResult.ok) {
+    console.error("Reprocess enqueue failed:", enqueueResult);
+    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
+  }
 
   var jobTask = {
     upload_id: uploadId,
@@ -1947,11 +1951,7 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     console.error("processing_jobs upsert failed on reprocess:", jobErr);
   }
 
-  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
-  if (!enqueueResult.ok && !enqueueResult.skipped) {
-    console.error("Reprocess enqueue failed:", enqueueResult);
-    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
-  }
+  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
 
   try {
     await invalidateDashboardCache(new URL(request.url).origin, cubeId);
