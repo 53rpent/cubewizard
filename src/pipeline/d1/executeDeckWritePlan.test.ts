@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executeDeckWritePlan, type D1DatabaseLike } from "./executeDeckWritePlan";
+import { type D1DatabaseLike, executeDeckWritePlan } from "./executeDeckWritePlan";
 import type { DeckPayload } from "./types";
 
 interface BoundStatement {
