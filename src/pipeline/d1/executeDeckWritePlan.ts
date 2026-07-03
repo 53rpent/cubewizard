@@ -8,10 +8,55 @@ export interface D1DatabaseLike {
   batch(stmts: unknown[]): Promise<Array<{ meta?: { changes?: number } } | undefined>>;
 }
 
+type ExistingDeckRow = {
+  deck_id?: number;
+  image_id?: string;
+  total_found?: number | null;
+  card_count?: number | null;
+};
+
 function bindStatement(db: D1DatabaseLike, s: D1Statement): unknown {
   const p = db.prepare(s.sql);
   const params = s.params ?? [];
   return (p as { bind(...a: unknown[]): unknown }).bind(...params);
+}
+
+async function lookupExistingDeck(
+  db: D1DatabaseLike,
+  cubeId: string,
+  processingTs: string,
+): Promise<ExistingDeckRow | null> {
+  const existingBound = db.prepare(
+    "SELECT d.deck_id, d.image_id, ds.total_found, " +
+      "(SELECT COUNT(*) FROM deck_cards dc WHERE dc.deck_id = d.deck_id) AS card_count " +
+      "FROM decks d LEFT JOIN deck_stats ds ON ds.deck_id = d.deck_id " +
+      "WHERE d.cube_id = ? AND d.processing_timestamp = ? " +
+      "ORDER BY d.deck_id DESC LIMIT 1",
+  ) as {
+    bind(...args: unknown[]): { first<T = unknown>(): Promise<T | null> };
+  };
+  return existingBound.bind(cubeId, processingTs).first<ExistingDeckRow>();
+}
+
+function completeDuplicateResult(
+  existing: ExistingDeckRow | null,
+  fallbackImageId: string,
+): { success: boolean; duplicate: boolean; deckId?: number; imageId: string } {
+  if (!existing || existing.deck_id == null) {
+    return { success: false, duplicate: false, imageId: fallbackImageId };
+  }
+  const deckId = existing.deck_id;
+  const totalFound = existing.total_found;
+  const cardCount = existing.card_count;
+  if (typeof totalFound !== "number" || typeof cardCount !== "number" || cardCount < totalFound) {
+    return { success: false, duplicate: false, deckId, imageId: fallbackImageId };
+  }
+  return {
+    success: true,
+    duplicate: true,
+    deckId,
+    imageId: typeof existing.image_id === "string" ? existing.image_id : fallbackImageId,
+  };
 }
 
 /**
@@ -24,24 +69,14 @@ export async function executeDeckWritePlan(
 ): Promise<{ success: boolean; duplicate: boolean; deckId?: number; imageId: string }> {
   const plan = await buildDeckWritePlan(cubeId, deck);
   const processingTs = deck.deck.metadata.processing_timestamp;
-  const existingBound = db.prepare(
-    "SELECT deck_id, image_id FROM decks WHERE cube_id = ? AND processing_timestamp = ? LIMIT 1",
-  ) as {
-    bind(...args: unknown[]): { first<T = unknown>(): Promise<T | null> };
-  };
-  const existing = await existingBound.bind(cubeId, processingTs).first<{ deck_id?: number; image_id?: string }>();
+  const existing = await lookupExistingDeck(db, cubeId, processingTs);
   if (existing?.deck_id != null) {
-    return {
-      success: true,
-      duplicate: true,
-      deckId: existing.deck_id,
-      imageId: typeof existing.image_id === "string" ? existing.image_id : plan.imageId,
-    };
+    return completeDuplicateResult(existing, plan.imageId);
   }
 
   const batchAResults = await db.batch(plan.batchA.map((s) => bindStatement(db, s)));
   if (deckInsertWasDuplicate(batchAResults)) {
-    return { success: true, duplicate: true, imageId: plan.imageId };
+    return completeDuplicateResult(await lookupExistingDeck(db, cubeId, processingTs), plan.imageId);
   }
 
   const lookupBound = bindStatement(db, plan.lookup) as {
