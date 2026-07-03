@@ -42,10 +42,10 @@ function completeDuplicateResult(
   existing: ExistingDeckRow | null,
   fallbackImageId: string,
 ): { success: boolean; duplicate: boolean; deckId?: number; imageId: string } {
-  const deckId = existing?.deck_id;
-  if (deckId == null) {
+  if (!existing || existing.deck_id == null) {
     return { success: false, duplicate: false, imageId: fallbackImageId };
   }
+  const deckId = existing.deck_id;
   const totalFound = existing.total_found;
   const cardCount = existing.card_count;
   if (typeof totalFound !== "number" || typeof cardCount !== "number" || cardCount < totalFound) {

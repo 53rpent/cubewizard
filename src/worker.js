@@ -1935,7 +1935,14 @@ async function handleReprocessDeck(deckIdStr, request, env) {
   var reprocessUploadId = buildReprocessUploadId(uploadId);
   var taskBody = await buildReprocessExtractTask(deck, cubeId, reprocessUploadId, env);
   if (!taskBody) {
-    var orientResult = await buildReprocessOrientTask(deck, cubeId, uploadId, reprocessUploadId, loaded.sessionUser, env);
+    var orientResult = await buildReprocessOrientTask(
+      deck,
+      cubeId,
+      uploadId,
+      reprocessUploadId,
+      loaded.sessionUser,
+      env,
+    );
     if (orientResult?.error) return orientResult.error;
     taskBody = orientResult;
   }
