@@ -129,6 +129,47 @@ describe("processing job dismissal route", () => {
     expect(env.BUCKET.delete).not.toHaveBeenCalled();
     expect(env.DECK_IMAGES_BLOB.delete).not.toHaveBeenCalled();
   });
+
+  it("releases Hedron sync dedupe when dismissing a failed Hedron upload", async () => {
+    var sessionUser = { user_id: 5, username: "owner" };
+    var db = createDbMock({
+      sessionUser: sessionUser,
+      processingJob: {
+        upload_id: "hedron:deck-image-uuid",
+        cube_id: "cube",
+        status: "failed",
+        r2_prefix: "hedron/deck-image-uuid/",
+      },
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+      BUCKET: { get: vi.fn(), delete: vi.fn() },
+      DECK_IMAGES_BLOB: { delete: vi.fn() },
+    };
+    var cookie = await createSignedSessionCookie(db, env, sessionUser.user_id);
+
+    var response = await worker.fetch(
+      new Request("https://example.test/api/processing-job/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ upload_id: "hedron:deck-image-uuid", cube_id: "cube" }),
+      }),
+      env,
+      {},
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      db.calls.some(function (call) {
+        return (
+          call.type === "run" &&
+          call.sql.indexOf("DELETE FROM hedron_synced_decks WHERE deck_image_uuid = ?") >= 0 &&
+          call.args[0] === "deck-image-uuid"
+        );
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("deck reprocess route", () => {

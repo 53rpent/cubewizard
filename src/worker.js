@@ -378,6 +378,7 @@ async function handleDismissProcessingJob(request, env) {
   }
 
   await deleteStagingUpload(env, uploadId, job.r2_prefix);
+  await safeReleaseHedronSyncedDeckForUpload(env.cubewizard_db, uploadId);
   await env.cubewizard_db.prepare("DELETE FROM processing_jobs WHERE upload_id = ?").bind(uploadId).run();
 
   try {
