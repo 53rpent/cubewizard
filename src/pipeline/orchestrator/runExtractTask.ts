@@ -143,26 +143,31 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
       const evalReport = usageReporter.finish(Date.now() - evalStarted);
       logEvalUsageReport(evalReport);
 
+      const storedPath = `stored_images/${task.image_id}.jpg`;
+      if (write.deckId != null) {
+        await updateDeckAuxiliaryKeys(env.cubewizard_db, write.deckId, {
+          storedPath,
+          orientedKey: task.oriented_image_r2_key,
+          thumbKey: thumb.thumbKey,
+          stagingKey: task.staging_image_r2_key,
+        });
+      }
+
       if (write.duplicate || write.deckId == null) {
         await markJobDone(
           env.cubewizard_db,
           task.upload_id,
           JSON.stringify({
             duplicate: true,
+            deck_id: write.deckId,
             image_id: write.imageId,
+            oriented_image_r2_key: task.oriented_image_r2_key,
+            oriented_thumb_r2_key: thumb.thumbKey,
             eval_report: evalReport,
           }),
         );
         return;
       }
-
-      const storedPath = `stored_images/${task.image_id}.jpg`;
-      await updateDeckAuxiliaryKeys(env.cubewizard_db, write.deckId, {
-        storedPath,
-        orientedKey: task.oriented_image_r2_key,
-        thumbKey: thumb.thumbKey,
-        stagingKey: task.staging_image_r2_key,
-      });
 
       await markJobDone(
         env.cubewizard_db,
