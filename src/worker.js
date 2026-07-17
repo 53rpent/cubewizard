@@ -1949,6 +1949,7 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     await upsertQueuedProcessingJob(env.cubewizard_db, jobTask);
   } catch (jobErr) {
     console.error("processing_jobs upsert failed on reprocess:", jobErr);
+    return jsonResponse({ error: "Failed to record deck re-processing job." }, 500);
   }
 
   await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);

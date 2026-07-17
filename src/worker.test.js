@@ -10,7 +10,13 @@ function createJsonR2Object(value) {
   };
 }
 
-function createDbMock({ sessionUser = null, processingJob = null, processingDeckRows = [], deck = null } = {}) {
+function createDbMock({
+  sessionUser = null,
+  processingJob = null,
+  processingDeckRows = [],
+  deck = null,
+  failProcessingJobUpsert = false,
+} = {}) {
   var calls = [];
   var db = {
     calls: calls,
@@ -19,6 +25,8 @@ function createDbMock({ sessionUser = null, processingJob = null, processingDeck
         bind(...args) {
           calls.push({ type: "bind", sql: sql, args: args });
           return {
+            sql: sql,
+            args: args,
             async first() {
               if (sql.indexOf("FROM sessions s") >= 0) return sessionUser;
               if (sql.indexOf("FROM processing_jobs") >= 0) return processingJob;
@@ -32,6 +40,9 @@ function createDbMock({ sessionUser = null, processingJob = null, processingDeck
               return { results: [] };
             },
             async run() {
+              if (failProcessingJobUpsert && sql.indexOf("INSERT INTO processing_jobs") >= 0) {
+                throw new Error("processing job upsert failed");
+              }
               calls.push({ type: "run", sql: sql, args: args });
               return { success: true, meta: { changes: 1 } };
             },
@@ -183,5 +194,63 @@ describe("deck reprocess route", () => {
     expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
       false,
     );
+  });
+
+  it("does not delete deck rows when processing job upsert fails after eval queue enqueue", async () => {
+    var sessionUser = { user_id: 5, username: "owner" };
+    var db = createDbMock({
+      sessionUser: sessionUser,
+      failProcessingJobUpsert: true,
+      deck: {
+        deck_id: 123,
+        cube_id: "cube",
+        pilot_name: "owner",
+        match_wins: 2,
+        match_losses: 1,
+        match_draws: 0,
+        win_rate: 0.667,
+        record_logged: "2026-06-06T00:00:00.000Z",
+        image_source: "",
+        processing_timestamp: "upload-1",
+        owner_user_id: 5,
+        image_id: "image-1",
+        oriented_image_r2_key: "oriented/cube/image.jpg",
+        staging_image_r2_key: "upload-1/image.jpg",
+      },
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+      BUCKET: {
+        get: vi.fn(function () {
+          return createJsonR2Object({ owner_user_id: 5 });
+        }),
+      },
+      DECK_IMAGES_BLOB: {
+        get: vi.fn(function () {
+          return { async arrayBuffer() {} };
+        }),
+      },
+      EVAL_QUEUE: {
+        send: vi.fn(),
+      },
+    };
+    var cookie = await createSignedSessionCookie(db, env, sessionUser.user_id);
+
+    var response = await worker.fetch(
+      new Request("https://example.test/api/deck/123/reprocess", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      }),
+      env,
+      {},
+    );
+
+    expect(response.status).toBe(500);
+    expect(env.EVAL_QUEUE.send).toHaveBeenCalledOnce();
+    expect(db.calls.some((call) => call.type === "bind" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
+      true,
+    );
+    expect(hasDeckDeleteBatch(db)).toBe(false);
   });
 });
