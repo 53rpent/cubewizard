@@ -248,9 +248,9 @@ describe("deck reprocess route", () => {
 
     expect(response.status).toBe(500);
     expect(env.EVAL_QUEUE.send).toHaveBeenCalledOnce();
-    expect(
-      db.calls.some((call) => call.type === "bind" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0),
-    ).toBe(true);
+    expect(db.calls.some((call) => call.type === "bind" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
+      true,
+    );
     expect(hasDeckDeleteBatch(db)).toBe(false);
   });
 });
