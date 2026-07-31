@@ -79,7 +79,11 @@ async function repairExistingDeckWrite(
 /**
  * Run insert deck, deck_cards, and deck_stats in one plan.
  */
-export async function executeDeckWritePlan(db: D1DatabaseLike, cubeId: string, deck: DeckPayload): Promise<DeckWriteResult> {
+export async function executeDeckWritePlan(
+  db: D1DatabaseLike,
+  cubeId: string,
+  deck: DeckPayload,
+): Promise<DeckWriteResult> {
   const plan = await buildDeckWritePlan(cubeId, deck);
   const processingTs = deck.deck.metadata.processing_timestamp;
   const existing = await readExistingDeckWriteState(db, cubeId, processingTs, plan.imageId);

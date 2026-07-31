@@ -37,6 +37,14 @@ function createImagesBinding(bytes) {
   };
 }
 
+function firstForDbMockSql(sql, state) {
+  if (sql.indexOf("FROM sessions s") >= 0) return state.sessionUser;
+  if (sql.indexOf("FROM processing_jobs") >= 0) return state.processingJob;
+  if (sql.indexOf("FROM decks WHERE deck_id = ?") < 0) return null;
+  if (state.deckResults?.length) return state.deckResults.shift();
+  return state.deck;
+}
+
 function createDbMock({
   sessionUser = null,
   processingJob = null,
@@ -56,13 +64,7 @@ function createDbMock({
             sql: sql,
             args: args,
             async first() {
-              if (sql.indexOf("FROM sessions s") >= 0) return sessionUser;
-              if (sql.indexOf("FROM processing_jobs") >= 0) return processingJob;
-              if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) {
-                if (deckResults?.length) return deckResults.shift();
-                return deck;
-              }
-              return null;
+              return firstForDbMockSql(sql, { sessionUser, processingJob, deckResults, deck });
             },
             async all() {
               if (sql.indexOf("FROM decks") >= 0 && sql.indexOf("processing_timestamp = ?") >= 0) {
@@ -440,9 +442,7 @@ describe("deck card edit route", () => {
     );
 
     expect(response.status).toBe(403);
-    expect(
-      db.calls.some((call) => call.type === "run" && call.sql.indexOf("DELETE FROM deck_cards") >= 0),
-    ).toBe(false);
+    expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("DELETE FROM deck_cards") >= 0)).toBe(false);
   });
 });
 

@@ -47,11 +47,14 @@ describe("hedron consumer permanent failures", () => {
       retry: vi.fn(),
     };
 
-    await consumer.queue({ queue: "hedron", messages: [message] }, {
-      cubewizard_db: db,
-      BUCKET: { put: vi.fn() },
-      EVAL_QUEUE: { send: vi.fn() },
-    });
+    await consumer.queue(
+      { queue: "hedron", messages: [message] },
+      {
+        cubewizard_db: db,
+        BUCKET: { put: vi.fn() },
+        EVAL_QUEUE: { send: vi.fn() },
+      },
+    );
 
     expect(message.ack).toHaveBeenCalledTimes(1);
     expect(message.retry).not.toHaveBeenCalled();
