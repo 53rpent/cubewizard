@@ -17,6 +17,9 @@ function stubStmt(runResult: unknown = {}) {
 describe("hedronSyncedDeckRepo", () => {
   it("parses deck uuid from hedron upload_id", () => {
     expect(deckImageUuidFromHedronUploadId("hedron:abc-123")).toBe("abc-123");
+    expect(deckImageUuidFromHedronUploadId("reprocess:hedron:abc-123:00000000-0000-4000-8000-000000000000")).toBe(
+      "abc-123",
+    );
     expect(deckImageUuidFromHedronUploadId("uploads/foo")).toBeNull();
   });
 

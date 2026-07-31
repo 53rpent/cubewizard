@@ -8,6 +8,7 @@
  */
 
 import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
+import { safeReleaseHedronSyncedDeckForUpload } from "./pipeline/orchestrator/hedronSyncedDeckRepo.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import { parseQueueJsonBody } from "./queueMessageBody.js";
 
@@ -138,6 +139,12 @@ async function enqueueCfEvalJob(env, body) {
   await env.EVAL_QUEUE.send(body, { contentType: "json" });
 }
 
+function uploadIdFromRawMessage(raw) {
+  var job = parseQueueJsonBody(raw);
+  var uploadId = job?.upload_id;
+  return typeof uploadId === "string" ? uploadId.trim() : "";
+}
+
 async function processHedronMessage(raw, env, messageId) {
   var t0 = Date.now();
   assertConsumerBindings(env);
@@ -261,6 +268,10 @@ export default {
           message_id: message.id,
           error: e.message || String(e),
         });
+        var uploadId = uploadIdFromRawMessage(message.body);
+        if (uploadId && env?.cubewizard_db) {
+          await safeReleaseHedronSyncedDeckForUpload(env.cubewizard_db, uploadId);
+        }
         message.ack();
         return;
       }

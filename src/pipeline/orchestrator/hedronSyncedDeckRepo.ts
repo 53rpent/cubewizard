@@ -2,10 +2,17 @@ import { evalErrorFields } from "../util/formatEvalError";
 import type { D1DatabaseLike } from "./processingJobRepo";
 
 const HEDRON_UPLOAD_PREFIX = "hedron:";
+const REPROCESS_HEDRON_UPLOAD_PREFIX = "reprocess:hedron:";
 
 /** Hedron queue / eval tasks use `upload_id` = `hedron:` + `deck_image_uuid`. */
 export function deckImageUuidFromHedronUploadId(uploadId: string): string | null {
   const id = uploadId.trim();
+  if (id.startsWith(REPROCESS_HEDRON_UPLOAD_PREFIX)) {
+    const rest = id.slice(REPROCESS_HEDRON_UPLOAD_PREFIX.length).trim();
+    const nonceSeparator = rest.lastIndexOf(":");
+    const uuid = nonceSeparator >= 0 ? rest.slice(0, nonceSeparator).trim() : rest;
+    return uuid || null;
+  }
   if (!id.startsWith(HEDRON_UPLOAD_PREFIX)) return null;
   const uuid = id.slice(HEDRON_UPLOAD_PREFIX.length).trim();
   return uuid || null;
