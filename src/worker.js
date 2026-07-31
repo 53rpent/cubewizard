@@ -12,6 +12,7 @@ import {
   ensureHedronSyncedDeck,
   safeReleaseHedronSyncedDeckForUpload,
 } from "./pipeline/orchestrator/hedronSyncedDeckRepo.ts";
+import { markJobFailed } from "./pipeline/orchestrator/processingJobRepo.ts";
 import { orientedObjectKey, orientedThumbObjectKey } from "./pipeline/r2/orientedKeys.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import {
@@ -358,9 +359,16 @@ async function handleDismissProcessingJob(request, env) {
 
   for (var di = 0; di < decks.length; di++) {
     var deck = decks[di] || {};
-    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_image_r2_key);
-    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_thumb_r2_key);
     if (deck.deck_id != null) {
+      var latestDeck = await env.cubewizard_db
+        .prepare("SELECT deck_id, owner_user_id FROM decks WHERE deck_id = ? AND cube_id = ?")
+        .bind(deck.deck_id, cubeId)
+        .first();
+      if (latestDeck && !canDismissFailedUpload(latestDeck.owner_user_id, sessionUser)) {
+        return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
+      }
+      await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_image_r2_key);
+      await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_thumb_r2_key);
       await deleteDeckRowsFromDb(env.cubewizard_db, deck.deck_id, cubeId);
     }
   }
@@ -2392,6 +2400,17 @@ async function handlePutDeckCards(deckIdStr, request, env) {
   var foundRows = resolved.rows;
   var notFoundNames = resolved.notFoundNames;
 
+  var latestDeck = await env.cubewizard_db
+    .prepare("SELECT deck_id, owner_user_id FROM decks WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
+  if (!latestDeck) {
+    return jsonResponse({ error: "Deck not found" }, 404);
+  }
+  if (!deckCanEdit(latestDeck.owner_user_id, sessionUser)) {
+    return jsonResponse({ error: "You do not have permission to edit this deck." }, 403);
+  }
+
   await env.cubewizard_db.prepare("DELETE FROM deck_cards WHERE deck_id = ?").bind(deckId).run();
 
   for (var ri = 0; ri < foundRows.length; ri++) {
@@ -3174,7 +3193,6 @@ async function handleUpload(request, env) {
       httpMetadata: { contentType: "application/json" },
     });
 
-    // Best-effort: enqueue eval on Cloudflare Queue. Do not fail upload if misconfigured.
     var r2Bucket = String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim();
     var uploadId = String(prefix || "").replace(/\/+$/, "");
     var taskBody = {
@@ -3194,11 +3212,21 @@ async function handleUpload(request, env) {
       await upsertQueuedProcessingJob(env.cubewizard_db, taskBody);
     } catch (jobErr) {
       console.error("processing_jobs upsert failed after upload:", jobErr);
+      return jsonResponse({ success: false, errors: ["Failed to track deck processing job. Please try again."] }, 500);
     }
 
     var enqueueResult = await enqueueCfEvalJob(env, taskBody);
-    if (!enqueueResult.ok && !enqueueResult.skipped) {
+    if (!enqueueResult.ok) {
       console.error("Upload succeeded but CF eval enqueue failed:", enqueueResult);
+      try {
+        await markJobFailed(env.cubewizard_db, uploadId, "eval_enqueue_failed: " + (enqueueResult.reason || "unknown"));
+      } catch (jobErr) {
+        console.error("processing_jobs mark failed after upload enqueue error failed:", jobErr);
+      }
+      return jsonResponse(
+        { success: false, errors: ["Deck image uploaded, but processing could not be queued. Please try again."] },
+        500,
+      );
     }
 
     return jsonResponse({
