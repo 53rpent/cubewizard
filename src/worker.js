@@ -322,7 +322,9 @@ async function handleDismissProcessingJob(request, env) {
   }
 
   var job = await env.cubewizard_db
-    .prepare("SELECT upload_id, cube_id, status, r2_prefix, pilot_name FROM processing_jobs WHERE upload_id = ? LIMIT 1")
+    .prepare(
+      "SELECT upload_id, cube_id, status, r2_prefix, pilot_name FROM processing_jobs WHERE upload_id = ? LIMIT 1",
+    )
     .bind(uploadId)
     .first();
   if (!job) {
@@ -1942,7 +1944,15 @@ async function handleReprocessDeck(deckIdStr, request, env) {
 
   var taskBody = await buildReprocessExtractTask(deck, cubeId, uploadId, deckId, env);
   if (!taskBody) {
-    var orientResult = await buildReprocessOrientTask(deck, cubeId, uploadId, sourceUploadId, deckId, loaded.sessionUser, env);
+    var orientResult = await buildReprocessOrientTask(
+      deck,
+      cubeId,
+      uploadId,
+      sourceUploadId,
+      deckId,
+      loaded.sessionUser,
+      env,
+    );
     if (orientResult?.error) return orientResult.error;
     taskBody = orientResult;
   }

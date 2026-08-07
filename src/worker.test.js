@@ -171,9 +171,7 @@ describe("processing job dismissal route", () => {
     expect(
       db.calls.some(
         (call) =>
-          call.type === "run" &&
-          call.sql.indexOf("DELETE FROM hedron_synced_decks") >= 0 &&
-          call.args[0] === "uuid-1",
+          call.type === "run" && call.sql.indexOf("DELETE FROM hedron_synced_decks") >= 0 && call.args[0] === "uuid-1",
       ),
     ).toBe(true);
   });
