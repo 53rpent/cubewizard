@@ -20,6 +20,25 @@ import type { RunEvalTaskEnv } from "./runEvalTask";
 import { safeMarkJobFailed } from "./safeMarkJobFailed";
 import { uploadOrientedThumb } from "./uploadOriented";
 
+async function deleteReplacedDeckRows(
+  db: RunEvalTaskEnv["cubewizard_db"],
+  deckId: number,
+  cubeId: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare("DELETE FROM deck_cards WHERE deck_id = ?").bind(deckId),
+    db.prepare("DELETE FROM deck_stats WHERE deck_id = ?").bind(deckId),
+    db.prepare("DELETE FROM decks WHERE deck_id = ?").bind(deckId),
+    db
+      .prepare(
+        "UPDATE cubes SET total_decks = (SELECT COUNT(*) FROM decks WHERE cube_id = ?), " +
+          "last_updated = ? WHERE cube_id = ?;",
+      )
+      .bind(cubeId, now, cubeId),
+  ]);
+}
+
 /**
  * Phase 2: load oriented JPEG from R2 → extract → thumb upload → release RGBA → Scryfall → D1.
  */
@@ -163,6 +182,9 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         thumbKey: thumb.thumbKey,
         stagingKey: task.staging_image_r2_key,
       });
+      if (task.replace_deck_id != null && task.replace_deck_id !== write.deckId) {
+        await deleteReplacedDeckRows(env.cubewizard_db, task.replace_deck_id, task.cube_id);
+      }
 
       await markJobDone(
         env.cubewizard_db,

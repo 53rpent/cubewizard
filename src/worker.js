@@ -322,7 +322,9 @@ async function handleDismissProcessingJob(request, env) {
   }
 
   var job = await env.cubewizard_db
-    .prepare("SELECT upload_id, cube_id, status, r2_prefix FROM processing_jobs WHERE upload_id = ? LIMIT 1")
+    .prepare(
+      "SELECT upload_id, cube_id, status, r2_prefix, pilot_name FROM processing_jobs WHERE upload_id = ? LIMIT 1",
+    )
     .bind(uploadId)
     .first();
   if (!job) {
@@ -378,6 +380,7 @@ async function handleDismissProcessingJob(request, env) {
   }
 
   await deleteStagingUpload(env, uploadId, job.r2_prefix);
+  await safeReleaseHedronSyncedDeckForUpload(env.cubewizard_db, uploadId);
   await env.cubewizard_db.prepare("DELETE FROM processing_jobs WHERE upload_id = ?").bind(uploadId).run();
 
   try {
@@ -405,6 +408,16 @@ async function enqueueCfEvalJob(env, body) {
     console.error("CF eval queue send failed:", e);
     return { ok: false, skipped: false };
   }
+}
+
+async function markProcessingJobFailed(db, uploadId, error) {
+  await db
+    .prepare(
+      "UPDATE processing_jobs SET status = 'failed', finished_at = unixepoch(), " +
+        "updated_at = unixepoch(), error = ? WHERE upload_id = ?",
+    )
+    .bind(String(error || "queue_failed").slice(0, 4000), uploadId)
+    .run();
 }
 
 var HEDRON_ORIGIN = "https://hedron.network";
@@ -1825,14 +1838,22 @@ async function handleDeleteDeck(deckIdStr, request, env) {
   return jsonResponse({ success: true, deck_id: deckId });
 }
 
-async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
+function createReprocessUploadId(deckId) {
+  return "reprocess:" + String(deckId) + ":" + crypto.randomUUID();
+}
+
+async function buildReprocessExtractTask(deck, cubeId, uploadId, replaceDeckId, env) {
   var orientedKey = String(deck.oriented_image_r2_key || "").trim();
-  var imageId = deck.image_id != null ? String(deck.image_id) : "";
-  if (!orientedKey || !imageId) return null;
+  if (!orientedKey) return null;
 
   var orientedObj = await env.DECK_IMAGES_BLOB.get(orientedKey);
   if (!orientedObj) return null;
 
+  var pilot = String(deck.pilot_name || "");
+  var imageSource = deck.image_source || "";
+  var imageId = await computeImageId(cubeId, pilot, uploadId, {
+    imageSource: imageSource,
+  });
   var taskBody = {
     upload_id: uploadId,
     schema_version: 2,
@@ -1840,13 +1861,14 @@ async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
     image_id: imageId,
     oriented_image_r2_key: orientedKey,
     processing_timestamp: uploadId,
-    pilot_name: String(deck.pilot_name || ""),
+    pilot_name: pilot,
     record_logged: deck.record_logged || new Date().toISOString(),
-    image_source: deck.image_source || "",
+    image_source: imageSource,
     match_wins: deck.match_wins,
     match_losses: deck.match_losses,
     match_draws: deck.match_draws ?? 0,
     win_rate: deck.win_rate,
+    replace_deck_id: replaceDeckId,
   };
   var stagingKey = String(deck.staging_image_r2_key || "").trim();
   if (stagingKey) taskBody.staging_image_r2_key = stagingKey;
@@ -1856,8 +1878,8 @@ async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
   return taskBody;
 }
 
-async function buildReprocessOrientTask(deck, cubeId, uploadId, sessionUser, env) {
-  var r2Prefix = uploadId.replace(/\/+$/, "") + "/";
+async function buildReprocessOrientTask(deck, cubeId, uploadId, sourceUploadId, replaceDeckId, sessionUser, env) {
+  var r2Prefix = sourceUploadId.replace(/\/+$/, "") + "/";
   var metaKey = r2Prefix + "metadata.json";
   var metaObj = await env.BUCKET.get(metaKey);
   if (!metaObj) return null;
@@ -1903,6 +1925,7 @@ async function buildReprocessOrientTask(deck, cubeId, uploadId, sessionUser, env
     match_losses: deck.match_losses,
     match_draws: deck.match_draws ?? 0,
     image_source: deck.image_source || metadata.image_source || "",
+    replace_deck_id: replaceDeckId,
   };
 }
 
@@ -1913,14 +1936,23 @@ async function handleReprocessDeck(deckIdStr, request, env) {
   var deck = loaded.deck;
   var deckId = loaded.deckId;
   var cubeId = String(deck.cube_id || "");
-  var uploadId = String(deck.processing_timestamp || "").trim();
-  if (!uploadId) {
+  var sourceUploadId = String(deck.processing_timestamp || "").trim();
+  if (!sourceUploadId) {
     return jsonResponse({ error: "This deck cannot be re-processed (missing upload id)." }, 400);
   }
+  var uploadId = createReprocessUploadId(deckId);
 
-  var taskBody = await buildReprocessExtractTask(deck, cubeId, uploadId, env);
+  var taskBody = await buildReprocessExtractTask(deck, cubeId, uploadId, deckId, env);
   if (!taskBody) {
-    var orientResult = await buildReprocessOrientTask(deck, cubeId, uploadId, loaded.sessionUser, env);
+    var orientResult = await buildReprocessOrientTask(
+      deck,
+      cubeId,
+      uploadId,
+      sourceUploadId,
+      deckId,
+      loaded.sessionUser,
+      env,
+    );
     if (orientResult?.error) return orientResult.error;
     taskBody = orientResult;
   }
@@ -1931,27 +1963,31 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     );
   }
 
-  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
-  if (!enqueueResult.ok) {
-    console.error("Reprocess enqueue failed:", enqueueResult);
-    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
-  }
-
   var jobTask = {
     upload_id: uploadId,
     cube_id: cubeId,
     pilot_name: String(deck.pilot_name || ""),
     submitted_at: deck.record_logged || new Date().toISOString(),
-    schema_version: 1,
+    schema_version: taskBody.schema_version || 1,
   };
 
   try {
     await upsertQueuedProcessingJob(env.cubewizard_db, jobTask);
   } catch (jobErr) {
     console.error("processing_jobs upsert failed on reprocess:", jobErr);
+    return jsonResponse({ error: "Failed to track deck re-processing job." }, 500);
   }
 
-  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
+  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
+  if (!enqueueResult.ok) {
+    console.error("Reprocess enqueue failed:", enqueueResult);
+    try {
+      await markProcessingJobFailed(env.cubewizard_db, uploadId, "queue_failed");
+    } catch (jobErr) {
+      console.error("processing_jobs fail update failed on reprocess:", jobErr);
+    }
+    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
+  }
 
   try {
     await invalidateDashboardCache(new URL(request.url).origin, cubeId);
