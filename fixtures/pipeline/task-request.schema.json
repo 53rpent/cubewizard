@@ -40,7 +40,8 @@
     "image_source": { "type": "string" },
     "match_wins": { "type": "integer" },
     "match_losses": { "type": "integer" },
-    "match_draws": { "type": "integer" }
+    "match_draws": { "type": "integer" },
+    "replace_deck_id": { "type": "integer", "minimum": 1 }
   },
   "additionalProperties": false,
   "anyOf": [

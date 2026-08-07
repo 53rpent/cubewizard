@@ -13,6 +13,18 @@ describe("TaskRequestSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts internal replacement deck marker", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "reprocess:123:uuid",
+      schema_version: 1,
+      r2_bucket: "decklist-uploads",
+      r2_prefix: "abc/2026_p/",
+      replace_deck_id: 123,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.replace_deck_id).toBe(123);
+  });
+
   it("accepts URL shape", () => {
     const r = TaskRequestSchema.safeParse({
       upload_id: "u1",
