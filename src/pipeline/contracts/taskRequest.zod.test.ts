@@ -22,6 +22,17 @@ describe("TaskRequestSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts optional replace_deck_id for reprocess jobs", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "u1",
+      schema_version: 1,
+      image_url: "https://example.com/a.jpg",
+      replace_deck_id: 123,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.replace_deck_id).toBe(123);
+  });
+
   it("rejects when neither R2 nor URL is set", () => {
     const r = TaskRequestSchema.safeParse({
       upload_id: "u1",

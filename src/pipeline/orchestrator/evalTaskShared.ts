@@ -203,3 +203,36 @@ export async function updateDeckAuxiliaryKeys(
   };
   await batcher.batch(stmts.map((s) => batcher.prepare(s.sql).bind(...s.params)));
 }
+
+export async function deleteReplacedDeckRows(
+  db: D1DatabaseLike,
+  replaceDeckId: number,
+  cubeId: string,
+  newDeckId: number,
+): Promise<void> {
+  if (!Number.isFinite(replaceDeckId) || replaceDeckId <= 0 || replaceDeckId === newDeckId) return;
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        "DELETE FROM deck_cards WHERE deck_id IN " +
+          "(SELECT deck_id FROM decks WHERE deck_id = ? AND cube_id = ? AND deck_id <> ?)",
+      )
+      .bind(replaceDeckId, cubeId, newDeckId),
+    db
+      .prepare(
+        "DELETE FROM deck_stats WHERE deck_id IN " +
+          "(SELECT deck_id FROM decks WHERE deck_id = ? AND cube_id = ? AND deck_id <> ?)",
+      )
+      .bind(replaceDeckId, cubeId, newDeckId),
+    db
+      .prepare("DELETE FROM decks WHERE deck_id = ? AND cube_id = ? AND deck_id <> ?")
+      .bind(replaceDeckId, cubeId, newDeckId),
+    db
+      .prepare(
+        "UPDATE cubes SET total_decks = (SELECT COUNT(*) FROM decks WHERE cube_id = ?), " +
+          "last_updated = ? WHERE cube_id = ?;",
+      )
+      .bind(cubeId, now, cubeId),
+  ]);
+}

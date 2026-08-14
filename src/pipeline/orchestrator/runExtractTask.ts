@@ -14,7 +14,7 @@ import { createEvalScryfallClient } from "../scryfall/client";
 import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
 import { formatEvalError } from "../util/formatEvalError";
 import { PermanentEvalError } from "./evalErrors";
-import { resolveEvalPipelineConfig, updateDeckAuxiliaryKeys } from "./evalTaskShared";
+import { deleteReplacedDeckRows, resolveEvalPipelineConfig, updateDeckAuxiliaryKeys } from "./evalTaskShared";
 import { markJobDone } from "./processingJobRepo";
 import type { RunEvalTaskEnv } from "./runEvalTask";
 import { safeMarkJobFailed } from "./safeMarkJobFailed";
@@ -163,6 +163,9 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         thumbKey: thumb.thumbKey,
         stagingKey: task.staging_image_r2_key,
       });
+      if (task.replace_deck_id != null) {
+        await deleteReplacedDeckRows(env.cubewizard_db, task.replace_deck_id, task.cube_id, write.deckId);
+      }
 
       await markJobDone(
         env.cubewizard_db,
@@ -171,6 +174,7 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
           duplicate: false,
           deck_id: write.deckId,
           image_id: task.image_id,
+          replaced_deck_id: task.replace_deck_id ?? null,
           oriented_image_r2_key: task.oriented_image_r2_key,
           oriented_thumb_r2_key: thumb.thumbKey,
           eval_report: evalReport,
