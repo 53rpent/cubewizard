@@ -40,7 +40,12 @@
     "image_source": { "type": "string" },
     "match_wins": { "type": "integer" },
     "match_losses": { "type": "integer" },
-    "match_draws": { "type": "integer" }
+    "match_draws": { "type": "integer" },
+    "replace_deck_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Internal reprocess-only deck id to delete after the replacement deck is durably written."
+    }
   },
   "additionalProperties": false,
   "anyOf": [
