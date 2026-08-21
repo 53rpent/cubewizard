@@ -183,12 +183,12 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     win_rate: deckMeta.winRate,
     expected_deck_size: deckMeta.expectedDeckSize,
   };
-  if (
-    typeof metadata.owner_user_id === "number" &&
-    Number.isFinite(metadata.owner_user_id) &&
-    metadata.owner_user_id > 0
-  ) {
-    extractBody.owner_user_id = Math.floor(metadata.owner_user_id);
+  const ownerUserId = metadata.owner_user_id ?? task.owner_user_id;
+  if (typeof ownerUserId === "number" && Number.isFinite(ownerUserId) && ownerUserId > 0) {
+    extractBody.owner_user_id = Math.floor(ownerUserId);
+  }
+  if (typeof task.replace_deck_id === "number" && Number.isFinite(task.replace_deck_id) && task.replace_deck_id > 0) {
+    extractBody.replace_deck_id = Math.floor(task.replace_deck_id);
   }
 
   await enqueueExtractTask(env, extractBody);

@@ -19,6 +19,8 @@ function createDbMock({ sessionUser = null, processingJob = null, processingDeck
         bind(...args) {
           calls.push({ type: "bind", sql: sql, args: args });
           return {
+            sql: sql,
+            args: args,
             async first() {
               if (sql.indexOf("FROM sessions s") >= 0) return sessionUser;
               if (sql.indexOf("FROM processing_jobs") >= 0) return processingJob;
@@ -183,5 +185,66 @@ describe("deck reprocess route", () => {
     expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
       false,
     );
+  });
+
+  it("enqueues reprocess with a fresh replacement upload id and preserves the active deck", async () => {
+    var sessionUser = { user_id: 5, username: "owner" };
+    var db = createDbMock({
+      sessionUser: sessionUser,
+      deck: {
+        deck_id: 123,
+        cube_id: "cube",
+        pilot_name: "owner",
+        match_wins: 2,
+        match_losses: 1,
+        match_draws: 0,
+        win_rate: 0.667,
+        record_logged: "2026-06-06T00:00:00.000Z",
+        image_source: "",
+        processing_timestamp: "upload-1",
+        owner_user_id: 5,
+        image_id: "image-1",
+        oriented_image_r2_key: "oriented/cube/image.jpg",
+        staging_image_r2_key: "upload-1/image.jpg",
+      },
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+      BUCKET: {
+        get: vi.fn(function () {
+          return createJsonR2Object({ owner_user_id: 5 });
+        }),
+      },
+      DECK_IMAGES_BLOB: {
+        get: vi.fn(function () {
+          return { async arrayBuffer() {} };
+        }),
+      },
+      EVAL_QUEUE: {
+        send: vi.fn(async function () {}),
+      },
+    };
+    var cookie = await createSignedSessionCookie(db, env, sessionUser.user_id);
+
+    var response = await worker.fetch(
+      new Request("https://example.test/api/deck/123/reprocess", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      }),
+      env,
+      {},
+    );
+    var body = await response.json();
+    var sentBody = env.EVAL_QUEUE.send.mock.calls[0]?.[0];
+
+    expect(response.status).toBe(200);
+    expect(body.upload_id).toMatch(/^reprocess:123:/);
+    expect(sentBody.upload_id).toBe(body.upload_id);
+    expect(sentBody.processing_timestamp).toBe(body.upload_id);
+    expect(sentBody.replace_deck_id).toBe(123);
+    expect(sentBody.owner_user_id).toBe(5);
+    expect(sentBody.image_id).not.toBe("image-1");
+    expect(hasDeckDeleteBatch(db)).toBe(false);
   });
 });
