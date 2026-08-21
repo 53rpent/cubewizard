@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { DeckPayload } from "./types";
 import { executeDeckWritePlan } from "./executeDeckWritePlan";
+import type { DeckPayload } from "./types";
 
 const minimalDeck = (): DeckPayload => ({
   deck: {
