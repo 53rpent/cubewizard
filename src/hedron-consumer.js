@@ -8,6 +8,7 @@
  */
 
 import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
+import { safeReleaseHedronSyncedDeckForUpload } from "./pipeline/orchestrator/hedronSyncedDeckRepo.ts";
 import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import { parseQueueJsonBody } from "./queueMessageBody.js";
 
@@ -138,6 +139,59 @@ async function enqueueCfEvalJob(env, body) {
   await env.EVAL_QUEUE.send(body, { contentType: "json" });
 }
 
+function failedHedronTaskFromBody(raw, env) {
+  var job = parseQueueJsonBody(raw);
+  if (!job) return null;
+
+  var uploadId = typeof job.upload_id === "string" ? job.upload_id.trim() : "";
+  var cubeId = typeof job.cube_id === "string" ? job.cube_id.trim() : "";
+  if (!uploadId) return null;
+
+  return {
+    upload_id: uploadId,
+    cube_id: cubeId,
+    pilot_name: job.pilot_name ? String(job.pilot_name) : null,
+    submitted_at: job.submitted_at ? String(job.submitted_at) : new Date().toISOString(),
+    schema_version: 1,
+    r2_bucket: String(env?.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim(),
+    r2_prefix: job.r2_prefix ? String(job.r2_prefix) : null,
+    image_url: job.image_url ? String(job.image_url) : null,
+    image_source: job.image_source ? String(job.image_source) : "hedron",
+    match_wins: optionalInt(job, "match_wins"),
+    match_losses: optionalInt(job, "match_losses"),
+    match_draws: optionalInt(job, "match_draws"),
+  };
+}
+
+async function markHedronProcessingJobFailed(env, task, error) {
+  if (!task?.upload_id || !task.cube_id) return;
+  await upsertQueuedProcessingJob(env.cubewizard_db, task);
+  await env.cubewizard_db
+    .prepare(
+      "UPDATE processing_jobs SET status = 'failed', finished_at = unixepoch(), " +
+        "updated_at = unixepoch(), error = ? WHERE upload_id = ?",
+    )
+    .bind(String(error || "Hedron import failed.").slice(0, 4000), task.upload_id)
+    .run();
+}
+
+async function cleanupPermanentHedronFailure(raw, env, error) {
+  if (!env?.cubewizard_db || typeof env.cubewizard_db.prepare !== "function") return null;
+  var task = failedHedronTaskFromBody(raw, env);
+  if (!task?.upload_id) return null;
+
+  await safeReleaseHedronSyncedDeckForUpload(env.cubewizard_db, task.upload_id);
+  try {
+    await markHedronProcessingJobFailed(env, task, error?.message || String(error || "Hedron import failed."));
+  } catch (jobErr) {
+    console.error("hedron_consumer_failed_job_mark_error", {
+      upload_id: task.upload_id,
+      error: jobErr?.message ? jobErr.message : String(jobErr),
+    });
+  }
+  return task.upload_id;
+}
+
 async function processHedronMessage(raw, env, messageId) {
   var t0 = Date.now();
   assertConsumerBindings(env);
@@ -257,8 +311,10 @@ export default {
       message.ack();
     } catch (e) {
       if (e?.permanent) {
+        var releasedUploadId = await cleanupPermanentHedronFailure(message.body, env, e);
         console.error("hedron_consumer_poison", {
           message_id: message.id,
+          upload_id: releasedUploadId,
           error: e.message || String(e),
         });
         message.ack();

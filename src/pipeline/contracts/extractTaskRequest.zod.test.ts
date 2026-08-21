@@ -14,9 +14,12 @@ describe("ExtractTaskRequestSchema", () => {
   };
 
   it("accepts optional owner_user_id", () => {
-    const r = ExtractTaskRequestSchema.safeParse({ ...base, owner_user_id: 7 });
+    const r = ExtractTaskRequestSchema.safeParse({ ...base, owner_user_id: 7, replace_deck_id: 123 });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.owner_user_id).toBe(7);
+    if (r.success) {
+      expect(r.data.owner_user_id).toBe(7);
+      expect(r.data.replace_deck_id).toBe(123);
+    }
   });
 
   it("accepts body without owner_user_id", () => {

@@ -40,7 +40,17 @@
     "image_source": { "type": "string" },
     "match_wins": { "type": "integer" },
     "match_losses": { "type": "integer" },
-    "match_draws": { "type": "integer" }
+    "match_draws": { "type": "integer" },
+    "owner_user_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional account owner propagated to the inserted deck row."
+    },
+    "replace_deck_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional existing deck row to delete after this task successfully writes its replacement."
+    }
   },
   "additionalProperties": false,
   "anyOf": [

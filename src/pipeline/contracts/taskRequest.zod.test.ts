@@ -40,4 +40,16 @@ describe("TaskRequestSchema", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("accepts optional reprocess ownership fields", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "reprocess:123:uuid",
+      schema_version: 1,
+      r2_bucket: "decklist-uploads",
+      r2_prefix: "original-upload/",
+      owner_user_id: 7,
+      replace_deck_id: 123,
+    });
+    expect(r.success).toBe(true);
+  });
 });
