@@ -40,7 +40,17 @@
     "image_source": { "type": "string" },
     "match_wins": { "type": "integer" },
     "match_losses": { "type": "integer" },
-    "match_draws": { "type": "integer" }
+    "match_draws": { "type": "integer" },
+    "owner_user_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional owner id for authenticated or replacement jobs."
+    },
+    "replace_deck_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Existing deck id to replace after a reprocess job writes its new deck successfully."
+    }
   },
   "additionalProperties": false,
   "anyOf": [

@@ -84,6 +84,7 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
           ? (task.match_wins ?? 0) / ((task.match_wins ?? 0) + (task.match_losses ?? 0))
           : 0,
       record_logged: task.submitted_at || new Date().toISOString(),
+      owner_user_id: task.owner_user_id,
     };
   } else {
     const pack = await readStagingPackage(task, env.BUCKET);
@@ -189,6 +190,11 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     metadata.owner_user_id > 0
   ) {
     extractBody.owner_user_id = Math.floor(metadata.owner_user_id);
+  } else if (typeof task.owner_user_id === "number" && Number.isFinite(task.owner_user_id) && task.owner_user_id > 0) {
+    extractBody.owner_user_id = Math.floor(task.owner_user_id);
+  }
+  if (typeof task.replace_deck_id === "number" && Number.isFinite(task.replace_deck_id) && task.replace_deck_id > 0) {
+    extractBody.replace_deck_id = Math.floor(task.replace_deck_id);
   }
 
   await enqueueExtractTask(env, extractBody);

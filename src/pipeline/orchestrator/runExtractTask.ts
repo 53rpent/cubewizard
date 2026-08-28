@@ -14,7 +14,7 @@ import { createEvalScryfallClient } from "../scryfall/client";
 import { bytesToMb, mergeActiveEvalBufferEstimates, rgbaFrameBytes } from "../util/evalMemoryProbe";
 import { formatEvalError } from "../util/formatEvalError";
 import { PermanentEvalError } from "./evalErrors";
-import { resolveEvalPipelineConfig, updateDeckAuxiliaryKeys } from "./evalTaskShared";
+import { deleteReplacedDeckRows, resolveEvalPipelineConfig, updateDeckAuxiliaryKeys } from "./evalTaskShared";
 import { markJobDone } from "./processingJobRepo";
 import type { RunEvalTaskEnv } from "./runEvalTask";
 import { safeMarkJobFailed } from "./safeMarkJobFailed";
@@ -143,7 +143,23 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
       const evalReport = usageReporter.finish(Date.now() - evalStarted);
       logEvalUsageReport(evalReport);
 
-      if (write.duplicate || write.deckId == null) {
+      const replacingDeckId = task.replace_deck_id;
+      const canFinalizeReplacement =
+        typeof replacingDeckId === "number" && write.deckId != null && replacingDeckId !== write.deckId;
+
+      if (write.duplicate && !canFinalizeReplacement) {
+        await markJobDone(
+          env.cubewizard_db,
+          task.upload_id,
+          JSON.stringify({
+            duplicate: true,
+            image_id: write.imageId,
+            eval_report: evalReport,
+          }),
+        );
+        return;
+      }
+      if (write.deckId == null) {
         await markJobDone(
           env.cubewizard_db,
           task.upload_id,
@@ -163,6 +179,9 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         thumbKey: thumb.thumbKey,
         stagingKey: task.staging_image_r2_key,
       });
+      if (canFinalizeReplacement) {
+        await deleteReplacedDeckRows(env.cubewizard_db, replacingDeckId, task.cube_id, write.deckId);
+      }
 
       await markJobDone(
         env.cubewizard_db,
@@ -170,6 +189,7 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         JSON.stringify({
           duplicate: false,
           deck_id: write.deckId,
+          replaced_deck_id: canFinalizeReplacement ? replacingDeckId : undefined,
           image_id: task.image_id,
           oriented_image_r2_key: task.oriented_image_r2_key,
           oriented_thumb_r2_key: thumb.thumbKey,
