@@ -58,6 +58,36 @@ const minimalDeck = (): DeckPayload => ({
   },
 });
 
+function applyStatementToState(state: FakeState, stmt: { sql: string; args: unknown[] }) {
+  if (stmt.sql.startsWith("INSERT OR IGNORE INTO decks")) {
+    if (state.deck) return { meta: { changes: 0 } };
+    state.deck = {
+      deck_id: state.nextDeckId++,
+      cube_id: String(stmt.args[0]),
+      image_id: String(stmt.args[8]),
+      processing_timestamp: String(stmt.args[9]),
+    };
+    return { meta: { changes: 1 } };
+  }
+  if (stmt.sql.startsWith("DELETE FROM deck_cards")) {
+    state.cards = [];
+    return { meta: { changes: 1 } };
+  }
+  if (stmt.sql.startsWith("DELETE FROM deck_stats")) {
+    state.hasStats = false;
+    return { meta: { changes: 1 } };
+  }
+  if (stmt.sql.startsWith("INSERT INTO deck_stats")) {
+    state.hasStats = true;
+    return { meta: { changes: 1 } };
+  }
+  if (stmt.sql.startsWith("INSERT INTO deck_cards")) {
+    state.cards.push(stmt.args);
+    return { meta: { changes: 1 } };
+  }
+  return { meta: { changes: 1 } };
+}
+
 function createFakeD1(initial: Partial<FakeState> = {}) {
   const state: FakeState = {
     deck: initial.deck ?? null,
@@ -103,35 +133,7 @@ function createFakeD1(initial: Partial<FakeState> = {}) {
       };
     },
     async batch(stmts: Array<{ sql: string; args: unknown[] }>) {
-      return stmts.map((stmt) => {
-        if (stmt.sql.startsWith("INSERT OR IGNORE INTO decks")) {
-          if (state.deck) return { meta: { changes: 0 } };
-          state.deck = {
-            deck_id: state.nextDeckId++,
-            cube_id: String(stmt.args[0]),
-            image_id: String(stmt.args[8]),
-            processing_timestamp: String(stmt.args[9]),
-          };
-          return { meta: { changes: 1 } };
-        }
-        if (stmt.sql.startsWith("DELETE FROM deck_cards")) {
-          state.cards = [];
-          return { meta: { changes: 1 } };
-        }
-        if (stmt.sql.startsWith("DELETE FROM deck_stats")) {
-          state.hasStats = false;
-          return { meta: { changes: 1 } };
-        }
-        if (stmt.sql.startsWith("INSERT INTO deck_stats")) {
-          state.hasStats = true;
-          return { meta: { changes: 1 } };
-        }
-        if (stmt.sql.startsWith("INSERT INTO deck_cards")) {
-          state.cards.push(stmt.args);
-          return { meta: { changes: 1 } };
-        }
-        return { meta: { changes: 1 } };
-      });
+      return stmts.map((stmt) => applyStatementToState(state, stmt));
     },
   };
   return db;

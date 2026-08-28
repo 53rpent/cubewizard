@@ -37,6 +37,20 @@ function createImagesBinding(bytes) {
   };
 }
 
+function takeDeckResult(deckResults, deck) {
+  if (deckResults?.length) return deckResults.shift();
+  return deck;
+}
+
+function firstDbResult(sql, mocks) {
+  if (sql.indexOf("FROM sessions s") >= 0) return mocks.sessionUser;
+  if (sql.indexOf("FROM processing_jobs") >= 0) return mocks.processingJob;
+  if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) {
+    return takeDeckResult(mocks.deckResults, mocks.deck);
+  }
+  return null;
+}
+
 function createDbMock({
   sessionUser = null,
   processingJob = null,
@@ -45,6 +59,12 @@ function createDbMock({
   deckResults = null,
 } = {}) {
   var calls = [];
+  var mocks = {
+    sessionUser: sessionUser,
+    processingJob: processingJob,
+    deck: deck,
+    deckResults: deckResults,
+  };
   var db = {
     calls: calls,
     prepare(sql) {
@@ -55,13 +75,7 @@ function createDbMock({
             sql: sql,
             args: args,
             async first() {
-              if (sql.indexOf("FROM sessions s") >= 0) return sessionUser;
-              if (sql.indexOf("FROM processing_jobs") >= 0) return processingJob;
-              if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) {
-                if (deckResults?.length) return deckResults.shift();
-                return deck;
-              }
-              return null;
+              return firstDbResult(sql, mocks);
             },
             async all() {
               if (sql.indexOf("FROM decks") >= 0 && sql.indexOf("processing_timestamp = ?") >= 0) {
