@@ -10,8 +10,20 @@ function createJsonR2Object(value) {
   };
 }
 
-function createDbMock({ sessionUser = null, processingJob = null, processingDeckRows = [], deck = null } = {}) {
+function readDeckMock(deckReads, deck) {
+  if (deckReads) return deckReads.shift() || null;
+  return deck;
+}
+
+function createDbMock({
+  sessionUser = null,
+  processingJob = null,
+  processingDeckRows = [],
+  deck = null,
+  deckSequence = null,
+} = {}) {
   var calls = [];
+  var deckReads = Array.isArray(deckSequence) ? deckSequence.slice() : null;
   var db = {
     calls: calls,
     prepare(sql) {
@@ -22,7 +34,9 @@ function createDbMock({ sessionUser = null, processingJob = null, processingDeck
             async first() {
               if (sql.indexOf("FROM sessions s") >= 0) return sessionUser;
               if (sql.indexOf("FROM processing_jobs") >= 0) return processingJob;
-              if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) return deck;
+              if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) {
+                return readDeckMock(deckReads, deck);
+              }
               return null;
             },
             async all() {
@@ -129,6 +143,49 @@ describe("processing job dismissal route", () => {
     expect(env.BUCKET.delete).not.toHaveBeenCalled();
     expect(env.DECK_IMAGES_BLOB.delete).not.toHaveBeenCalled();
   });
+
+  it("releases Hedron sync dedupe rows when dismissing failed Hedron uploads", async () => {
+    var sessionUser = { user_id: 5, username: "owner" };
+    var db = createDbMock({
+      sessionUser: sessionUser,
+      processingJob: {
+        upload_id: "hedron:uuid-1",
+        cube_id: "cube",
+        status: "failed",
+        r2_prefix: "hedron/uuid-1/",
+      },
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+      BUCKET: {
+        get: vi.fn(function () {
+          return createJsonR2Object({ owner_user_id: 5 });
+        }),
+        delete: vi.fn(),
+      },
+      DECK_IMAGES_BLOB: { delete: vi.fn() },
+    };
+    var cookie = await createSignedSessionCookie(db, env, sessionUser.user_id);
+
+    var response = await worker.fetch(
+      new Request("https://example.test/api/processing-job/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ upload_id: "hedron:uuid-1", cube_id: "cube" }),
+      }),
+      env,
+      {},
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      db.calls.some(
+        (call) =>
+          call.type === "run" && call.sql.indexOf("DELETE FROM hedron_synced_decks") >= 0 && call.args[0] === "uuid-1",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("deck reprocess route", () => {
@@ -183,5 +240,161 @@ describe("deck reprocess route", () => {
     expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
       false,
     );
+  });
+
+  it("queues reprocess with a fresh replacement id without deleting the current deck", async () => {
+    var sessionUser = { user_id: 5, username: "owner" };
+    var db = createDbMock({
+      sessionUser: sessionUser,
+      deck: {
+        deck_id: 123,
+        cube_id: "cube",
+        pilot_name: "owner",
+        match_wins: 2,
+        match_losses: 1,
+        match_draws: 0,
+        win_rate: 0.667,
+        record_logged: "2026-06-06T00:00:00.000Z",
+        image_source: "",
+        processing_timestamp: "upload-1",
+        owner_user_id: 5,
+        image_id: "image-1",
+        oriented_image_r2_key: "oriented/cube/image.jpg",
+        staging_image_r2_key: "upload-1/image.jpg",
+      },
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+      BUCKET: { get: vi.fn() },
+      DECK_IMAGES_BLOB: {
+        get: vi.fn(function () {
+          return { async arrayBuffer() {} };
+        }),
+      },
+      EVAL_QUEUE: { send: vi.fn() },
+    };
+    var randomUuid = vi.spyOn(crypto, "randomUUID").mockReturnValue("uuid-1");
+    var cookie = await createSignedSessionCookie(db, env, sessionUser.user_id);
+
+    try {
+      var response = await worker.fetch(
+        new Request("https://example.test/api/deck/123/reprocess", {
+          method: "POST",
+          headers: { Cookie: cookie },
+        }),
+        env,
+        {},
+      );
+      var body = await response.json();
+      var queuedBody = env.EVAL_QUEUE.send.mock.calls[0][0];
+
+      expect(response.status).toBe(200);
+      expect(body.upload_id).toBe("reprocess:123:uuid-1");
+      expect(body.source_upload_id).toBe("upload-1");
+      expect(queuedBody.upload_id).toBe("reprocess:123:uuid-1");
+      expect(queuedBody.processing_timestamp).toBe("reprocess:123:uuid-1");
+      expect(queuedBody.replace_deck_id).toBe(123);
+      expect(queuedBody.image_id).not.toBe("image-1");
+      expect(hasDeckDeleteBatch(db)).toBe(false);
+      expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
+        true,
+      );
+    } finally {
+      randomUuid.mockRestore();
+    }
+  });
+});
+
+describe("deck delete route", () => {
+  it("releases original Hedron sync dedupe when deleting a reprocessed Hedron deck", async () => {
+    var sessionUser = { user_id: 5, username: "owner" };
+    var db = createDbMock({
+      sessionUser: sessionUser,
+      deck: {
+        deck_id: 123,
+        cube_id: "cube",
+        pilot_name: "owner",
+        owner_user_id: 5,
+        processing_timestamp: "reprocess:123:uuid-1",
+        image_source: "hedron",
+        staging_image_r2_key: "hedron/hedron-uuid/image.jpg",
+      },
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+    };
+    var cookie = await createSignedSessionCookie(db, env, sessionUser.user_id);
+
+    var response = await worker.fetch(
+      new Request("https://example.test/api/deck/123", {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      }),
+      env,
+      {},
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      db.calls.some(
+        (call) =>
+          call.type === "run" &&
+          call.sql.indexOf("DELETE FROM hedron_synced_decks") >= 0 &&
+          call.args[0] === "hedron-uuid",
+      ),
+    ).toBe(true);
+    expect(
+      db.calls.some(
+        (call) =>
+          call.type === "run" &&
+          call.sql.indexOf("DELETE FROM processing_jobs") >= 0 &&
+          call.args[0] === "reprocess:123:uuid-1",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("deck card edit route", () => {
+  it("rejects an edit if the deck is claimed before card rows are replaced", async () => {
+    var db = createDbMock({
+      deckSequence: [
+        { deck_id: 123, cube_id: "cube", owner_user_id: null },
+        { deck_id: 123, cube_id: "cube", owner_user_id: 9 },
+      ],
+    });
+    var fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ name: "Lightning Bolt", colors: ["R"], color_identity: ["R"], image_uris: {}, prices: {} }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      var response = await worker.fetch(
+        new Request("https://example.test/api/deck/123/cards", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ names: ["Lightning Bolt"] }),
+        }),
+        {
+          CWW_ENV: "local",
+          cubewizard_db: db,
+        },
+        {},
+      );
+
+      expect(response.status).toBe(403);
+      expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("DELETE FROM deck_cards") >= 0)).toBe(
+        false,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

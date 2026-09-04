@@ -22,6 +22,17 @@ describe("TaskRequestSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts optional replacement deck id", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "u1",
+      schema_version: 1,
+      r2_bucket: "decklist-uploads",
+      r2_prefix: "u1/",
+      replace_deck_id: 123,
+    });
+    expect(r.success).toBe(true);
+  });
+
   it("rejects when neither R2 nor URL is set", () => {
     const r = TaskRequestSchema.safeParse({
       upload_id: "u1",
