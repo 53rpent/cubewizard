@@ -8,7 +8,8 @@
  */
 
 import { normalizeStagingImage, parseStagingImageConfig } from "./pipeline/images/normalizeStagingImage.ts";
-import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import { safeReleaseHedronSyncedDeckForUpload } from "./pipeline/orchestrator/hedronSyncedDeckRepo.ts";
+import { markProcessingJobFailed, upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import { parseQueueJsonBody } from "./queueMessageBody.js";
 
 var HEDRON_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -240,6 +241,53 @@ async function processHedronMessage(raw, env, messageId) {
   });
 }
 
+async function recordPermanentHedronFailure(raw, env, error) {
+  var job = parseQueueJsonBody(raw);
+  if (!job || typeof job !== "object") return;
+
+  var uploadId = typeof job.upload_id === "string" ? job.upload_id.trim() : "";
+  if (!uploadId) return;
+
+  await safeReleaseHedronSyncedDeckForUpload(env.cubewizard_db, uploadId);
+
+  var cubeId = typeof job.cube_id === "string" ? job.cube_id.trim() : "";
+  if (!cubeId) return;
+
+  var deckImageUuid = typeof job.deck_image_uuid === "string" ? job.deck_image_uuid.trim() : "";
+  var prefix = normalizePrefix(job.r2_prefix, deckImageUuid);
+  var taskBody = {
+    upload_id: uploadId,
+    cube_id: cubeId,
+    pilot_name: job.pilot_name ? String(job.pilot_name) : "Unknown",
+    submitted_at: job.submitted_at ? String(job.submitted_at) : new Date().toISOString(),
+    schema_version: 1,
+    r2_bucket: String(env.R2_STAGING_BUCKET_NAME || "decklist-uploads").trim(),
+    r2_prefix: prefix + "/",
+    image_source: job.image_source ? String(job.image_source) : "hedron",
+    match_wins: optionalInt(job, "match_wins"),
+    match_losses: optionalInt(job, "match_losses"),
+    match_draws: optionalInt(job, "match_draws"),
+  };
+  await upsertQueuedProcessingJob(env.cubewizard_db, taskBody);
+  await markProcessingJobFailed(env.cubewizard_db, uploadId, error?.message ? error.message : String(error));
+}
+
+async function ackPermanentHedronFailure(message, env, error) {
+  console.error("hedron_consumer_poison", {
+    message_id: message.id,
+    error: error.message || String(error),
+  });
+  try {
+    await recordPermanentHedronFailure(message.body, env, error);
+  } catch (recordErr) {
+    console.error("hedron_consumer_poison_record_failed", {
+      message_id: message.id,
+      error: recordErr?.message ? recordErr.message : String(recordErr),
+    });
+  }
+  message.ack();
+}
+
 export default {
   async queue(batch, env) {
     if (!batch.messages || batch.messages.length === 0) return;
@@ -257,11 +305,7 @@ export default {
       message.ack();
     } catch (e) {
       if (e?.permanent) {
-        console.error("hedron_consumer_poison", {
-          message_id: message.id,
-          error: e.message || String(e),
-        });
-        message.ack();
+        await ackPermanentHedronFailure(message, env, e);
         return;
       }
 

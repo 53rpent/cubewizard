@@ -71,3 +71,13 @@ export async function upsertQueuedProcessingJob(db, task) {
     )
     .run();
 }
+
+export async function markProcessingJobFailed(db, uploadId, error) {
+  await db
+    .prepare(
+      "UPDATE processing_jobs SET status = 'failed', finished_at = unixepoch(), " +
+        "updated_at = unixepoch(), error = ? WHERE upload_id = ?",
+    )
+    .bind(String(error || "processing_failed").slice(0, 4000), String(uploadId || ""))
+    .run();
+}
