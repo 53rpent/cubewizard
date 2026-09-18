@@ -356,13 +356,28 @@ async function handleDismissProcessingJob(request, env) {
     return jsonResponse({ error: "You do not have permission to remove this failed upload." }, 403);
   }
 
+  var deletedDecks = [];
   for (var di = 0; di < decks.length; di++) {
     var deck = decks[di] || {};
-    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_image_r2_key);
-    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deck.oriented_thumb_r2_key);
     if (deck.deck_id != null) {
-      await deleteDeckRowsFromDb(env.cubewizard_db, deck.deck_id, cubeId);
+      var deleted = await deleteFailedUploadDeckRowsIfDismissible(
+        env.cubewizard_db,
+        deck.deck_id,
+        cubeId,
+        uploadId,
+        sessionUser.user_id,
+      );
+      if (!deleted) {
+        return jsonResponse({ error: "Failed upload ownership changed. Refresh and try again." }, 409);
+      }
+      deletedDecks.push(deck);
     }
+  }
+
+  for (var ddi = 0; ddi < deletedDecks.length; ddi++) {
+    var deletedDeck = deletedDecks[ddi] || {};
+    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deletedDeck.oriented_image_r2_key);
+    await tryDeleteR2Object(env.DECK_IMAGES_BLOB, deletedDeck.oriented_thumb_r2_key);
   }
 
   if (job.pilot_name) {
@@ -1798,6 +1813,39 @@ async function deleteDeckRowsFromDb(db, deckId, cubeId) {
   ]);
 }
 
+async function deleteFailedUploadDeckRowsIfDismissible(db, deckId, cubeId, uploadId, sessionUserId) {
+  var now = new Date().toISOString();
+  var deckGuard =
+    "SELECT deck_id FROM decks WHERE deck_id = ? AND cube_id = ? AND processing_timestamp = ?" +
+    " AND (owner_user_id IS NULL OR owner_user_id = ?)";
+  var results = await db.batch([
+    db
+      .prepare(
+        "SELECT deck_id FROM decks WHERE deck_id = ? AND cube_id = ? AND processing_timestamp = ?" +
+          " AND (owner_user_id IS NULL OR owner_user_id = ?) LIMIT 1",
+      )
+      .bind(deckId, cubeId, uploadId, sessionUserId),
+    db
+      .prepare("DELETE FROM deck_cards WHERE deck_id IN (" + deckGuard + ")")
+      .bind(deckId, cubeId, uploadId, sessionUserId),
+    db
+      .prepare("DELETE FROM deck_stats WHERE deck_id IN (" + deckGuard + ")")
+      .bind(deckId, cubeId, uploadId, sessionUserId),
+    db
+      .prepare(
+        "DELETE FROM decks WHERE deck_id = ? AND cube_id = ? AND processing_timestamp = ?" +
+          " AND (owner_user_id IS NULL OR owner_user_id = ?)",
+      )
+      .bind(deckId, cubeId, uploadId, sessionUserId),
+    db
+      .prepare(
+        "UPDATE cubes SET total_decks = (SELECT COUNT(*) FROM decks WHERE cube_id = ?), last_updated = ? WHERE cube_id = ?;",
+      )
+      .bind(cubeId, now, cubeId),
+  ]);
+  return (results[0]?.results || []).length > 0;
+}
+
 async function handleDeleteDeck(deckIdStr, request, env) {
   var loaded = await loadDeckForManage(deckIdStr, request, env);
   if (loaded.error) return loaded.error;
@@ -2293,6 +2341,76 @@ async function resolveDeckCardRowsFromNames(trimmed) {
   return { rows: outRows, notFoundNames: notFoundNames };
 }
 
+function deckEditGuardSql() {
+  return "SELECT deck_id FROM decks WHERE deck_id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)";
+}
+
+async function replaceDeckCardsIfEditable(db, deckId, sessionUserId, foundRows, notesStr, totalFound, notFoundNames) {
+  var guardSql = deckEditGuardSql();
+  var guardExistsSql = "EXISTS (" + guardSql + ")";
+  var statements = [
+    db.prepare(guardSql + " LIMIT 1").bind(deckId, sessionUserId),
+    db.prepare("DELETE FROM deck_cards WHERE deck_id = ? AND " + guardExistsSql).bind(deckId, deckId, sessionUserId),
+  ];
+
+  for (var ri = 0; ri < foundRows.length; ri++) {
+    var row = foundRows[ri];
+    statements.push(
+      db
+        .prepare(
+          "INSERT INTO deck_cards (deck_id, name, mana_cost, cmc, type_line, colors, color_identity, " +
+            "rarity, set_code, set_name, collector_number, power, toughness, oracle_text, scryfall_uri, " +
+            "image_uris, prices) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " +
+            guardExistsSql,
+        )
+        .bind(
+          deckId,
+          row.name,
+          row.mana_cost,
+          row.cmc,
+          row.type_line,
+          row.colors,
+          row.color_identity,
+          row.rarity,
+          row.set_code,
+          row.set_name,
+          row.collector_number,
+          row.power,
+          row.toughness,
+          row.oracle_text,
+          row.scryfall_uri,
+          row.image_uris,
+          row.prices,
+          deckId,
+          sessionUserId,
+        ),
+    );
+  }
+
+  statements.push(
+    db
+      .prepare(
+        "INSERT INTO deck_stats (deck_id, total_found, total_not_found, processing_notes) " +
+          "SELECT ?, ?, ?, ? WHERE " +
+          guardExistsSql +
+          " AND NOT EXISTS (SELECT 1 FROM deck_stats WHERE deck_id = ?)",
+      )
+      .bind(deckId, totalFound, notFoundNames.length, notesStr, deckId, sessionUserId, deckId),
+    db
+      .prepare(
+        "UPDATE deck_stats SET total_found = ?, total_not_found = ?, processing_notes = ? WHERE deck_id = ? AND " +
+          guardExistsSql,
+      )
+      .bind(totalFound, notFoundNames.length, notesStr, deckId, deckId, sessionUserId),
+    db
+      .prepare("UPDATE decks SET total_cards = ? WHERE deck_id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)")
+      .bind(foundRows.length, deckId, sessionUserId),
+  );
+
+  var results = await db.batch(statements);
+  return (results[0]?.results || []).length > 0;
+}
+
 async function handlePutDeckCards(deckIdStr, request, env) {
   var deckId = parseInt(String(deckIdStr), 10);
   if (!Number.isFinite(deckId)) {
@@ -2344,38 +2462,6 @@ async function handlePutDeckCards(deckIdStr, request, env) {
   var foundRows = resolved.rows;
   var notFoundNames = resolved.notFoundNames;
 
-  await env.cubewizard_db.prepare("DELETE FROM deck_cards WHERE deck_id = ?").bind(deckId).run();
-
-  for (var ri = 0; ri < foundRows.length; ri++) {
-    var row = foundRows[ri];
-    await env.cubewizard_db
-      .prepare(
-        "INSERT INTO deck_cards (deck_id, name, mana_cost, cmc, type_line, colors, color_identity, " +
-          "rarity, set_code, set_name, collector_number, power, toughness, oracle_text, scryfall_uri, image_uris, prices) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .bind(
-        deckId,
-        row.name,
-        row.mana_cost,
-        row.cmc,
-        row.type_line,
-        row.colors,
-        row.color_identity,
-        row.rarity,
-        row.set_code,
-        row.set_name,
-        row.collector_number,
-        row.power,
-        row.toughness,
-        row.oracle_text,
-        row.scryfall_uri,
-        row.image_uris,
-        row.prices,
-      )
-      .run();
-  }
-
   var totalFound = trimmed.length - notFoundNames.length;
   var notesObj = {
     total_requested: trimmed.length,
@@ -2387,26 +2473,19 @@ async function handlePutDeckCards(deckIdStr, request, env) {
   };
   var notesStr = JSON.stringify(notesObj);
 
-  var statRow = await env.cubewizard_db
-    .prepare("SELECT deck_id FROM deck_stats WHERE deck_id = ?")
-    .bind(deckId)
-    .first();
-  if (statRow) {
-    await env.cubewizard_db
-      .prepare("UPDATE deck_stats SET total_found = ?, total_not_found = ?, processing_notes = ? WHERE deck_id = ?")
-      .bind(totalFound, notFoundNames.length, notesStr, deckId)
-      .run();
-  } else {
-    await env.cubewizard_db
-      .prepare("INSERT INTO deck_stats (deck_id, total_found, total_not_found, processing_notes) VALUES (?, ?, ?, ?)")
-      .bind(deckId, totalFound, notFoundNames.length, notesStr)
-      .run();
+  var sessionUserId = sessionUser ? Number(sessionUser.user_id) : null;
+  var replaced = await replaceDeckCardsIfEditable(
+    env.cubewizard_db,
+    deckId,
+    sessionUserId,
+    foundRows,
+    notesStr,
+    totalFound,
+    notFoundNames,
+  );
+  if (!replaced) {
+    return jsonResponse({ error: "Deck ownership changed. Refresh and try again." }, 409);
   }
-
-  await env.cubewizard_db
-    .prepare("UPDATE decks SET total_cards = ? WHERE deck_id = ?")
-    .bind(trimmed.length, deckId)
-    .run();
 
   try {
     await invalidateDashboardCache(new URL(request.url).origin, deck.cube_id);
