@@ -10,6 +10,22 @@ function createJsonR2Object(value) {
   };
 }
 
+function isFailedUploadDeckGuardSql(sql) {
+  return sql.indexOf("FROM decks WHERE deck_id = ? AND cube_id = ? AND processing_timestamp = ?") >= 0;
+}
+
+function isDeckEditLimitGuardSql(sql) {
+  return (
+    sql.indexOf("FROM decks WHERE deck_id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)") >= 0 &&
+    sql.indexOf("LIMIT 1") >= 0
+  );
+}
+
+function guardBatchResult(rows, stmt) {
+  var resultRows = rows !== null ? rows : [{ deck_id: stmt.args[0] }];
+  return { results: resultRows, meta: { changes: resultRows.length } };
+}
+
 function createDbMock({
   sessionUser = null,
   processingJob = null,
@@ -52,32 +68,8 @@ function createDbMock({
     async batch(stmts) {
       calls.push({ type: "batch", stmts: stmts });
       return stmts.map(function (stmt) {
-        if (
-          failedUploadDeckGuardRows !== null &&
-          stmt.sql.indexOf("FROM decks WHERE deck_id = ? AND cube_id = ? AND processing_timestamp = ?") >= 0
-        ) {
-          return { results: failedUploadDeckGuardRows, meta: { changes: failedUploadDeckGuardRows.length } };
-        }
-        if (
-          failedUploadDeckGuardRows === null &&
-          stmt.sql.indexOf("FROM decks WHERE deck_id = ? AND cube_id = ? AND processing_timestamp = ?") >= 0
-        ) {
-          return { results: [{ deck_id: stmt.args[0] }], meta: { changes: 1 } };
-        }
-        if (
-          deckEditGuardRows !== null &&
-          stmt.sql.indexOf("FROM decks WHERE deck_id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)") >= 0 &&
-          stmt.sql.indexOf("LIMIT 1") >= 0
-        ) {
-          return { results: deckEditGuardRows, meta: { changes: deckEditGuardRows.length } };
-        }
-        if (
-          deckEditGuardRows === null &&
-          stmt.sql.indexOf("FROM decks WHERE deck_id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)") >= 0 &&
-          stmt.sql.indexOf("LIMIT 1") >= 0
-        ) {
-          return { results: [{ deck_id: stmt.args[0] }], meta: { changes: 1 } };
-        }
+        if (isFailedUploadDeckGuardSql(stmt.sql)) return guardBatchResult(failedUploadDeckGuardRows, stmt);
+        if (isDeckEditLimitGuardSql(stmt.sql)) return guardBatchResult(deckEditGuardRows, stmt);
         return { meta: { changes: 1 } };
       });
     },
