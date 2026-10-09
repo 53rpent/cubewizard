@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type D1DatabaseLike, executeDeckWritePlan } from "./executeDeckWritePlan";
+import { computeImageId } from "./imageId";
 import type { DeckPayload } from "./types";
 
 type DeckRow = {
@@ -191,5 +192,30 @@ describe("executeDeckWritePlan", () => {
 
     expect(result).toMatchObject({ success: true, duplicate: false, deckId: 42, imageId: "existing-image" });
     expect(db.batches).toHaveLength(0);
+  });
+
+  it("keeps true duplicate uploads distinct from same-job retry repair", async () => {
+    const payload = deckPayload();
+    const db = new FakeDeckDb([
+      {
+        deck_id: 42,
+        cube_id: "cube-1",
+        processing_timestamp: "different-upload",
+        image_id: await computeImageId(
+          "cube-1",
+          payload.deck.metadata.pilot_name,
+          payload.deck.metadata.processing_timestamp,
+          {
+            imageSource: payload.deck.metadata.image_source,
+          },
+        ),
+      },
+    ]);
+
+    const result = await executeDeckWritePlan(db, "cube-1", payload);
+
+    expect(result).toMatchObject({ success: true, duplicate: true });
+    expect(db.batches).toHaveLength(1);
+    expect(db.batches[0]?.some((sql) => sql.startsWith("INSERT INTO deck_cards"))).toBe(false);
   });
 });

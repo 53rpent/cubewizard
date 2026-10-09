@@ -29,13 +29,6 @@ async function findExistingDeckByProcessingTs(
   return existingBound.bind(cubeId, processingTs).first<ExistingDeck>();
 }
 
-async function findExistingDeckByImageId(db: D1DatabaseLike, imageId: string): Promise<ExistingDeck | null> {
-  const existingBound = db.prepare("SELECT deck_id, image_id FROM decks WHERE image_id = ? LIMIT 1") as {
-    bind(...args: unknown[]): { first<T = unknown>(): Promise<T | null> };
-  };
-  return existingBound.bind(imageId).first<ExistingDeck>();
-}
-
 async function deckWriteIsComplete(db: D1DatabaseLike, deckId: number, expectedCardRows: number): Promise<boolean> {
   const statsBound = db.prepare(
     "SELECT " +
@@ -94,10 +87,6 @@ export async function executeDeckWritePlan(
 
   const batchAResults = await db.batch(plan.batchA.map((s) => bindStatement(db, s)));
   if (deckInsertWasDuplicate(batchAResults)) {
-    const duplicate = await findExistingDeckByImageId(db, plan.imageId);
-    if (duplicate?.deck_id != null) {
-      return finishExistingDeckWrite(db, plan, duplicate, expectedCardRows);
-    }
     return { success: true, duplicate: true, imageId: plan.imageId };
   }
 
