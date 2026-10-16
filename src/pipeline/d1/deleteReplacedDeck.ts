@@ -36,15 +36,11 @@ export async function replacementDeckWriteIsComplete(
   expectedCards: number,
 ): Promise<boolean> {
   const statsStatement = db.prepare("SELECT deck_id FROM deck_stats WHERE deck_id = ? LIMIT 1") as D1FirstStatement;
-  const stats = await statsStatement
-    .bind(deckId)
-    .first<{ deck_id?: number }>();
+  const stats = await statsStatement.bind(deckId).first<{ deck_id?: number }>();
   if (!stats?.deck_id) return false;
 
   const cardsStatement = db.prepare("SELECT COUNT(*) AS count FROM deck_cards WHERE deck_id = ?") as D1FirstStatement;
-  const cards = await cardsStatement
-    .bind(deckId)
-    .first<{ count?: number }>();
+  const cards = await cardsStatement.bind(deckId).first<{ count?: number }>();
   const count = Number(cards?.count ?? 0);
   return Number.isFinite(count) && count >= expectedCards;
 }
