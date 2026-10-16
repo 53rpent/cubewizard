@@ -22,6 +22,19 @@ describe("TaskRequestSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts replacement deck id for reprocess tasks", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "reprocess:123:abc",
+      schema_version: 1,
+      r2_bucket: "decklist-uploads",
+      r2_prefix: "upload-1/",
+      cube_id: "my-cube",
+      replace_deck_id: 123,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.replace_deck_id).toBe(123);
+  });
+
   it("rejects when neither R2 nor URL is set", () => {
     const r = TaskRequestSchema.safeParse({
       upload_id: "u1",
