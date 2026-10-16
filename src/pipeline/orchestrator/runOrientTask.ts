@@ -183,6 +183,9 @@ export async function runOrientTask(rawBody: unknown, env: RunEvalTaskEnv, fetch
     win_rate: deckMeta.winRate,
     expected_deck_size: deckMeta.expectedDeckSize,
   };
+  if (task.replace_deck_id != null) {
+    extractBody.replace_deck_id = task.replace_deck_id;
+  }
   if (
     typeof metadata.owner_user_id === "number" &&
     Number.isFinite(metadata.owner_user_id) &&

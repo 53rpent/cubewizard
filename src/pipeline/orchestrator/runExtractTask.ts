@@ -1,6 +1,7 @@
 import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
 import { ExtractTaskRequestSchema } from "../contracts/extractTaskRequest.zod";
 import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
+import { deleteReplacedDeckRows, deleteReplacedDeckRowsIfReplacementComplete } from "../d1/deleteReplacedDeck";
 import { executeDeckWritePlan } from "../d1/executeDeckWritePlan";
 import type { CardsEnrichmentBlock, DeckCardRow, DeckPayload } from "../d1/types";
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
@@ -144,6 +145,18 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
       logEvalUsageReport(evalReport);
 
       if (write.duplicate || write.deckId == null) {
+        if (task.replace_deck_id != null && write.deckId != null) {
+          const replacementComplete = await deleteReplacedDeckRowsIfReplacementComplete(
+            env.cubewizard_db,
+            task.cube_id,
+            task.replace_deck_id,
+            write.deckId,
+            cardNames.length,
+          );
+          if (!replacementComplete) {
+            throw new Error("replacement_deck_duplicate_incomplete");
+          }
+        }
         await markJobDone(
           env.cubewizard_db,
           task.upload_id,
@@ -163,6 +176,8 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
         thumbKey: thumb.thumbKey,
         stagingKey: task.staging_image_r2_key,
       });
+
+      await deleteReplacedDeckRows(env.cubewizard_db, task.cube_id, task.replace_deck_id, write.deckId);
 
       await markJobDone(
         env.cubewizard_db,
