@@ -1,10 +1,10 @@
 import type { D1DatabaseLike } from "./executeDeckWritePlan";
 
-type D1Queryable = D1DatabaseLike & {
-  prepare(sql: string): {
-    bind(...args: unknown[]): {
-      first<T = unknown>(): Promise<T | null>;
-    };
+type D1Queryable = D1DatabaseLike;
+
+type D1FirstStatement = {
+  bind(...args: unknown[]): {
+    first<T = unknown>(): Promise<T | null>;
   };
 };
 
@@ -35,14 +35,14 @@ export async function replacementDeckWriteIsComplete(
   deckId: number,
   expectedCards: number,
 ): Promise<boolean> {
-  const stats = await db
-    .prepare("SELECT deck_id FROM deck_stats WHERE deck_id = ? LIMIT 1")
+  const statsStatement = db.prepare("SELECT deck_id FROM deck_stats WHERE deck_id = ? LIMIT 1") as D1FirstStatement;
+  const stats = await statsStatement
     .bind(deckId)
     .first<{ deck_id?: number }>();
   if (!stats?.deck_id) return false;
 
-  const cards = await db
-    .prepare("SELECT COUNT(*) AS count FROM deck_cards WHERE deck_id = ?")
+  const cardsStatement = db.prepare("SELECT COUNT(*) AS count FROM deck_cards WHERE deck_id = ?") as D1FirstStatement;
+  const cards = await cardsStatement
     .bind(deckId)
     .first<{ count?: number }>();
   const count = Number(cards?.count ?? 0);
