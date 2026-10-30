@@ -13,7 +13,7 @@ import {
   safeReleaseHedronSyncedDeckForUpload,
 } from "./pipeline/orchestrator/hedronSyncedDeckRepo.ts";
 import { orientedObjectKey, orientedThumbObjectKey } from "./pipeline/r2/orientedKeys.ts";
-import { upsertQueuedProcessingJob } from "./processingJobsD1.js";
+import { processingJobDocIdFromUploadId, upsertQueuedProcessingJob } from "./processingJobsD1.js";
 import {
   authRateLimitConfig,
   canDismissFailedUpload,
@@ -405,6 +405,17 @@ async function enqueueCfEvalJob(env, body) {
     console.error("CF eval queue send failed:", e);
     return { ok: false, skipped: false };
   }
+}
+
+async function markProcessingJobFailed(db, uploadId, error) {
+  var id = processingJobDocIdFromUploadId(uploadId);
+  await db
+    .prepare(
+      "UPDATE processing_jobs SET status = 'failed', finished_at = unixepoch(), " +
+        "updated_at = unixepoch(), error = ? WHERE id = ?",
+    )
+    .bind(String(error || "failed").slice(0, 4000), id)
+    .run();
 }
 
 var HEDRON_ORIGIN = "https://hedron.network";
@@ -1825,14 +1836,21 @@ async function handleDeleteDeck(deckIdStr, request, env) {
   return jsonResponse({ success: true, deck_id: deckId });
 }
 
-async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
+function newReprocessUploadId(deckId) {
+  var rand = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : String(Date.now());
+  return "reprocess:" + String(deckId) + ":" + rand;
+}
+
+async function buildReprocessExtractTask(deck, cubeId, uploadId, replaceDeckId, env) {
   var orientedKey = String(deck.oriented_image_r2_key || "").trim();
-  var imageId = deck.image_id != null ? String(deck.image_id) : "";
-  if (!orientedKey || !imageId) return null;
+  if (!orientedKey) return null;
 
   var orientedObj = await env.DECK_IMAGES_BLOB.get(orientedKey);
   if (!orientedObj) return null;
 
+  var imageId = await computeImageId(cubeId, String(deck.pilot_name || ""), uploadId, {
+    imageSource: deck.image_source || "",
+  });
   var taskBody = {
     upload_id: uploadId,
     schema_version: 2,
@@ -1840,6 +1858,7 @@ async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
     image_id: imageId,
     oriented_image_r2_key: orientedKey,
     processing_timestamp: uploadId,
+    replace_deck_id: replaceDeckId,
     pilot_name: String(deck.pilot_name || ""),
     record_logged: deck.record_logged || new Date().toISOString(),
     image_source: deck.image_source || "",
@@ -1856,8 +1875,9 @@ async function buildReprocessExtractTask(deck, cubeId, uploadId, env) {
   return taskBody;
 }
 
-async function buildReprocessOrientTask(deck, cubeId, uploadId, sessionUser, env) {
-  var r2Prefix = uploadId.replace(/\/+$/, "") + "/";
+async function buildReprocessOrientTask(deck, cubeId, uploadId, replaceDeckId, sessionUser, env) {
+  var sourceUploadId = String(deck.processing_timestamp || "").trim();
+  var r2Prefix = sourceUploadId.replace(/\/+$/, "") + "/";
   var metaKey = r2Prefix + "metadata.json";
   var metaObj = await env.BUCKET.get(metaKey);
   if (!metaObj) return null;
@@ -1896,6 +1916,8 @@ async function buildReprocessOrientTask(deck, cubeId, uploadId, sessionUser, env
     r2_bucket: r2Bucket,
     r2_prefix: r2Prefix,
     cube_id: cubeId,
+    replace_deck_id: replaceDeckId,
+    owner_user_id: Number(sessionUser.user_id),
     pilot_name: String(deck.pilot_name || ""),
     submitted_at: deck.record_logged || new Date().toISOString(),
     schema_version: 1,
@@ -1918,9 +1940,10 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     return jsonResponse({ error: "This deck cannot be re-processed (missing upload id)." }, 400);
   }
 
-  var taskBody = await buildReprocessExtractTask(deck, cubeId, uploadId, env);
+  var reprocessUploadId = newReprocessUploadId(deckId);
+  var taskBody = await buildReprocessExtractTask(deck, cubeId, reprocessUploadId, deckId, env);
   if (!taskBody) {
-    var orientResult = await buildReprocessOrientTask(deck, cubeId, uploadId, loaded.sessionUser, env);
+    var orientResult = await buildReprocessOrientTask(deck, cubeId, reprocessUploadId, deckId, loaded.sessionUser, env);
     if (orientResult?.error) return orientResult.error;
     taskBody = orientResult;
   }
@@ -1931,27 +1954,37 @@ async function handleReprocessDeck(deckIdStr, request, env) {
     );
   }
 
-  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
-  if (!enqueueResult.ok) {
-    console.error("Reprocess enqueue failed:", enqueueResult);
-    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
-  }
-
   var jobTask = {
-    upload_id: uploadId,
+    upload_id: reprocessUploadId,
     cube_id: cubeId,
     pilot_name: String(deck.pilot_name || ""),
     submitted_at: deck.record_logged || new Date().toISOString(),
-    schema_version: 1,
+    schema_version: taskBody.schema_version || 1,
+    r2_bucket: taskBody.r2_bucket,
+    r2_prefix: taskBody.r2_prefix,
+    image_source: taskBody.image_source,
+    match_wins: deck.match_wins,
+    match_losses: deck.match_losses,
+    match_draws: deck.match_draws ?? 0,
   };
 
   try {
     await upsertQueuedProcessingJob(env.cubewizard_db, jobTask);
   } catch (jobErr) {
     console.error("processing_jobs upsert failed on reprocess:", jobErr);
+    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
   }
 
-  await deleteDeckRowsFromDb(env.cubewizard_db, deckId, cubeId);
+  var enqueueResult = await enqueueCfEvalJob(env, taskBody);
+  if (!enqueueResult.ok) {
+    console.error("Reprocess enqueue failed:", enqueueResult);
+    try {
+      await markProcessingJobFailed(env.cubewizard_db, reprocessUploadId, "queue_failed");
+    } catch (jobFailErr) {
+      console.error("processing_jobs mark failed on reprocess enqueue failed:", jobFailErr);
+    }
+    return jsonResponse({ error: "Failed to queue deck for re-processing." }, 500);
+  }
 
   try {
     await invalidateDashboardCache(new URL(request.url).origin, cubeId);
@@ -1962,7 +1995,7 @@ async function handleReprocessDeck(deckIdStr, request, env) {
   return jsonResponse({
     success: true,
     deck_id: deckId,
-    upload_id: uploadId,
+    upload_id: reprocessUploadId,
     enqueue: enqueueResult,
   });
 }
