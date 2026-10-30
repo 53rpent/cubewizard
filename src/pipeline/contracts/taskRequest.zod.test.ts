@@ -40,4 +40,17 @@ describe("TaskRequestSchema", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("accepts replacement metadata on trusted worker-produced tasks", () => {
+    const r = TaskRequestSchema.safeParse({
+      upload_id: "reprocess:123:abc",
+      schema_version: 1,
+      r2_bucket: "decklist-uploads",
+      r2_prefix: "old-upload/",
+      cube_id: "my-cube",
+      owner_user_id: 5,
+      replace_deck_id: 123,
+    });
+    expect(r.success).toBe(true);
+  });
 });
