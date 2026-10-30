@@ -12,6 +12,7 @@ describe("ExtractTaskRequestSchema", () => {
       processing_timestamp: "hedron:u1",
       pilot_name: "Pilot",
       record_logged: "2026-01-01T00:00:00.000Z",
+      replace_deck_id: 123,
     };
     expect(ExtractTaskRequestSchema.safeParse(body).success).toBe(true);
     expect(isExtractTaskBody(body)).toBe(true);

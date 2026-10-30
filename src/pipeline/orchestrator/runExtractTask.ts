@@ -2,6 +2,7 @@ import { normalizeNamesToCubeList } from "../cards/normalizeToCubeList";
 import { ExtractTaskRequestSchema } from "../contracts/extractTaskRequest.zod";
 import { fetchCubeCobraMainboardNames } from "../cubecobra/fetchCubeList";
 import { executeDeckWritePlan } from "../d1/executeDeckWritePlan";
+import { deleteReplacementDeckRows } from "../d1/replacementDeckCleanup";
 import type { CardsEnrichmentBlock, DeckCardRow, DeckPayload } from "../d1/types";
 import { isLocalEvalEnv } from "../evalEnv/isLocalEvalEnv";
 import { createEvalUsageReporter, logEvalUsageReport, runWithEvalUsageReporter } from "../evalUsage/evalUsageReport";
@@ -19,6 +20,25 @@ import { markJobDone } from "./processingJobRepo";
 import type { RunEvalTaskEnv } from "./runEvalTask";
 import { safeMarkJobFailed } from "./safeMarkJobFailed";
 import { uploadOrientedThumb } from "./uploadOriented";
+
+function replacementDeckId(task: { replace_deck_id?: number }): number | undefined {
+  const deckId = task.replace_deck_id;
+  return typeof deckId === "number" && Number.isFinite(deckId) && deckId > 0 ? Math.floor(deckId) : undefined;
+}
+
+async function finishReplacementIfNeeded(
+  env: RunEvalTaskEnv,
+  task: {
+    cube_id: string;
+    replace_deck_id?: number;
+  },
+  deckId: number,
+): Promise<number | undefined> {
+  const replaceDeckId = replacementDeckId(task);
+  if (replaceDeckId == null || replaceDeckId === deckId) return undefined;
+  await deleteReplacementDeckRows(env.cubewizard_db, task.cube_id, replaceDeckId);
+  return replaceDeckId;
+}
 
 /**
  * Phase 2: load oriented JPEG from R2 → extract → thumb upload → release RGBA → Scryfall → D1.
@@ -144,25 +164,42 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
       logEvalUsageReport(evalReport);
 
       if (write.duplicate || write.deckId == null) {
+        const duplicateDeckId = write.deckId;
+        const replaceDeckId = replacementDeckId(task);
+        if (duplicateDeckId != null && replaceDeckId != null && replaceDeckId !== duplicateDeckId) {
+          await updateDeckAuxiliaryKeys(env.cubewizard_db, duplicateDeckId, {
+            storedPath: `stored_images/${task.image_id}.jpg`,
+            orientedKey: task.oriented_image_r2_key,
+            thumbKey: thumb.thumbKey,
+            stagingKey: task.staging_image_r2_key,
+          });
+        }
+        const replacementTarget =
+          duplicateDeckId != null ? await finishReplacementIfNeeded(env, task, duplicateDeckId) : undefined;
         await markJobDone(
           env.cubewizard_db,
           task.upload_id,
           JSON.stringify({
-            duplicate: true,
+            duplicate: replacementTarget == null,
+            deck_id: replacementTarget == null ? undefined : write.deckId,
+            replaced_deck_id: replacementTarget,
             image_id: write.imageId,
+            oriented_image_r2_key: replacementTarget == null ? undefined : task.oriented_image_r2_key,
+            oriented_thumb_r2_key: replacementTarget == null ? undefined : thumb.thumbKey,
             eval_report: evalReport,
           }),
         );
         return;
       }
 
-      const storedPath = `stored_images/${task.image_id}.jpg`;
       await updateDeckAuxiliaryKeys(env.cubewizard_db, write.deckId, {
-        storedPath,
+        storedPath: `stored_images/${task.image_id}.jpg`,
         orientedKey: task.oriented_image_r2_key,
         thumbKey: thumb.thumbKey,
         stagingKey: task.staging_image_r2_key,
       });
+
+      const replacementTarget = await finishReplacementIfNeeded(env, task, write.deckId);
 
       await markJobDone(
         env.cubewizard_db,
@@ -173,6 +210,7 @@ export async function runExtractTask(rawBody: unknown, env: RunEvalTaskEnv, fetc
           image_id: task.image_id,
           oriented_image_r2_key: task.oriented_image_r2_key,
           oriented_thumb_r2_key: thumb.thumbKey,
+          replaced_deck_id: replacementTarget,
           eval_report: evalReport,
         }),
       );
