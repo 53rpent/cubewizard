@@ -2344,6 +2344,18 @@ async function handlePutDeckCards(deckIdStr, request, env) {
   var foundRows = resolved.rows;
   var notFoundNames = resolved.notFoundNames;
 
+  var currentDeck = await env.cubewizard_db
+    .prepare("SELECT deck_id, cube_id, owner_user_id FROM decks WHERE deck_id = ?")
+    .bind(deckId)
+    .first();
+  if (!currentDeck) {
+    return jsonResponse({ error: "Deck not found" }, 404);
+  }
+  if (!deckCanEdit(currentDeck.owner_user_id, sessionUser)) {
+    return jsonResponse({ error: "You do not have permission to edit this deck." }, 403);
+  }
+  deck = currentDeck;
+
   await env.cubewizard_db.prepare("DELETE FROM deck_cards WHERE deck_id = ?").bind(deckId).run();
 
   for (var ri = 0; ri < foundRows.length; ri++) {

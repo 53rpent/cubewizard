@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSession } from "./security/auth.js";
 import worker from "./worker.js";
 
@@ -10,8 +10,21 @@ function createJsonR2Object(value) {
   };
 }
 
-function createDbMock({ sessionUser = null, processingJob = null, processingDeckRows = [], deck = null } = {}) {
+function nextDeckResult(deck, deckSequence, deckReads) {
+  if (!Array.isArray(deckSequence)) return { deck: deck, deckReads: deckReads };
+  var idx = Math.min(deckReads, deckSequence.length - 1);
+  return { deck: deckSequence[idx], deckReads: deckReads + 1 };
+}
+
+function createDbMock({
+  sessionUser = null,
+  processingJob = null,
+  processingDeckRows = [],
+  deck = null,
+  deckSequence = null,
+} = {}) {
   var calls = [];
+  var deckReads = 0;
   var db = {
     calls: calls,
     prepare(sql) {
@@ -22,7 +35,11 @@ function createDbMock({ sessionUser = null, processingJob = null, processingDeck
             async first() {
               if (sql.indexOf("FROM sessions s") >= 0) return sessionUser;
               if (sql.indexOf("FROM processing_jobs") >= 0) return processingJob;
-              if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) return deck;
+              if (sql.indexOf("FROM decks WHERE deck_id = ?") >= 0) {
+                var result = nextDeckResult(deck, deckSequence, deckReads);
+                deckReads = result.deckReads;
+                return result.deck;
+              }
               return null;
             },
             async all() {
@@ -48,6 +65,10 @@ function createDbMock({ sessionUser = null, processingJob = null, processingDeck
   };
   return db;
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function createSignedSessionCookie(db, env, userId) {
   var session = await createSession(db, userId, env);
@@ -183,5 +204,59 @@ describe("deck reprocess route", () => {
     expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("INSERT INTO processing_jobs") >= 0)).toBe(
       false,
     );
+  });
+});
+
+describe("deck card editing route", () => {
+  it("rechecks ownership after Scryfall lookup before replacing cards", async () => {
+    var db = createDbMock({
+      deckSequence: [
+        { deck_id: 123, cube_id: "cube", owner_user_id: null },
+        { deck_id: 123, cube_id: "cube", owner_user_id: 9 },
+      ],
+    });
+    var env = {
+      CWW_ENV: "local",
+      cubewizard_db: db,
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      async json() {
+        return {
+          data: [
+            {
+              name: "Lightning Bolt",
+              mana_cost: "{R}",
+              cmc: 1,
+              type_line: "Instant",
+              colors: ["R"],
+              color_identity: ["R"],
+              rarity: "common",
+              set: "lea",
+              set_name: "Limited Edition Alpha",
+              collector_number: "161",
+              oracle_text: "Lightning Bolt deals 3 damage to any target.",
+              scryfall_uri: "https://scryfall.com/card/lea/161/lightning-bolt",
+              image_uris: {},
+              prices: {},
+            },
+          ],
+        };
+      },
+    });
+
+    var response = await worker.fetch(
+      new Request("https://example.test/api/deck/123/cards", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names: ["Lightning Bolt"] }),
+      }),
+      env,
+      {},
+    );
+
+    expect(response.status).toBe(403);
+    expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("DELETE FROM deck_cards") >= 0)).toBe(false);
+    expect(db.calls.some((call) => call.type === "run" && call.sql.indexOf("INSERT INTO deck_cards") >= 0)).toBe(false);
   });
 });
