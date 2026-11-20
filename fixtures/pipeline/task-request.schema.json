@@ -40,7 +40,17 @@
     "image_source": { "type": "string" },
     "match_wins": { "type": "integer" },
     "match_losses": { "type": "integer" },
-    "match_draws": { "type": "integer" }
+    "match_draws": { "type": "integer" },
+    "owner_user_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional authenticated uploader id, used by trusted Worker-produced reprocess jobs."
+    },
+    "replace_deck_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional deck id to replace after this queued reprocess writes a new deck successfully."
+    }
   },
   "additionalProperties": false,
   "anyOf": [
